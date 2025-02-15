@@ -1,0 +1,15 @@
+[project]
+name = "fastapi_tuiwen"
+version = "0.1.0"
+description = "内部API文档"
+authors = [
+    {name = "liaozhimingandy@qq.com", email = "liaozhimingandy@qq.com"},
+]
+dependencies = ["fastapi[all]>=0.115.8", "sqlmodel>=0.0.22", "aiosqlite>=0.21.0", "pyjwt==2.8.0", "Pillow>=11.1.0", "asyncpg>=0.30.0", "pytz>=2025.1"]
+requires-python = "==3.13.*"
+readme = "README.md"
+license = {text = "Apache 2.0"}
+
+
+[tool.pdm]
+distribution = false

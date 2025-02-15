@@ -1,0 +1,27 @@
+name: Automated Release
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}  # 将输出值传递给后续的步骤
+      tag_name: ${{ steps.release.outputs.tag_name }}  # 将输出值传递给后续的步骤
+    permissions:
+      contents: write        # 允许写入代码内容
+      pull-requests: write   # 允许创建和管理 Pull Requests
+
+    steps:
+      - name: Run Release Please
+        id: release
+        uses: googleapis/release-please-action@v4 # https://github.com/googleapis/release-please-action
+        with:
+          release-type: python  # 这个可以是你的项目使用的配置文件对应的语言, 一般node使用的是package.json
+          token: "${{ secrets.GH_TOKEN }}"  # 使用你的个人访问令牌
+          target-branch: ${{ github.ref_name }}
+

@@ -1,0 +1,8 @@
+.venv/*
+static/*
+__pycache__/*
+tuiwen.sqlite3
+.idea/*
+*.pyc
+.pdm-python
+pdm.lock

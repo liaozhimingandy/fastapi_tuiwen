@@ -1,0 +1,11 @@
+.venv/*
+static/media/*
+pdm-python
+Dockerfile
+.gitignore
+.git/*
+__pycache__/*
+.pdm-python
+.idea/*
+.env
+./docker-compose.yml
