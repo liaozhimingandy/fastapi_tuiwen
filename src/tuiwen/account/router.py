@@ -10,8 +10,9 @@
     @Desc: 
 =================================================
 """
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import List, Annotated, Any
+from pytz import timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -27,7 +28,8 @@ from .models import Account, AccountCreate, AccountPublic, AccountUpdateCommon, 
 from src.tuiwen.utils.jwt_token import generate_jwt_token, verify_jwt_token
 from src.tuiwen.dependencies import get_current_user, check_authentication, oauth2_scheme, get_session
 from src.tuiwen.router import router_public
-from src.tuiwen.utils.utils import get_random_salt
+from src.tuiwen.utils.utils import get_random_salt, convert_to_cst_time
+from src.tuiwen.core import settings, Settings
 
 SCOPES_BASIC = 'basic'
 
@@ -69,7 +71,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     await session.refresh(instance)
     data = {"account_id": instance.account_id, "salt": instance.salt, 'scopes': SCOPES_BASIC}
 
-    refresh_token = generate_jwt_token(data, expires_in=timedelta(days=28), grant_type="refresh_token")
+    refresh_token = generate_jwt_token(data, expires_in=timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES), grant_type="refresh_token")
 
     data.update(**{'jwt_account_id': instance.account_id})
     access_token = generate_jwt_token(data, grant_type="access_token")
@@ -81,7 +83,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 
 @router_oauth.get("/refresh-token/{account_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
                   response_model=AccessToken)
-def refresh_token(account_id: str, refresh_token: str = Depends(oauth2_scheme)):
+async def refresh_token(account_id: str, refresh_token: str = Depends(oauth2_scheme)):
     """
     使用刷新令牌进行更新获取权限令牌,请使用postman测试,header携带认证信息,后续会实现,refresh_token有效期为7天,请妥善保管,重新登录认证后,
     该token作废; <br>
@@ -102,7 +104,7 @@ def refresh_token(account_id: str, refresh_token: str = Depends(oauth2_scheme)):
 
     data = {"account_id": account_id, "salt": payload.get('salt'), 'jwt_account_id': account_id, 'scopes': SCOPES_BASIC}
 
-    access_token = generate_jwt_token(data, grant_type="access_token")
+    access_token = generate_jwt_token(data, grant_type="access_token", expires_in=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
 
     return AccessToken(access_token=access_token, account_id=account_id)
 
@@ -190,6 +192,12 @@ def app_refresh_token(app_id: str, refresh_token: str = Depends(oauth2_scheme)):
 
     return AppAccessToken(access_token=access_token, app_id=app_id)
 
+########################################################################################################################
+@router_public.get("/health_check/", tags=["health"], summary="服务检查检查")
+@router_public.get("/", tags=["root"], summary="服务检查检查")
+async def health_check() -> dict[str, Any]:
+    current_time = convert_to_cst_time(datetime.now())
+    return {"message": "ok", "gmt_created": current_time}
 
 ########################################################################################################################
 
@@ -205,9 +213,6 @@ async def register(account: AccountCreate, session: AsyncSession = Depends(get_s
         if not instance.username:
             instance.username = instance.account_id
 
-        # 重新处理枚举等非基本数据类型; :todo 是否有更优雅的实现方式?
-        # instance.sex = instance.sex.value
-
         session.add(instance)
         await session.commit()
         await session.refresh(instance)
@@ -216,7 +221,6 @@ async def register(account: AccountCreate, session: AsyncSession = Depends(get_s
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        print(e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e.args[0]))
 
     return instance
@@ -245,13 +249,13 @@ async def update_account(account_id: str, account: AccountUpdateCommon, session:
     instance = results.one()
     if not instance:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
+
     account_data = account.model_dump(exclude_unset=True)
     instance.sqlmodel_update(account_data)
 
-    # 重新处理枚举等非基本数据类型; :todo 是否有更优雅的实现方式?
-    instance.sex = instance.sex.value
-
     try:
+        session.add(instance)
+        await session.commit()
         await session.refresh(instance)
     except IntegrityError:
         raise HTTPException(status_code=400, detail="用户名或邮箱已存在!")
@@ -263,12 +267,13 @@ async def search(keyword: str, session: AsyncSession = Depends(get_session), off
                  limit: Annotated[int, Query(le=10)] = 10, ):
     statement = select(Account).where(
         or_(Account.username.contains(keyword), Account.nick_name.contains(keyword))).offset(offset).limit(limit)
-    results = await session.execute(statement)
-    instances = results.all()
-    if not instances:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
+    results = await session.exec(statement)
+    ds = results.all()
+    data = [item for item in ds]
+    if not data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="没有搜索到相关帐户")
 
-    return instances
+    return data
 
 
 @router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=['account'], response_model=AccountPublic)
@@ -280,6 +285,11 @@ async def password_reset(account: AccountPasswordReset, session: AsyncSession = 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
     # 判断验证码是否一致 todo
+    try:
+        assert account.code == "666666", "你的验证码不对"
+    except AssertionError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
     account_data = Account.model_dump(account, exclude_unset=True, exclude={'account_id'})
     instance.sqlmodel_update(account_data)
     instance.salt = get_random_salt(8)
@@ -294,15 +304,16 @@ async def password_reset(account: AccountPasswordReset, session: AsyncSession = 
 async def password_change(request: Request, account: AccountPasswordChange, session: AsyncSession = Depends(get_session),):
     statement = select(Account).where(Account.account_id == request.state.account_id,
                                       Account.password == account.password_current)
-    results = await session.exec(statement)
-    instance = results.first()
-    if not instance:
-        raise HTTPException(status_code=404, detail="原密码不对,请重新输入原密码")
+    results = await session.execute(statement)
+    ds = results.one_or_none()
+    if not ds:
+        raise HTTPException(status_code=400, detail="原密码不对,请重新输入原密码")
 
     try:
+        instance = ds[0]
         assert account.password_new != instance.password, "新密码不能和旧密码相同"
     except AssertionError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.args[0])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     instance.password = account.password_new
     instance.salt = get_random_salt(8)

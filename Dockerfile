@@ -3,6 +3,10 @@ ARG TAG=3.13-slim
 
 FROM python:${TAG} as basic
 
+# 设置环境变量
+ENV LANG C.UTF-8
+ENV LC_ALL C.UTF-8
+
 # pip镜像源
 ENV PIPURL "https://mirrors.aliyun.com/pypi/simple/"
 #ENV PIPURL "https://pypi.org/simple/"
@@ -19,6 +23,10 @@ RUN pip3 install --no-cache-dir pdm -i ${PIPURL} --default-timeout=1000 \
     && rm -f pdm.lock
 
 FROM python:${TAG}
+
+# 设置环境变量
+ENV LANG C.UTF-8
+ENV LC_ALL C.UTF-8
 
 # 如果python大版本有调整,请调整python的路径,示例: 3.13 -> 调整为对应版本
 COPY --from=basic /usr/local/bin /usr/local/bin

@@ -10,18 +10,21 @@
 ================================================="""
 import asyncpg
 from dotenv import load_dotenv, find_dotenv
+
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from src.tuiwen.config import settings
+# 从本地加载.env文件到环境变量中
+_ = load_dotenv(find_dotenv())
+from src.tuiwen.core.config import settings
 
 # 创建异步引擎
 # sqlite_file_name = "tuiwen.sqlite3"
 # DATABASE_URL = f"sqlite+aiosqlite:///{sqlite_file_name}"
 DATABASE_URL = str(settings.SQLALCHEMY_DATABASE_URI)
-engine = create_async_engine(DATABASE_URL, echo=settings.DEBUG)  # Annotated[bool, Doc("是否显示数据库层面日志")]
+engine = create_async_engine(DATABASE_URL, echo=not settings.DEBUG)  # Annotated[bool, Doc("是否显示数据库层面日志")]
 
 # 创建异步session
 async_session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
@@ -29,8 +32,6 @@ async_session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=
 
 async def create_table_async():
     """ 异步的形式创建数据库 """
-    # 加载环境变量
-    _ = load_dotenv(find_dotenv(filename="../.env"))
     from src.tuiwen.account.models import Account
     from src.tuiwen.post.models import Post, Comment, Like, Image
     async with engine.begin() as conn:
@@ -43,11 +44,11 @@ async def create_table_async():
 async def get_async_pool():
     """获取数据库连接池;适合手动管理连接"""
     return await asyncpg.create_pool(
-        user=get_settings().POSTGRES_USER,
-        password=get_settings().POSTGRES_PASSWORD,
-        database=get_settings().POSTGRES_DB,
-        host=get_settings().POSTGRES_HOST,
-        port=get_settings().POSTGRES_PORT,
+        user=settings.POSTGRES_USER,
+        password=settings.POSTGRES_PASSWORD,
+        database=settings.POSTGRES_DB,
+        host=settings.POSTGRES_HOST,
+        port=settings.POSTGRES_PORT,
         min_size=1,
         max_size=10,
         max_queries=50000,

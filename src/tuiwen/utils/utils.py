@@ -12,10 +12,14 @@
 """
 import tomllib
 import uuid
+from datetime import datetime
 
+from pytz import timezone
 from PIL import Image
 from fastapi import UploadFile
 from fastapi.routing import APIRoute
+
+from src.tuiwen.core import settings
 
 
 # 创建一个图片类型检查函数
@@ -43,9 +47,49 @@ def get_version_from_pyproject(file_name: str) -> tuple[str, str]:
 
 
 def get_random_salt(length: int = 8) -> str:
-    """返回指定长度的salt"""
+    """
+    返回指定长度的salt
+
+    Args:
+        length: 长度,默认为8
+
+    Returns:
+        字符串salt
+
+    """
     return str(uuid.uuid4().hex[:length])
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
-    return f"{route.tags[0]}-{route.name}"
+    """
+    自定义生成路径的唯一标识
+
+    Args:
+        route: APIRoute
+
+    Returns:
+        路径的唯一标识,字符串
+
+    """
+    return f"{route.tags[0]}-{route.name.replace('_', '-')}"
+
+
+def convert_to_cst_time(time: datetime) -> datetime:
+    """
+    将指定时间对象转成北京东八时区的时间
+
+    Args:
+        time (datetime): datetime
+
+    Returns:
+        北京时区的时间字符串
+
+    Examples Usage:
+        convert_to_cst_time(datetime.now())
+
+    """
+    if time is None:
+        time = time.replace(tzinfo=timezone('UTC'))
+    return time.astimezone(timezone(settings.TIME_ZONE))
+
+

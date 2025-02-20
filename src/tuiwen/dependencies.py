@@ -6,7 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
 from src.tuiwen.account.models import Account
-from src.tuiwen.utils.database import async_session
+from src.tuiwen.core.database import async_session
 from src.tuiwen.utils.jwt_token import verify_jwt_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/oauth/authorize/password/", scopes={
@@ -45,7 +45,7 @@ async def check_authentication(request: Request, token: Annotated[str, Depends(o
     )
 
     try:
-        payload = verify_jwt_token(token, grant_type='access_token')
+        payload = verify_jwt_token(token, grant_type='access_token' if not request.url.path.startswith('/oauth/refresh-token/') else 'refresh_token')
         assert 'message' not in payload, payload["message"]
     except AssertionError as _:
         raise credentials_exception

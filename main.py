@@ -1,18 +1,26 @@
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html, get_swagger_ui_oauth2_redirect_html, get_redoc_html
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
+# 从本地加载.env文件到环境变量中
+_ = load_dotenv(find_dotenv())
+
 from src.tuiwen import api_router
-from src.tuiwen import settings
+from src.tuiwen.core import settings
 from src.tuiwen.utils.utils import get_version_from_pyproject, custom_generate_unique_id
 
 __version__, description = get_version_from_pyproject("pyproject.toml")
 
 # 标签描述配置
 tags_metadata = [
+    {
+        "name": "health",
+        "description": "服务健康状态检查.",
+    },
     {
         "name": "oauth",
         "description": "和token获取相关操作.",
@@ -50,6 +58,15 @@ servers = [
     {"url": "http://127.0.0.1:8000", "description": "本地开发环境"},
 ]
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """app生命周期函数"""
+    # app 启动前
+    # app.state.pool = await get_async_pool()
+    yield
+    # app 关闭前
+    # app.state.pool.close()
+
 app = FastAPI(title="内部API文档",
               description=description,
               version=__version__,
@@ -68,16 +85,9 @@ app = FastAPI(title="内部API文档",
               servers=servers,
               docs_url=None,
               redoc_url=None,
-              generate_unique_id_function=custom_generate_unique_id
+              generate_unique_id_function=custom_generate_unique_id,
+              lifespan=lifespan,
               )
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Load the ML model
-    # app.state.pool = await get_async_pool()
-    yield
-    # Clean up the ML models and release the resources
-    # app.state.pool.close()
 
 
 app.include_router(api_router)

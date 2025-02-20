@@ -1,3 +1,4 @@
+import secrets
 from typing import Any, Annotated
 
 from pydantic import computed_field, BeforeValidator, AnyUrl
@@ -17,7 +18,8 @@ class Settings(BaseSettings):
     TABLE_PREFIX: str
     DEBUG: bool
     ACCOUNT_ID_PREFIX: str
-    SECRET_KEY: str
+    # SECRET_KEY: str = secrets.token_urlsafe(16)
+    SECRET_KEY: str = 'tw-insecure-5xlvJWvZ_TOiJzKvtpTuBMfllIJ1WE7gvODgA41dvnA'
     STATIC_URL: str
     ALLOWED_IMAGE_FORMATS: str
     POSTGRES_SERVER: str
@@ -25,17 +27,15 @@ class Settings(BaseSettings):
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str = ""
     POSTGRES_DB: str = ""
+    TIME_ZONE: str = "Asia/Shanghai"
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 28
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 1
 
     BACKEND_CORS_ORIGINS: Annotated[
         list[AnyUrl] | str, BeforeValidator(parse_cors)
     ]
 
-    model_config = SettingsConfigDict(
-        # Use top level .env file (one level above ./backend/)
-        env_file=".env",
-        env_ignore_empty=True,
-        extra="ignore",
-    )
+    model_config = SettingsConfigDict(env_ignored_types=True, extra='ignore')
 
     @computed_field  # type: ignore[prop-decorator]
     @property

@@ -1,13 +1,13 @@
 # SECRET_KEY用于JWT令牌签名的随机密钥
 import uuid
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 
 import jwt
 
-from src.tuiwen.config import settings, Settings
+from src.tuiwen.core import settings
 
 
-def generate_jwt_token(data: dict, settings: Settings = settings, expires_in: timedelta = timedelta(days=1),
+def generate_jwt_token(data: dict, expires_in: timedelta = timedelta(days=1),
                        grant_type: str = 'client_credential') -> dict:
     """
 
@@ -25,14 +25,13 @@ def generate_jwt_token(data: dict, settings: Settings = settings, expires_in: ti
     :param expires_in: 过期时间,默认2小时
     :return:
     """
-
     payload = {
         "aud": "www.alsoapp.com",
         "iss": "Online JWT Builder",
         "jti": str(uuid.uuid4()).replace('-', ''),
-        "iat": datetime.utcnow(),
-        "nbf": datetime.utcnow(),
-        "exp": datetime.utcnow() + expires_in + timedelta(minutes=30),
+        "iat": datetime.now(timezone.utc),
+        "nbf": datetime.now(timezone.utc),
+        "exp": datetime.now(timezone.utc) + expires_in + timedelta(minutes=30),
         "grant_type": grant_type,
         "version": "2.0",
         "type": "Production"
@@ -45,7 +44,7 @@ def generate_jwt_token(data: dict, settings: Settings = settings, expires_in: ti
     return jwt.encode(payload, key=settings.SECRET_KEY, algorithm='HS256')
 
 
-def verify_jwt_token(data: str, settings: Settings = settings, grant_type: str = "client_credential") -> dict:
+def verify_jwt_token(data: str, grant_type: str = "access_token") -> dict:
     """
 
     解析jwt token
