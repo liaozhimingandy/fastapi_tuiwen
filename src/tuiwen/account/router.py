@@ -12,7 +12,6 @@
 """
 from datetime import timedelta, datetime
 from typing import List, Annotated, Any
-from pytz import timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -29,7 +28,7 @@ from src.tuiwen.utils.jwt_token import generate_jwt_token, verify_jwt_token
 from src.tuiwen.dependencies import get_current_user, check_authentication, oauth2_scheme, get_session
 from src.tuiwen.router import router_public
 from src.tuiwen.utils.utils import get_random_salt, convert_to_cst_time
-from src.tuiwen.core import settings, Settings
+from src.tuiwen.core import settings
 
 SCOPES_BASIC = 'basic'
 
@@ -246,7 +245,7 @@ async def update_account(account_id: str, account: AccountUpdateCommon, session:
 
     statement = select(Account).where(Account.account_id == account_id)
     results = await session.exec(statement)
-    instance = results.one()
+    instance = results.first()
     if not instance:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
@@ -304,13 +303,12 @@ async def password_reset(account: AccountPasswordReset, session: AsyncSession = 
 async def password_change(request: Request, account: AccountPasswordChange, session: AsyncSession = Depends(get_session),):
     statement = select(Account).where(Account.account_id == request.state.account_id,
                                       Account.password == account.password_current)
-    results = await session.execute(statement)
-    ds = results.one_or_none()
-    if not ds:
+    results = await session.exec(statement)
+    instance = results.first()
+    if not instance:
         raise HTTPException(status_code=400, detail="原密码不对,请重新输入原密码")
 
     try:
-        instance = ds[0]
         assert account.password_new != instance.password, "新密码不能和旧密码相同"
     except AssertionError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

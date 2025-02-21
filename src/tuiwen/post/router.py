@@ -8,7 +8,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from typing_extensions import Doc
 
-from sqlmodel import select
+from sqlmodel import select, delete, update
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Request
 
@@ -42,38 +42,25 @@ async def create_post(post: PostCreate, request: Request, session: AsyncSession 
 @router_post.get("/lasted/", summary="返回最近十条帖子", response_model=list[Post])
 async def get_posts_lasted(session: AsyncSession = Depends(get_session)):
     statement = select(Post).where(Post.right_status == Post.RightStatusEnum.PUBLIC).order_by(Post.id).limit(10)
-    result = await (session.execute(statement))
-    ds = result.all()
-    data = []
-
-    for post in ds:
-        post[0].gmt_created = convert_to_cst_time(post[0].gmt_created)
-        data.append(post[0])
-
-    return data
-
-@router_post.put('/{post_id}/right/', summary="更新帖子的公开状态", response_model=Post)
-async def update_post_right(post_id: str, post_right: PostRightStatusUpdate, request: Request, session: AsyncSession = Depends(get_session)):
-    statement = select(Post).where(Post.post_id == post_id, Post.account_id == request.state.account_id)
     result = await (session.exec(statement))
-    instance = result.first()
-    if not instance:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="没有需要更新的帖子")
+    ds = result.all()
+    for post in ds:
+        post.gmt_created = convert_to_cst_time(post.gmt_created)
+    return ds
 
-    instance.right_status = post_right.right_status
-    session.add(instance)
+@router_post.put('/{post_id}/right/', summary="更新帖子的公开状态")
+async def update_post_right(post_id: str, post_right: PostRightStatusUpdate, request: Request, session: AsyncSession = Depends(get_session)):
+    statement = update(Post).where(Post.post_id == post_id, Post.account_id == request.state.account_id).values(right_status=post_right.right_status)
+    await session.exec(statement)
     await session.commit()
-    await session.refresh(instance)
 
-    return instance
+    return {"message": "success"}
 
 @router_post.delete("/{post_id}/", summary="删除指定的帖子")
 async def delete_post(post_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_session)):
-    statement = select(Post).where(Post.post_id == post_id, Post.account_id == request.state.account_id)
-    ds = await session.exec(statement)
+    statement = delete(Post).where(Post.post_id == post_id, Post.account_id == request.state.account_id)
 
-    for instance in ds:
-        await session.delete(instance)
+    await session.exec(statement)
     await session.commit()
 
     return {"message": "success"}
@@ -101,14 +88,9 @@ async def create_comment(comment: CommentInput, session: AsyncSession = Depends(
 
 @router_comment.delete('/{comment_id}/', summary='删除指定的评论', dependencies=[])
 async def delete_comment(comment_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_session)):
-    statement = select(Comment).where(Comment.comment_id == comment_id, Comment.account_id == request.state.account_id)
-    results = await session.exec(statement)
-    instance = results.first()
+    statement = delete(Comment).where(Comment.comment_id == comment_id, Comment.account_id == request.state.account_id)
 
-    if not instance:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="comment not found")
-
-    await session.delete(instance)
+    await session.exec(statement)
     await session.commit()
 
     return {"message": "success"}
@@ -135,14 +117,10 @@ async def create_like(like: LikeInput, session: AsyncSession = Depends(get_sessi
 
 @router_like.delete('/{obj_id}/', summary='取消赞')
 async def delete_like(obj_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_session)):
-    statement = select(Like).where(Like.obj_id == obj_id, Like.account_id == request.state.account_id,
+    statement = delete(Like).where(Like.obj_id == obj_id, Like.account_id == request.state.account_id,
                                    Like.obj_type==Like.ObjTypeEnum.POST)
-    results = await session.exec(statement)
-
-    for instance in results:
-        await session.delete(instance)
+    await session.exec(statement)
     await session.commit()
-
     return {"message": "success"}
 
 ########################################################################################################################

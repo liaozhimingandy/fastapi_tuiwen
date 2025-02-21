@@ -4,9 +4,8 @@ from datetime import datetime, timezone
 
 import pytz
 from pydantic import field_validator
-
 from sqlalchemy import DateTime, Enum as SaENUM, JSON
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, Index
 
 from src.tuiwen.core import settings
 
@@ -87,8 +86,8 @@ class Post(PostCreate, table=True):
 
 class CommentInput(SQLModel):
     """
-        评论模型
-        """
+    评论模型
+    """
 
     class ObjTypeEnum(Enum):
         """评论对象类别"""
@@ -102,9 +101,6 @@ class CommentInput(SQLModel):
                 9: "其它"
             }
             return mapping[self.value]
-
-    __tablename__ = f"{TABLE_PREFIX}comment"  # 表名
-    __table_args__ = {'comment': '评论'}  # 表备注
 
     id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
     comment_id: uuid.UUID = Field(default_factory=uuid.uuid4, index=True, description='评论ID',
@@ -134,16 +130,14 @@ class CommentInput(SQLModel):
         return value.astimezone(pytz.timezone(settings.TIME_ZONE))
 
 class Comment(CommentInput, table=True):
-    pass
+    __tablename__ = f"{TABLE_PREFIX}comment"  # 表名
+    __table_args__ = {'comment': '评论'}  # 表备注
 
 
 class LikeInput(SQLModel):
     """
-        赞模型
-        """
-
-    __tablename__ = f"{TABLE_PREFIX}like"  # 表名
-    __table_args__ = {'comment': '赞'}  # 表备注
+    赞模型
+    """
 
     class ObjTypeEnum(Enum):
         """评论对象类别"""
@@ -161,7 +155,14 @@ class LikeInput(SQLModel):
                                   sa_type=DateTime(timezone=True))
 
 class Like(LikeInput, table=True):
-    pass
+    __tablename__ = f"{TABLE_PREFIX}like"  # 表名
+
+    # 创建联合索引
+    __table_args__ = (
+        Index('idx_obj_type_obj_id_account_id_unique', 'obj_type', 'obj_id', 'account_id', unique=True),
+        Index('idx_obj_type_obj_id', 'obj_type', 'obj_id'),
+    )
+
 
 class ImageBase(SQLModel):
     image_url: str = Field(..., max_length=128, description='图片url', sa_column_kwargs={'comment': '图片url'})

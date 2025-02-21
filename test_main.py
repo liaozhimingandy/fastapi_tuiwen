@@ -10,15 +10,22 @@
     @Desc: 测试用例
 =================================================
 """
+from collections.abc import Generator
 from datetime import datetime
 import random
 import unittest
 import uuid
 
-import httpx
 import pytz
 import pytest
+from starlette.testclient import TestClient
 
+from main import app
+
+@pytest.fixture(scope="module")
+def client() -> Generator[TestClient, None, None]:
+    with TestClient(app) as c:
+        yield c
 
 class TestMain:
     """测试类"""
@@ -31,8 +38,8 @@ class TestMain:
     post_id = ''
     comment_id = ''
 
-    @pytest.mark.run(order=1)
-    def test_register(self) -> None:
+
+    def test_register(self, client: TestClient) -> None:
         """测试用户注册"""
         data = {
             "email": f"user{random.randint(1, 20000)}@example.com",
@@ -44,118 +51,104 @@ class TestMain:
             "avatar": "https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png"
         }
 
-        with httpx.Client() as client:
-            r = client.post(f"{self.BASE_URL}/accounts/register/", json=data,
-                            headers={"Content-Type": "application/json"})
-            assert r.status_code == 200
-            TestMain.username = data.get('email')
-            TestMain.passowrd = data.get('password')
-            TestMain.account_id = r.json().get('account_id')
+        # with httpx.Client() as client:
+        r = client.post(f"{self.BASE_URL}/accounts/register/", json=data,
+                        headers={"Content-Type": "application/json"})
+        assert r.status_code == 200
+        TestMain.username = data.get('email')
+        TestMain.passowrd = data.get('password')
+        TestMain.account_id = r.json().get('account_id')
 
 
-    @pytest.mark.run(order=2)
-    def test_authorize(self) -> None:
+    def test_authorize(self, client: TestClient) -> None:
         # 获取请求token
-        with httpx.Client() as client:
-            form_data = {
-                "username": TestMain.username,
-                "password": TestMain.passowrd,
-            }
-            r = client.post(f"{self.BASE_URL}/oauth/authorize/password/", data=form_data,
-                            headers={"Content-Type": "application/x-www-form-urlencoded"})
-            assert r.status_code == 200
-            TestMain.token = r.json()
+        # with httpx.Client() as client:
+        form_data = {
+            "username": TestMain.username,
+            "password": TestMain.passowrd,
+        }
+        r = client.post(f"{self.BASE_URL}/oauth/authorize/password/", data=form_data,
+                        headers={"Content-Type": "application/x-www-form-urlencoded"})
+        assert r.status_code == 200
+        TestMain.token = r.json()
 
-    @pytest.mark.run(order=3)
-    def test_refresh_token(self):
+
+    def test_refresh_token(self, client: TestClient) -> None:
         """测试刷新token"""
-        with httpx.Client() as client:
-            r = client.get(f'{self.BASE_URL}/oauth/refresh-token/{TestMain.account_id}/refresh_token/',
-                            headers={"Content-Type": "application/json", "Authorization": f"Bearer {TestMain.token.get('refresh_token')}"})
-            assert r.status_code == 200
-            TestMain.token['access_token'] = r.json().get('access_token')
+        r = client.get(f'{self.BASE_URL}/oauth/refresh-token/{TestMain.account_id}/refresh_token/',
+                        headers={"Content-Type": "application/json", "Authorization": f"Bearer {TestMain.token.get('refresh_token')}"})
+        assert r.status_code == 200
+        TestMain.token['access_token'] = r.json().get('access_token')
 
-    @pytest.mark.run(order=4)
-    def test_health_check(self):
+    def test_health_check(self, client: TestClient) -> None:
         """测试健康检查"""
         # 直接使用 httpx 发送同步 HTTP 请求
-        with httpx.Client() as client:  # 使用同步客户端
-            r = client.get(f"{self.BASE_URL}/health_check/")
-            assert r.status_code == 200
+        r = client.get(f"{self.BASE_URL}/health_check/")
+        assert r.status_code == 200
 
-    @pytest.mark.run(order=5)
-    def test_get_account(self):
+    def test_get_account(self, client: TestClient) -> None:
         """获取帐户信息"""
-        with httpx.Client() as client:
-            # ok
-            r = client.get(f"{self.BASE_URL}/accounts/{TestMain.account_id}/",
-                           headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert r.status_code == 200
-            # 404
-            r = client.get(f"{self.BASE_URL}/accounts/{TestMain.account_id}{random.randint(0, 9000)}/",
-                           headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert r.status_code == 404
+        # ok
+        r = client.get(f"{self.BASE_URL}/accounts/{TestMain.account_id}/",
+                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        assert r.status_code == 200
+        # 404
+        r = client.get(f"{self.BASE_URL}/accounts/{TestMain.account_id}{random.randint(0, 9000)}/",
+                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        assert r.status_code == 404
 
-    @pytest.mark.run(order=6)
-    def test_account_search(self):
+    def test_account_search(self, client: TestClient) -> None:
         """搜索功能"""
         keyword = "s"
-        with httpx.Client() as client:
-            # ok
-            r = client.get(f"{self.BASE_URL}/accounts/search/{keyword}/",
-                           headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert r.status_code == 200
+        # ok
+        r = client.get(f"{self.BASE_URL}/accounts/search/{keyword}/",
+                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        assert r.status_code == 200
 
-            # 404
-            r = client.get(f"{self.BASE_URL}/accounts/search/{keyword}-{str(uuid.uuid4())}/",
-                           headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert r.status_code == 404
+        # 404
+        r = client.get(f"{self.BASE_URL}/accounts/search/{keyword}-{str(uuid.uuid4())}/",
+                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        assert r.status_code == 404
 
-    @pytest.mark.run(order=7)
-    def test_put_account(self):
+    def test_put_account(self, client: TestClient) -> None:
         """更新帐户信息"""
         data = {
             "nick_name": "测试test",
         }
-        with httpx.Client() as client:
-            response = client.put(f"{self.BASE_URL}/accounts/{TestMain.account_id}/", json=data,
-                                  headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert response.status_code == 200
+        response = client.put(f"{self.BASE_URL}/accounts/{TestMain.account_id}/", json=data,
+                              headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        assert response.status_code == 200
 
-    @pytest.mark.run(order=8)
-    def test_password_reset(self):
+    def test_password_reset(self, client: TestClient) -> None:
         """密码重置"""
         data = {
             "account_id": TestMain.account_id,
             "password": "stringstringstringstringstringst",
             "code": "666666"
         }
-        with httpx.Client() as client:
-            r = client.put(f'{self.BASE_URL}/accounts/password/reset/', json=data,
-                           headers={"Content-Type": "application/json"})
-            assert r.status_code == 200
-            # 测试验证码不对的情况
-            data['code'] = "666777"
-            r = client.put(f'{self.BASE_URL}/accounts/password/reset/', json=data,
-                           headers={"Content-Type": "application/json"})
-            assert r.status_code == 400
+        r = client.put(f'{self.BASE_URL}/accounts/password/reset/', json=data,
+                       headers={"Content-Type": "application/json"})
+        assert r.status_code == 200
+        # 测试验证码不对的情况
+        data['code'] = "666777"
+        r = client.put(f'{self.BASE_URL}/accounts/password/reset/', json=data,
+                       headers={"Content-Type": "application/json"})
+        assert r.status_code == 400
 
-    @pytest.mark.run(order=9)
-    def test_password_change(self):
+
+    def test_password_change(self, client: TestClient) -> None:
         """测试密码修改"""
         data = {
             "account_id": TestMain.account_id,
             "password_current": self.passowrd,
             "password_new": self.passowrd
         }
-        with httpx.Client() as client:
-            r = client.put(f'{self.BASE_URL}/accounts/password/change/', json=data,
-                           headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
-                                    "Content-Type": "application/json"})
-            assert r.status_code == 400
+        r = client.put(f'{self.BASE_URL}/accounts/password/change/', json=data,
+                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
+                                "Content-Type": "application/json"})
+        assert r.status_code == 400
 
-    @pytest.mark.run(order=10)
-    def test_create_post(self):
+    def test_create_post(self, client: TestClient) -> None:
         """创建帖子"""
         data = {
             "post_id": str(uuid.uuid4()),
@@ -169,23 +162,19 @@ class TestMain:
             "latitude": "string",
             "longitude": "string"
         }
-        with httpx.Client() as client:
-            r = client.post(f'{self.BASE_URL}/posts/', json=data,
-                            headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
-                                     "Content-Type": "application/json"})
-            assert r.status_code == 200
-            TestMain.post_id = data.get('post_id')
+        r = client.post(f'{self.BASE_URL}/posts/', json=data,
+                        headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
+                                 "Content-Type": "application/json"})
+        assert r.status_code == 200
+        TestMain.post_id = data.get('post_id')
 
-    @pytest.mark.run(order=11)
-    def test_get_posts_lasted(self):
+    def test_get_posts_lasted(self, client: TestClient) -> None:
         """获取最新帖子"""
-        with httpx.Client() as client:
-            r = client.get(f"{self.BASE_URL}/posts/lasted/",
-                           headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert r.status_code == 200
+        r = client.get(f"{self.BASE_URL}/posts/lasted/",
+                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        assert r.status_code == 200
 
-    @pytest.mark.run(order=12)
-    def test_update_post_right(self):
+    def test_update_post_right(self, client: TestClient) -> None:
         """测试更新帖子状态"""
 
         data = {
@@ -193,21 +182,17 @@ class TestMain:
             "account_id": TestMain.account_id,
             "right_status": 2
         }
-        with httpx.Client() as client:
-            r = client.put(f"{self.BASE_URL}/posts/{data['post_id']}/right/", json=data,
-                           headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert 200 == r.status_code
+        r = client.put(f"{self.BASE_URL}/posts/{data['post_id']}/right/", json=data,
+                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        assert 200 == r.status_code
 
-    @pytest.mark.run(order=913)
-    def test_delete_post(self):
+    def test_delete_post(self, client: TestClient) -> None:
         """删除帖子"""
-        with httpx.Client() as client:
-            response = client.delete(f"{self.BASE_URL}/posts/{TestMain.post_id}/",
-                                     headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert response.status_code == 200
+        r = client.delete(f"{self.BASE_URL}/posts/{TestMain.post_id}/",
+                                 headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        assert r.status_code == 200
 
-    @pytest.mark.run(order=14)
-    def test_create_comment(self):
+    def test_create_comment(self, client: TestClient) -> None:
         """创建评论"""
         data = {
             "id": 0,
@@ -219,23 +204,19 @@ class TestMain:
             "obj_id": str(uuid.uuid4()),
             "gmt_created": datetime.now(pytz.timezone('Asia/Shanghai')).isoformat(),
         }
-        with httpx.Client() as client:
-            r = client.post(f'{self.BASE_URL}/comments/', json=data,
-                            headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
-                                     "Content-Type": "application/json"}, )
-            assert r.status_code == 200
-            TestMain.comment_id = data.get('comment_id')
+        r = client.post(f'{self.BASE_URL}/comments/', json=data,
+                        headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
+                                 "Content-Type": "application/json"}, )
+        assert r.status_code == 200
+        TestMain.comment_id = data.get('comment_id')
 
-    @pytest.mark.run(order=15)
-    def test_delete_comment(self):
+    def test_delete_comment(self, client: TestClient) -> None:
         """删除帖子"""
-        with httpx.Client() as client:
-            r = client.delete(f"{self.BASE_URL}/comments/{TestMain.comment_id}/",
-                                     headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert r.status_code == 200
+        r = client.delete(f"{self.BASE_URL}/comments/{TestMain.comment_id}/",
+                                 headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        assert r.status_code == 200
 
-    @pytest.mark.run(order=16)
-    def test_create_like(self):
+    def test_create_like(self, client: TestClient) -> None:
         """给帖子点赞"""
         data = {
             "id": 0,
@@ -243,30 +224,24 @@ class TestMain:
             "account_id": TestMain.account_id,
             "gmt_created": datetime.now(pytz.timezone('Asia/Shanghai')).isoformat()
         }
-        with httpx.Client() as client:
-            r = client.post(f'{self.BASE_URL}/likes/', json=data,
-                            headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
-                                     "content-type": "application/json"})
-            assert r.status_code == 200
+        r = client.post(f'{self.BASE_URL}/likes/', json=data,
+                        headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
+                                 "content-type": "application/json"})
+        assert r.status_code == 200
 
-    @pytest.mark.run(order=17)
-    def test_delete_like(self):
+    def test_delete_like(self, client: TestClient) -> None:
         """取消点赞"""
-        with httpx.Client() as client:
-            r = client.delete(f"{self.BASE_URL}/likes/{TestMain.post_id}/",
-                              headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert r.status_code == 200
+        r = client.delete(f"{self.BASE_URL}/likes/{TestMain.post_id}/",
+                          headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        assert r.status_code == 200
 
-    @pytest.mark.run(order=18)
-    def test_upload_image(self):
+    def test_upload_image(self, client: TestClient) -> None:
         """测试图片上传"""
-
-        with httpx.Client() as client:
-            with open(r'C:\Users\liaoz\Downloads\610d9b4d-d5dd-4758-8cd3-eb029b2a39dc.jpg', 'rb') as f:
-                files = {'file': ('test.jpg', f, 'image/jpeg')}
-                response = client.post(f'{self.BASE_URL}/upload/image/', files=files,
-                                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-                assert response.status_code == 200
+        with open(r'C:\Users\liaoz\Downloads\610d9b4d-d5dd-4758-8cd3-eb029b2a39dc.jpg', 'rb') as f:
+            files = {'file': ('test.jpg', f, 'image/jpeg')}
+            response = client.post(f'{self.BASE_URL}/upload/image/', files=files,
+                                   headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+            assert response.status_code == 200
 
 
 if __name__ == '__main__':
