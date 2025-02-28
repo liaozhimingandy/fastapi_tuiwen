@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic_core import ValidationError
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import select, or_
+from sqlmodel import select, or_, text
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
@@ -56,9 +56,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     try:
         statement = select(Account).where(Account.email == form_data.username, Account.password == form_data.password,
                                           Account.is_active == True)
-        reuslts = await session.exec(statement)
-        instance = reuslts.first()
-
+        instance = (await session.exec(statement)).first()
         assert instance is not None, '请重新检查你的用户名和密码'
     except AssertionError as e:
         raise HTTPException(status_code=404, detail=str(e), headers={'WWW-Authenticate': 'Bearer'})
@@ -192,7 +190,7 @@ def app_refresh_token(app_id: str, refresh_token: str = Depends(oauth2_scheme)):
     return AppAccessToken(access_token=access_token, app_id=app_id)
 
 ########################################################################################################################
-@router_public.get("/health_check/", tags=["health"], summary="服务检查检查")
+@router_public.get("/health-check/", tags=["health"], summary="服务检查检查")
 @router_public.get("/", tags=["root"], summary="服务检查检查")
 async def health_check() -> dict[str, Any]:
     current_time = convert_to_cst_time(datetime.now())
@@ -205,8 +203,11 @@ router_account = APIRouter(prefix="/accounts", tags=["account", ], dependencies=
 
 @router_public.post("/accounts/register/", summary="用户注册", tags=["account", ], response_model=AccountPublic)
 async def register(account: AccountCreate, session: AsyncSession = Depends(get_session)):
+    # 执行原生sql
+    # result = (await session.exec(text("select id from tuiwen_account"))).all()
+    # print(result)
     try:
-        account_data = Account.model_dump(account)
+        account_data = AccountCreate.model_dump(account)
         instance = Account(**account_data)
 
         if not instance.username:
@@ -228,8 +229,7 @@ async def register(account: AccountCreate, session: AsyncSession = Depends(get_s
 @router_account.get("/{account_id}/", summary="查询账户信息", response_model=AccountPublic)
 async def get_account(account_id: str, session: AsyncSession = Depends(get_session)):
     statement = select(Account).where(Account.account_id == account_id)
-    results = await session.exec(statement)
-    instance = results.first()
+    instance = (await session.exec(statement)).first()
     if not instance:
         raise HTTPException(status_code=404, detail="no such account")
     return instance
@@ -244,8 +244,7 @@ async def update_account(account_id: str, account: AccountUpdateCommon, session:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     statement = select(Account).where(Account.account_id == account_id)
-    results = await session.exec(statement)
-    instance = results.first()
+    instance = (await session.exec(statement)).first()
     if not instance:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
@@ -266,8 +265,7 @@ async def search(keyword: str, session: AsyncSession = Depends(get_session), off
                  limit: Annotated[int, Query(le=10)] = 10, ):
     statement = select(Account).where(
         or_(Account.username.contains(keyword), Account.nick_name.contains(keyword))).offset(offset).limit(limit)
-    results = await session.exec(statement)
-    ds = results.all()
+    ds = (await session.exec(statement)).all()
     data = [item for item in ds]
     if not data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="没有搜索到相关帐户")
@@ -278,8 +276,7 @@ async def search(keyword: str, session: AsyncSession = Depends(get_session), off
 @router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=['account'], response_model=AccountPublic)
 async def password_reset(account: AccountPasswordReset, session: AsyncSession = Depends(get_session)):
     statement = select(Account).where(Account.account_id == account.account_id)
-    results = await session.exec(statement)
-    instance = results.first()
+    instance = (await session.exec(statement)).first()
     if not instance:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
@@ -303,8 +300,7 @@ async def password_reset(account: AccountPasswordReset, session: AsyncSession = 
 async def password_change(request: Request, account: AccountPasswordChange, session: AsyncSession = Depends(get_session),):
     statement = select(Account).where(Account.account_id == request.state.account_id,
                                       Account.password == account.password_current)
-    results = await session.exec(statement)
-    instance = results.first()
+    instance = (await session.exec(statement)).first()
     if not instance:
         raise HTTPException(status_code=400, detail="原密码不对,请重新输入原密码")
 

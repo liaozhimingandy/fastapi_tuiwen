@@ -1,7 +1,29 @@
 # 定义镜像的标签
 ARG TAG=3.13-slim
 
-FROM python:${TAG} as basic
+FROM python:${TAG} as base
+
+# pip镜像源
+ENV PIPURL "https://mirrors.aliyun.com/pypi/simple/"
+# ENV PIPURL "https://pypi.org/simple/"
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制项目依赖文件到容器
+COPY pdm.lock .
+
+# 安装 pdm 及项目依赖
+RUN pip install --no-cache-dir pdm -i ${PIPURL} --default-timeout=1000 \
+    && pdm export -o requirements.txt --without-hashes
+
+FROM python:${TAG}
+
+# 复制构建产物
+COPY --from=base /app/requirements.txt /app/requirements.txt
+
+# 设置工作目录
+WORKDIR /app
 
 # 设置环境变量
 ENV LANG C.UTF-8
@@ -9,30 +31,12 @@ ENV LC_ALL C.UTF-8
 
 # pip镜像源
 ENV PIPURL "https://mirrors.aliyun.com/pypi/simple/"
-#ENV PIPURL "https://pypi.org/simple/"
-
-# change apt-get mirror
-COPY pyproject.toml .
+# ENV PIPURL "https://pypi.org/simple/"
 
 # 安装依赖包
-RUN pip3 install --no-cache-dir pdm -i ${PIPURL} --default-timeout=1000 \
-    && pdm lock \
-    && pdm export -o requirements.txt  --without-hashes \
-    && pip3 install --no-cache-dir -r requirements.txt -i ${PIPURL} --default-timeout=1000 \
-    && rm -f requirements.txt \
-    && rm -f pdm.lock
+RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt -i ${PIPURL} --default-timeout=1000
 
-FROM python:${TAG}
-
-# 设置环境变量
-ENV LANG C.UTF-8
-ENV LC_ALL C.UTF-8
-
-# 如果python大版本有调整,请调整python的路径,示例: 3.13 -> 调整为对应版本
-COPY --from=basic /usr/local/bin /usr/local/bin
-COPY --from=basic /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
-
-RUN mkdir /app
+# 复制应用代码到容器
 COPY . /app
 
 WORKDIR /app

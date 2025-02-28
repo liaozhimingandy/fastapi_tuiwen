@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 1
 
     BACKEND_CORS_ORIGINS: Annotated[
-        list[AnyUrl] | str, BeforeValidator(parse_cors)
+        list[str] | str, BeforeValidator(parse_cors)
     ]
 
     model_config = SettingsConfigDict(env_ignored_types=True, extra='ignore')

@@ -8,9 +8,13 @@
     @Date：2025/1/11 11:44
     @Desc: 
 ================================================="""
+from typing import Any
+
 import asyncpg
 from dotenv import load_dotenv, find_dotenv
 
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
@@ -23,6 +27,7 @@ from src.tuiwen.core.config import settings
 # 创建异步引擎
 # sqlite_file_name = "tuiwen.sqlite3"
 # DATABASE_URL = f"sqlite+aiosqlite:///{sqlite_file_name}"
+# DATABASE_URL = postgresql+asyncpg://zhiming:zhiming@localhost:5432/tuiwen
 DATABASE_URL = str(settings.SQLALCHEMY_DATABASE_URI)
 engine = create_async_engine(DATABASE_URL, echo=not settings.DEBUG)  # Annotated[bool, Doc("是否显示数据库层面日志")]
 
@@ -33,7 +38,7 @@ async_session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=
 async def create_table_async():
     """ 异步的形式创建数据库 """
     from src.tuiwen.account.models import Account
-    from src.tuiwen.post.models import Post, Comment, Like, Image
+    from src.tuiwen.post.models import Post, Comment, Like, Image, Follow
     async with engine.begin() as conn:
         # 使用 SQLAlchemy 的异步连接创建表
         await conn.run_sync(SQLModel.metadata.drop_all)
@@ -56,6 +61,19 @@ async def get_async_pool():
         timeout=60.0,
     )
 
+
+async def add_instance(session, instance) -> Any:
+    """将实例添加到数据库"""
+    try:
+        session.add(instance)
+        await session.commit()
+        await session.refresh(instance)
+    except IntegrityError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请勿重复提交")
+    except Exception as e:
+        raise e  # 将异常重新抛出
+
+    return instance
 
 if __name__ == "__main__":
     import asyncio

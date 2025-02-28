@@ -18,7 +18,6 @@ from enum import Enum
 import pytz
 from pydantic import EmailStr, field_validator
 from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM
-
 from sqlmodel import SQLModel, Field
 
 from src.tuiwen.core import settings
@@ -80,7 +79,7 @@ class AccountUpdateCommon(SQLModel):
                                     sa_column_kwargs={'comment': '区域代码'}, sa_type=SaENUM(AreaCodeEnum, values_callable=lambda x: [e.value for e in x]))
     sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SaENUM(SexEnum, values_callable=lambda x: [str(e. value) for e in x]),
                          description='性别',sa_column_kwargs={'comment': '性别'})
-    avatar: str | None = Field(None, max_length=200, description='头像链接', sa_column_kwargs={'comment': '头像链接'})
+    avatar: str = Field(None, max_length=200, description='头像链接', sa_column_kwargs={'comment': '头像链接'})
 
 
     @field_validator('gmt_birth', mode="after") # type: ignore[prop-decorator]
@@ -110,7 +109,7 @@ class AccountBase(AccountUpdateCommon):
     """
     account_id: str = Field(..., default_factory=userid_default, index=True, max_length=32,
                             description='用户ID', sa_column_kwargs={'comment': '用户ID'}, unique=True)
-    email: str | None = Field(None, index=True, max_length=64, description='电子邮箱',
+    email: EmailStr | None = Field(None, index=True, max_length=64, description='电子邮箱',
                               sa_column_kwargs={'comment': '电子邮箱'}, unique=True)
     username: str | None = Field(None, index=True, max_length=32, description='用户名',
                                  sa_column_kwargs={'comment': '用户名'}, unique=True)

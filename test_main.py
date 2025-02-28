@@ -27,8 +27,12 @@ def client() -> Generator[TestClient, None, None]:
     with TestClient(app) as c:
         yield c
 
+# @pytest.fixture(scope="session", autouse=True)
+# def session() -> Generator[Session, None, None]:
+#     with Session(create_engine("postgresql+psycopg://zhiming:zhiming@localhost:5432/tuiwen")) as session:
+#         yield session
+
 class TestMain:
-    """测试类"""
     """测试类"""
     BASE_URL = "http://localhost:8000"
     username = ''
@@ -42,7 +46,7 @@ class TestMain:
     def test_register(self, client: TestClient) -> None:
         """测试用户注册"""
         data = {
-            "email": f"user{random.randint(1, 20000)}@example.com",
+            "email": f"test-user{random.randint(1, 20000)}@test-user-ap.com",
             "password": "098f6bcd4621d373cade4e832627b4f6",
             "nick_name": "test",
             "gmt_birth": datetime.now(pytz.timezone('Asia/Shanghai')).isoformat(),
@@ -52,7 +56,7 @@ class TestMain:
         }
 
         # with httpx.Client() as client:
-        r = client.post(f"{self.BASE_URL}/accounts/register/", json=data,
+        r = client.post(f"/accounts/register/", json=data,
                         headers={"Content-Type": "application/json"})
         assert r.status_code == 200
         TestMain.username = data.get('email')
@@ -67,47 +71,47 @@ class TestMain:
             "username": TestMain.username,
             "password": TestMain.passowrd,
         }
-        r = client.post(f"{self.BASE_URL}/oauth/authorize/password/", data=form_data,
+        r = client.post(f"/oauth/authorize/password/", data=form_data,
                         headers={"Content-Type": "application/x-www-form-urlencoded"})
         assert r.status_code == 200
         TestMain.token = r.json()
+        # 更新token到client
+        client.headers.update({"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
 
 
     def test_refresh_token(self, client: TestClient) -> None:
         """测试刷新token"""
-        r = client.get(f'{self.BASE_URL}/oauth/refresh-token/{TestMain.account_id}/refresh_token/',
+        r = client.get(f'/oauth/refresh-token/{TestMain.account_id}/refresh_token/',
                         headers={"Content-Type": "application/json", "Authorization": f"Bearer {TestMain.token.get('refresh_token')}"})
         assert r.status_code == 200
         TestMain.token['access_token'] = r.json().get('access_token')
+        client.headers.update({"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
 
     def test_health_check(self, client: TestClient) -> None:
         """测试健康检查"""
         # 直接使用 httpx 发送同步 HTTP 请求
-        r = client.get(f"{self.BASE_URL}/health_check/")
+        r = client.get(f"/health-check/")
         assert r.status_code == 200
 
     def test_get_account(self, client: TestClient) -> None:
         """获取帐户信息"""
         # ok
-        r = client.get(f"{self.BASE_URL}/accounts/{TestMain.account_id}/",
+        r = client.get(f"/accounts/{TestMain.account_id}/",
                        headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
         assert r.status_code == 200
         # 404
-        r = client.get(f"{self.BASE_URL}/accounts/{TestMain.account_id}{random.randint(0, 9000)}/",
-                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        r = client.get(f"/accounts/{TestMain.account_id}{random.randint(0, 9000)}/")
         assert r.status_code == 404
 
     def test_account_search(self, client: TestClient) -> None:
         """搜索功能"""
         keyword = "s"
         # ok
-        r = client.get(f"{self.BASE_URL}/accounts/search/{keyword}/",
-                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        r = client.get(f"/accounts/search/{keyword}/")
         assert r.status_code == 200
 
         # 404
-        r = client.get(f"{self.BASE_URL}/accounts/search/{keyword}-{str(uuid.uuid4())}/",
-                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        r = client.get(f"/accounts/search/{keyword}-{str(uuid.uuid4())}/")
         assert r.status_code == 404
 
     def test_put_account(self, client: TestClient) -> None:
@@ -115,8 +119,7 @@ class TestMain:
         data = {
             "nick_name": "测试test",
         }
-        response = client.put(f"{self.BASE_URL}/accounts/{TestMain.account_id}/", json=data,
-                              headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        response = client.put(f"/accounts/{TestMain.account_id}/", json=data)
         assert response.status_code == 200
 
     def test_password_reset(self, client: TestClient) -> None:
@@ -126,12 +129,12 @@ class TestMain:
             "password": "stringstringstringstringstringst",
             "code": "666666"
         }
-        r = client.put(f'{self.BASE_URL}/accounts/password/reset/', json=data,
+        r = client.put(f'/accounts/password/reset/', json=data,
                        headers={"Content-Type": "application/json"})
         assert r.status_code == 200
         # 测试验证码不对的情况
         data['code'] = "666777"
-        r = client.put(f'{self.BASE_URL}/accounts/password/reset/', json=data,
+        r = client.put(f'/accounts/password/reset/', json=data,
                        headers={"Content-Type": "application/json"})
         assert r.status_code == 400
 
@@ -143,9 +146,7 @@ class TestMain:
             "password_current": self.passowrd,
             "password_new": self.passowrd
         }
-        r = client.put(f'{self.BASE_URL}/accounts/password/change/', json=data,
-                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
-                                "Content-Type": "application/json"})
+        r = client.put(f'/accounts/password/change/', json=data)
         assert r.status_code == 400
 
     def test_create_post(self, client: TestClient) -> None:
@@ -162,16 +163,13 @@ class TestMain:
             "latitude": "string",
             "longitude": "string"
         }
-        r = client.post(f'{self.BASE_URL}/posts/', json=data,
-                        headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
-                                 "Content-Type": "application/json"})
+        r = client.post(f'/posts/', json=data)
         assert r.status_code == 200
         TestMain.post_id = data.get('post_id')
 
     def test_get_posts_lasted(self, client: TestClient) -> None:
         """获取最新帖子"""
-        r = client.get(f"{self.BASE_URL}/posts/lasted/",
-                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        r = client.get(f"/posts/lasted/")
         assert r.status_code == 200
 
     def test_update_post_right(self, client: TestClient) -> None:
@@ -182,14 +180,12 @@ class TestMain:
             "account_id": TestMain.account_id,
             "right_status": 2
         }
-        r = client.put(f"{self.BASE_URL}/posts/{data['post_id']}/right/", json=data,
-                       headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        r = client.put(f"/posts/{data['post_id']}/right/", json=data)
         assert 200 == r.status_code
 
     def test_delete_post(self, client: TestClient) -> None:
         """删除帖子"""
-        r = client.delete(f"{self.BASE_URL}/posts/{TestMain.post_id}/",
-                                 headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        r = client.delete(f"/posts/{TestMain.post_id}/")
         assert r.status_code == 200
 
     def test_create_comment(self, client: TestClient) -> None:
@@ -204,16 +200,13 @@ class TestMain:
             "obj_id": str(uuid.uuid4()),
             "gmt_created": datetime.now(pytz.timezone('Asia/Shanghai')).isoformat(),
         }
-        r = client.post(f'{self.BASE_URL}/comments/', json=data,
-                        headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
-                                 "Content-Type": "application/json"}, )
+        r = client.post(f'/comments/', json=data)
         assert r.status_code == 200
         TestMain.comment_id = data.get('comment_id')
 
     def test_delete_comment(self, client: TestClient) -> None:
         """删除帖子"""
-        r = client.delete(f"{self.BASE_URL}/comments/{TestMain.comment_id}/",
-                                 headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        r = client.delete(f"/comments/{TestMain.comment_id}/")
         assert r.status_code == 200
 
     def test_create_like(self, client: TestClient) -> None:
@@ -224,25 +217,51 @@ class TestMain:
             "account_id": TestMain.account_id,
             "gmt_created": datetime.now(pytz.timezone('Asia/Shanghai')).isoformat()
         }
-        r = client.post(f'{self.BASE_URL}/likes/', json=data,
-                        headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}",
-                                 "content-type": "application/json"})
+        r = client.post(f'/likes/', json=data)
         assert r.status_code == 200
 
     def test_delete_like(self, client: TestClient) -> None:
         """取消点赞"""
-        r = client.delete(f"{self.BASE_URL}/likes/{TestMain.post_id}/",
-                          headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
+        r = client.delete(f"/likes/{TestMain.post_id}/")
         assert r.status_code == 200
 
     def test_upload_image(self, client: TestClient) -> None:
         """测试图片上传"""
         with open(r'C:\Users\liaoz\Downloads\610d9b4d-d5dd-4758-8cd3-eb029b2a39dc.jpg', 'rb') as f:
             files = {'file': ('test.jpg', f, 'image/jpeg')}
-            response = client.post(f'{self.BASE_URL}/upload/image/', files=files,
+            response = client.post(f'/upload/image/', files=files,
                                    headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
             assert response.status_code == 200
 
+    def test_create_follower(self, client: TestClient) -> None:
+        """创建关注"""
+        data = {
+            "id": 0,
+            "follower_id": TestMain.account_id,
+            "followee_id": f'{TestMain.account_id}-test'
+        }
+        r = client.post(f'/follows/', json=data)
+        assert r.status_code == 200
+
+        # 400
+        r = client.post(f'/follows/', json=data)
+        assert r.status_code == 400
+
+    def test_delete_follower(self, client: TestClient) -> None:
+        """删除关注"""
+        r = client.delete(f'/follows/{self.account_id}/{self.account_id}-test/')
+        assert r.status_code == 200
+
+    def test_get_follow_info_by_id(self, client: TestClient) -> None:
+        """获取指定帐户的关注和正在关注数量"""
+        r = client.get(f'/follows/{self.account_id}/count/')
+        assert r.status_code == 200
+
+    # @pytest.mark.skip(reason="测试完成后删除测试用户")
+    # def test_delete_test_user(self, session: Session) -> None:
+    #     statement = delete(Account).where(Account.account_id == TestMain.account_id)
+    #     session.exec(statement)
+    #     session.commit()
 
 if __name__ == '__main__':
     unittest.main()

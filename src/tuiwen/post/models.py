@@ -161,6 +161,7 @@ class Like(LikeInput, table=True):
     __table_args__ = (
         Index('idx_obj_type_obj_id_account_id_unique', 'obj_type', 'obj_id', 'account_id', unique=True),
         Index('idx_obj_type_obj_id', 'obj_type', 'obj_id'),
+        {'comment': '赞'},
     )
 
 
@@ -183,3 +184,25 @@ class Image(ImageBase, table=True):
     gmt_created: datetime = Field(default_factory=lambda: datetime.now(), description='创建时间',
                                   sa_column_kwargs={'comment': '创建日期时间'},
                                   sa_type=DateTime(timezone=True))
+
+
+class Follow(SQLModel, table=True):
+    """
+    关注模型
+    """
+    __tablename__ = f"{TABLE_PREFIX}follow"  # 表名
+
+    id: int = Field(primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
+    follower_id: str = Field(..., index=True, max_length=32, description='关注者',
+                            sa_column_kwargs={'comment': '关注者'})
+    followee_id: str = Field(..., index=True, max_length=32, description='被关注者',
+                            sa_column_kwargs={'comment': '被关注者'})
+    gmt_created: datetime = Field(default_factory=lambda: datetime.now(), description='创建日期时间',
+                                  sa_column_kwargs={'comment': '创建日期时间'},
+                                  sa_type=DateTime(timezone=True))
+
+    # 创建联合索引;
+    __table_args__ = (
+        Index('idx_follower_followee_unique', 'follower_id', 'followee_id', unique=True),
+        {'comment': '关注'},
+    )
