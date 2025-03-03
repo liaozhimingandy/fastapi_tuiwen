@@ -15,6 +15,7 @@ from datetime import datetime
 import random
 import unittest
 import uuid
+from hashlib import md5
 
 import pytz
 import pytest
@@ -36,20 +37,21 @@ class TestMain:
     """测试类"""
     BASE_URL = "http://localhost:8000"
     username = ''
-    passowrd = ''
+    passowrd = '123456'
     account_id = ''
     token = {}
     post_id = ''
     comment_id = ''
-
+    md5_hash = md5()
 
     def test_register(self, client: TestClient) -> None:
         """测试用户注册"""
+        TestMain.md5_hash.update(TestMain.passowrd.encode('utf-8'))
         data = {
             "email": f"test-user{random.randint(1, 20000)}@test-user-ap.com",
-            "password": "098f6bcd4621d373cade4e832627b4f6",
+            "password": TestMain.md5_hash.hexdigest(),
             "nick_name": "test",
-            "gmt_birth": datetime.now(pytz.timezone('Asia/Shanghai')).isoformat(),
+            "gmt_birth": datetime.now(pytz.timezone('Asia/Shanghai')).strftime('%Y-%m-%d'),
             "area_code": "CHN",
             "sex": 0,
             "avatar": "https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png"
@@ -69,7 +71,7 @@ class TestMain:
         # with httpx.Client() as client:
         form_data = {
             "username": TestMain.username,
-            "password": TestMain.passowrd,
+            "password": TestMain.md5_hash.hexdigest(),
         }
         r = client.post(f"/oauth/authorize/password/", data=form_data,
                         headers={"Content-Type": "application/x-www-form-urlencoded"})
@@ -126,7 +128,7 @@ class TestMain:
         """密码重置"""
         data = {
             "account_id": TestMain.account_id,
-            "password": "stringstringstringstringstringst",
+            "password": TestMain.md5_hash.hexdigest(),
             "code": "666666"
         }
         r = client.put(f'/accounts/password/reset/', json=data,
@@ -143,8 +145,8 @@ class TestMain:
         """测试密码修改"""
         data = {
             "account_id": TestMain.account_id,
-            "password_current": self.passowrd,
-            "password_new": self.passowrd
+            "password_current": TestMain.md5_hash.hexdigest(),
+            "password_new": TestMain.md5_hash.hexdigest()
         }
         r = client.put(f'/accounts/password/change/', json=data)
         assert r.status_code == 400
@@ -225,6 +227,12 @@ class TestMain:
         r = client.delete(f"/likes/{TestMain.post_id}/")
         assert r.status_code == 200
 
+    def test_get_like_count(self, client: TestClient) -> None:
+        """获取指定帖子的点赞数量"""
+        r = client.get(f'/likes/{self.post_id}/count/')
+        assert r.status_code == 200
+        assert r.json().get('is_liked') == False
+
     def test_upload_image(self, client: TestClient) -> None:
         """测试图片上传"""
         with open(r'C:\Users\liaoz\Downloads\610d9b4d-d5dd-4758-8cd3-eb029b2a39dc.jpg', 'rb') as f:
@@ -256,6 +264,7 @@ class TestMain:
         """获取指定帐户的关注和正在关注数量"""
         r = client.get(f'/follows/{self.account_id}/count/')
         assert r.status_code == 200
+        assert r.json().get('is_following') == False
 
     # @pytest.mark.skip(reason="测试完成后删除测试用户")
     # def test_delete_test_user(self, session: Session) -> None:

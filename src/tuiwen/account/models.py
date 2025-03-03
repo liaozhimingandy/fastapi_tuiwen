@@ -12,11 +12,10 @@
 """
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from enum import Enum
 
-import pytz
-from pydantic import EmailStr, field_validator
+from pydantic import EmailStr
 from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM
 from sqlmodel import SQLModel, Field
 
@@ -73,24 +72,12 @@ class AccountUpdateCommon(SQLModel):
             return mapping[self.value]
 
     nick_name: str | None = Field(None, max_length=30, description='昵称', sa_column_kwargs={'comment': '昵称'})
-    gmt_birth: datetime | None = Field(None, description='出生日期', sa_column_kwargs={'comment': '出生日期'},
-                                       sa_type=DateTime(timezone=True))
+    gmt_birth: date | None = Field(None, description='出生日期', sa_column_kwargs={'comment': '出生日期'})
     area_code: AreaCodeEnum = Field(default=AreaCodeEnum.CHINA, description='区域代码',
                                     sa_column_kwargs={'comment': '区域代码'}, sa_type=SaENUM(AreaCodeEnum, values_callable=lambda x: [e.value for e in x]))
     sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SaENUM(SexEnum, values_callable=lambda x: [str(e. value) for e in x]),
                          description='性别',sa_column_kwargs={'comment': '性别'})
     avatar: str = Field(None, max_length=200, description='头像链接', sa_column_kwargs={'comment': '头像链接'})
-
-
-    @field_validator('gmt_birth', mode="after") # type: ignore[prop-decorator]
-    @classmethod
-    def convert_to_cst(cls, value):
-        if value is None:
-            return None
-
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(pytz.timezone(settings.TIME_ZONE))
 
 
 class AccountLogin(SQLModel):

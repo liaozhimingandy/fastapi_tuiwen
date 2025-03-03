@@ -220,8 +220,6 @@ async def register(account: AccountCreate, session: AsyncSession = Depends(get_s
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该邮箱已被注册,如果您是该邮箱的拥有者,请前往登录")
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e.args[0]))
 
     return instance
 

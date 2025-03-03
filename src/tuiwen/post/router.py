@@ -2,6 +2,7 @@ import hashlib
 import uuid
 import os
 from typing import Annotated
+from urllib import request
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
@@ -82,6 +83,14 @@ async def delete_comment(comment_id: uuid.UUID, request: Request, session: Async
 
     return ResponsePublic
 
+@router_comment.get('/{obj_type}/{obj_id}/', summary="查询指定帖子的评论", response_model=list[Comment])
+async def get_comments(obj_id: str, obj_type: int = Comment.ObjTypeEnum.POST, session: AsyncSession = Depends(get_session)):
+    stmt = select(Comment).where(Comment.obj_id == obj_id, Comment.obj_type ==  Comment.ObjTypeEnum(obj_type))
+    ds = (await (session.exec(stmt))).all()
+    for post in ds:
+        post.gmt_created = convert_to_cst_time(post.gmt_created)
+    return ds
+
 ########################################################################################################################
 router_like = APIRouter(prefix="/likes", tags=["like"], dependencies=[Depends(check_authentication)])
 
@@ -104,6 +113,16 @@ async def delete_like(obj_id: uuid.UUID, request: Request, session: AsyncSession
     await session.commit()
     return ResponsePublic()
 
+
+@router_like.get('/{obj_id}/count/', summary="获取指定帖子的点赞数")
+async def get_like_count(obj_id: str, request: Request, session: AsyncSession = Depends(get_session)):
+    stmt = select(Like.id).where(Like.obj_id == obj_id,  Like.obj_type == Like.ObjTypeEnum.POST)
+    stmt2 = select(Like.id).where(Like.obj_id == obj_id, Like.obj_type == Like.ObjTypeEnum.POST, Like.account_id == request.state.account_id)
+
+    like_count = len((await session.exec(stmt)).all())
+    is_liked = len((await session.exec(stmt2)).all()) > 0
+
+    return {"count": like_count, "is_liked": is_liked}
 ########################################################################################################################
 router_upload = APIRouter(prefix="/upload", tags=["upload"], dependencies=[Depends(check_authentication)])
 
@@ -165,13 +184,16 @@ async def delete_follow(follower_id: str, followee_id:str, session: AsyncSession
 
 
 @router_follow.get('/{account_id}/count/', summary="获取指定帐户的关注和正在关注数量")
-async def get_follow_info_by_id(account_id: str, session: AsyncSession = Depends(get_session)):
-    stmt = select(Follow).where(Follow.followee_id == account_id)
-    stmt2 = select(Follow).where(Follow.follower_id == account_id)
+async def get_follow_info_by_id(account_id: str, request: Request, session: AsyncSession = Depends(get_session)):
+    stmt = select(Follow).where(Follow.followee_id == account_id)  # 粉丝数
+    stmt2 = select(Follow).where(Follow.follower_id == account_id) # 正在关注
+    stmt_following = select(Follow.id).where(Follow.followee_id == account_id, Follow.follower_id == request.state.account_id) # 是否在关注
 
     # 粉丝数
     follower_count = len((await session.exec(stmt)).all())
     # 正在关注数
     followee_count = len((await session.exec(stmt2)).all())
+    # 是否正在关注
+    is_following = len((await session.exec(stmt_following)).all()) > 0
 
-    return {"follower_count": follower_count, "followee_count": followee_count}
+    return {"follower_count": follower_count, "followee_count": followee_count, "is_following": is_following}
