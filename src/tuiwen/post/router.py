@@ -2,12 +2,11 @@ import hashlib
 import uuid
 import os
 from typing import Annotated
-from urllib import request
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from typing_extensions import Doc
-from sqlmodel import select, delete, update
+from sqlmodel import select, delete, update, exists
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Request
 
 from src.tuiwen.core import settings
@@ -117,10 +116,10 @@ async def delete_like(obj_id: uuid.UUID, request: Request, session: AsyncSession
 @router_like.get('/{obj_id}/count/', summary="获取指定帖子的点赞数")
 async def get_like_count(obj_id: str, request: Request, session: AsyncSession = Depends(get_session)):
     stmt = select(Like.id).where(Like.obj_id == obj_id,  Like.obj_type == Like.ObjTypeEnum.POST)
-    stmt2 = select(Like.id).where(Like.obj_id == obj_id, Like.obj_type == Like.ObjTypeEnum.POST, Like.account_id == request.state.account_id)
-
+    stmt_sub  = select(Like).where(Like.obj_id == obj_id, Like.obj_type == Like.ObjTypeEnum.POST, Like.account_id == request.state.account_id)
+    stmt2 = select(exists().select_from(stmt_sub))
     like_count = len((await session.exec(stmt)).all())
-    is_liked = len((await session.exec(stmt2)).all()) > 0
+    is_liked = (await session.exec(stmt2)).first()
 
     return {"count": like_count, "is_liked": is_liked}
 ########################################################################################################################
@@ -187,13 +186,14 @@ async def delete_follow(follower_id: str, followee_id:str, session: AsyncSession
 async def get_follow_info_by_id(account_id: str, request: Request, session: AsyncSession = Depends(get_session)):
     stmt = select(Follow).where(Follow.followee_id == account_id)  # 粉丝数
     stmt2 = select(Follow).where(Follow.follower_id == account_id) # 正在关注
-    stmt_following = select(Follow.id).where(Follow.followee_id == account_id, Follow.follower_id == request.state.account_id) # 是否在关注
 
+    stmt_sub = select(Follow.id).where(Follow.followee_id == account_id, Follow.follower_id == request.state.account_id) # 是否在关注
+    stmt_following = select(exists().select_from(stmt_sub))
     # 粉丝数
     follower_count = len((await session.exec(stmt)).all())
     # 正在关注数
     followee_count = len((await session.exec(stmt2)).all())
     # 是否正在关注
-    is_following = len((await session.exec(stmt_following)).all()) > 0
+    is_following = (await session.exec(stmt_following)).first()
 
     return {"follower_count": follower_count, "followee_count": followee_count, "is_following": is_following}

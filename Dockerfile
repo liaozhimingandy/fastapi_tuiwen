@@ -44,6 +44,8 @@ EXPOSE 8000
 
 # 设置容器启动时的命令，运行 Uvicorn 服务器并启动 FastAPI 应用
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+
+
 # 构建命令
 # docker build -t liaozhiming/fastapi_tuiwen:latest .
 # 文件格式问题,请保持unix编码;set ff=unix

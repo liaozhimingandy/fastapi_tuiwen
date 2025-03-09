@@ -21,7 +21,7 @@ from sqlmodel import select, or_, text
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
-from .models import Account, AccountCreate, AccountPublic, AccountUpdateCommon, AccountPasswordChange, \
+from .models import Account, AccountCreate, AccountPublic, AccountPublicCommon, AccountPasswordChange, \
     AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken
 
 from src.tuiwen.utils.jwt_token import generate_jwt_token, verify_jwt_token
@@ -44,7 +44,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     用户进行认证获取刷新令牌 <br>
 
     Args:<br>
-        username: 账户唯一标识 <br>
+        username: 账户唯一标识,用户名或邮箱 <br>
         password: 账户密码 <br>
         session: 数据库操作会话依赖<br>
 
@@ -54,7 +54,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     """
 
     try:
-        statement = select(Account).where(Account.email == form_data.username, Account.password == form_data.password,
+        statement = select(Account).where(or_(Account.email == form_data.username, Account.username == form_data.username), Account.password == form_data.password,
                                           Account.is_active == True)
         instance = (await session.exec(statement)).first()
         assert instance is not None, '请重新检查你的用户名和密码'
@@ -234,7 +234,7 @@ async def get_account(account_id: str, session: AsyncSession = Depends(get_sessi
 
 
 @router_account.put("/{account_id}/", summary="更新账户基本信息", response_model=AccountPublic)
-async def update_account(account_id: str, account: AccountUpdateCommon, session: AsyncSession = Depends(get_session),
+async def update_account(account_id: str, account: AccountPublicCommon, session: AsyncSession = Depends(get_session),
                          user: Account = Depends(get_current_user)):
     try:
         assert user.account_id == account_id, '请不要跨账户操作'

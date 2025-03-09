@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytz
 from pydantic import field_validator
-from sqlalchemy import DateTime, Enum as SaENUM, JSON
+from sqlalchemy import DateTime, Enum as SaENUM, JSON, Column
 from sqlmodel import SQLModel, Field, Index
 
 from src.tuiwen.core import settings
@@ -80,9 +80,12 @@ class Post(PostCreate, table=True):
 
     id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
     status: int | None = Field(default=1, description='帖子状态', sa_column_kwargs={'comment': '帖子状态'})
-    gmt_created: datetime = Field(..., default_factory=lambda: datetime.now(), description='创建日期时间',
-                                  sa_column_kwargs={'comment': '创建日期时间'},
-                                  sa_type=DateTime(timezone=True))
+    gmt_created: datetime = Field(..., default_factory= datetime.now, description='创建日期时间',
+                                  sa_column=Column(DateTime(timezone=True), default=datetime.now, comment="创建日期时间"))
+    gmt_modified: datetime = Field(..., default_factory=datetime.now, description='最后修改时间',
+                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
+                                                    onupdate=datetime.now, comment='最后修改时间')
+                                   )
 
 class CommentInput(SQLModel):
     """
@@ -115,9 +118,8 @@ class CommentInput(SQLModel):
     obj_type: ObjTypeEnum = Field(default=ObjTypeEnum.POST, description="评论对象类别",
                                   sa_column_kwargs={'comment': '评论对象类别'},
                                   sa_type=SaENUM(ObjTypeEnum, values_callable=lambda x: [str(e.value) for e in x]))
-    gmt_created: datetime = Field(..., default_factory=lambda: datetime.now(), description='创建日期时间',
-                                  sa_column_kwargs={'comment': '创建日期时间'},
-                                  sa_type=DateTime(timezone=True))
+    gmt_created: datetime = Field(..., default_factory= datetime.now, description='创建日期时间',
+                                  sa_column=Column(DateTime(timezone=True), default=datetime.now, comment="创建日期时间"))
 
     @field_validator('gmt_created', mode="after")  # type: ignore[prop-decorator]
     @classmethod
@@ -150,9 +152,8 @@ class LikeInput(SQLModel):
                                   sa_type=SaENUM(ObjTypeEnum, values_callable=lambda x: [str(e.value) for e in x]))
     account_id: str = Field(..., index=True, max_length=32, description='点赞的用户',
                             sa_column_kwargs={'comment': '点赞的用户'})
-    gmt_created: datetime = Field(default_factory=lambda: datetime.now(), description='创建日期时间',
-                                  sa_column_kwargs={'comment': '创建日期时间'},
-                                  sa_type=DateTime(timezone=True))
+    gmt_created: datetime = Field(..., default_factory= datetime.now, description='创建日期时间',
+                                  sa_column=Column(DateTime(timezone=True), default=datetime.now, comment="创建日期时间"))
 
 class Like(LikeInput, table=True):
     __tablename__ = f"{TABLE_PREFIX}like"  # 表名
@@ -181,9 +182,8 @@ class Image(ImageBase, table=True):
 
     id: int = Field(primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
     image_name: str = Field(..., max_length=128, description='图片名称', sa_column_kwargs={'comment': '图片名称'})
-    gmt_created: datetime = Field(default_factory=lambda: datetime.now(), description='创建时间',
-                                  sa_column_kwargs={'comment': '创建日期时间'},
-                                  sa_type=DateTime(timezone=True))
+    gmt_created: datetime = Field(..., default_factory= datetime.now, description='创建日期时间',
+                                  sa_column=Column(DateTime(timezone=True), default=datetime.now, comment="创建日期时间"))
 
 
 class Follow(SQLModel, table=True):
@@ -197,9 +197,8 @@ class Follow(SQLModel, table=True):
                             sa_column_kwargs={'comment': '关注者'})
     followee_id: str = Field(..., index=True, max_length=32, description='被关注者',
                             sa_column_kwargs={'comment': '被关注者'})
-    gmt_created: datetime = Field(default_factory=lambda: datetime.now(), description='创建日期时间',
-                                  sa_column_kwargs={'comment': '创建日期时间'},
-                                  sa_type=DateTime(timezone=True))
+    gmt_created: datetime = Field(..., default_factory= datetime.now, description='创建日期时间',
+                                  sa_column=Column(DateTime(timezone=True), default=datetime.now, comment="创建日期时间"))
 
     # 创建联合索引;
     __table_args__ = (

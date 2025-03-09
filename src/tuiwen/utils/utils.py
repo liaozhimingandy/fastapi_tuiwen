@@ -22,6 +22,10 @@ from fastapi.routing import APIRoute
 from src.tuiwen.core import settings
 
 
+def get_datetime_now():
+    # 返回当前时间
+    return datetime.now(timezone.utc)
+
 # 创建一个图片类型检查函数
 def allowed_file(file: UploadFile, file_type: list[str]) -> bool:
     try:

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone, date
 from enum import Enum
 
 from pydantic import EmailStr
-from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM
+from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM, Column, JSON
 from sqlmodel import SQLModel, Field
 
 from src.tuiwen.core import settings
@@ -43,7 +43,7 @@ def app_id_default():
     return uuid_generator(5)
 
 
-class AccountUpdateCommon(SQLModel):
+class AccountPublicCommon(SQLModel):
 
     class SexEnum(Enum):
         UnKnown = 0
@@ -71,6 +71,8 @@ class AccountUpdateCommon(SQLModel):
             }
             return mapping[self.value]
 
+    username: str | None = Field(None, index=True, max_length=32, description='用户名',
+                                 sa_column_kwargs={'comment': '用户名'}, unique=True)
     nick_name: str | None = Field(None, max_length=30, description='昵称', sa_column_kwargs={'comment': '昵称'})
     gmt_birth: date | None = Field(None, description='出生日期', sa_column_kwargs={'comment': '出生日期'})
     area_code: AreaCodeEnum = Field(default=AreaCodeEnum.CHINA, description='区域代码',
@@ -86,11 +88,11 @@ class AccountLogin(SQLModel):
     password: str  = Field(..., max_length=32, min_length=32, description='用户密码', sa_column_kwargs={'comment': '用户密码'})
 
 
-class AccountCreate(AccountUpdateCommon, AccountLogin):
+class AccountCreate(AccountPublicCommon, AccountLogin):
     pass
 
 
-class AccountBase(AccountUpdateCommon):
+class AccountBase(AccountPublicCommon):
     """
     账户信息模型
     """
@@ -98,8 +100,6 @@ class AccountBase(AccountUpdateCommon):
                             description='用户ID', sa_column_kwargs={'comment': '用户ID'}, unique=True)
     email: EmailStr | None = Field(None, index=True, max_length=64, description='电子邮箱',
                               sa_column_kwargs={'comment': '电子邮箱'}, unique=True)
-    username: str | None = Field(None, index=True, max_length=32, description='用户名',
-                                 sa_column_kwargs={'comment': '用户名'}, unique=True)
     mobile: str | None = Field(None, index=True, max_length=32, description='电话号码',
                                sa_column_kwargs={'comment': '电话号码'}, unique=True)
     is_active: bool | None = Field(default=True, description='账户状态', sa_column_kwargs={'comment': '账户状态'})
@@ -123,10 +123,15 @@ class Account(AccountBase, table=True):
                                           sa_column_kwargs={'comment': '允许添加好友'})
     im_id: str | None = Field(None, max_length=64, description='im ID', sa_column_kwargs={'comment': 'im ID'},
                               unique=True, index=True)
-    gmt_created: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='创建日期时间',
-                                  sa_column_kwargs={'comment': '创建日期时间'}, sa_type=DateTime(timezone=True))
+    extra: dict | None = Field(default={}, description='个性化配置信息', max_length=1024,
+                               sa_column_kwargs={'comment': '存储用户自定义配置信息'},
+                               sa_type=JSON)
+    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+                                  sa_column=Column(DateTime(timezone=True), default=datetime.now, comment='创建日期时间')
+                                  )
     gmt_modified: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
-                                   sa_column_kwargs={'comment': '最后修改时间', }, sa_type=DateTime(timezone=True))
+                                   sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now, comment='最后修改时间')
+                                   )
 
 
 class AccountPublic(AccountBase):
@@ -144,7 +149,7 @@ class AccountPasswordChange(SQLModel):
     password_new: str | None = Field(..., max_length=36, min_length=32, description='用户新密码')
 
 
-class App(SQLModel, table=True):
+class App(SQLModel, table=False):
     """
     应用模型
     示例: 小程序,公众号...
@@ -163,10 +168,12 @@ class App(SQLModel, table=True):
     app_en_name: str | None = Field(None, max_length=64, description='应用英文名称',
                                     sa_column_kwargs={'comment': '应用英文名称'})
     is_active: bool = Field(default=True, description='激活状态', sa_column_kwargs={'comment': '激活状态'})
-    gmt_created: datetime = Field(default_factory=datetime.now, description='创建日期时间',
-                                  sa_column_kwargs={'comment': '创建日期时间'}, sa_type=DateTime(timezone=True))
-    gmt_updated: datetime = Field(default_factory=datetime.now, description='最后更新日期时间',
-                                  sa_column_kwargs={'comment': '最后更新日期时间'}, sa_type=DateTime(timezone=True))
+    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+                                  sa_column=Column(DateTime(timezone=True), default=datetime.now, comment='创建日期时间')
+                                  )
+    gmt_modified: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
+                                   sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now, comment='最后修改时间')
+                                   )
 
 ########################################################################################################################
 # token
