@@ -11,15 +11,18 @@
 =================================================
 """
 from datetime import datetime
+from typing import TypeVar, Generic, Optional
 
 import pytz
-from sqlmodel import SQLModel, Field
+from pydantic import BaseModel
+from sqlmodel import Field
 from starlette import status
 
+T = TypeVar("T")
 
-class ResponsePublic(SQLModel):
+class ResponsePublic(BaseModel, Generic[T]):
     code: int = Field(status.HTTP_200_OK, description="响应错误码")
     message: str = Field("success", description="描述信息")
     gmt_created: datetime = Field(default=datetime.now(tz=pytz.timezone("Asia/Shanghai")), description="生成时间")
-    data: dict | str | None = Field(default=None, description="响应数据")
-    details: dict | str | None = Field(default=None, description="错误详情")
+    data: Optional[T]  = Field(default=None, description="响应数据")
+    details: Optional[T] = Field(default=None, description="错误详情")

@@ -1,7 +1,7 @@
 import hashlib
 import uuid
 import os
-from typing import Annotated
+from typing import Annotated, Any
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
@@ -14,13 +14,13 @@ from src.tuiwen.core.database import add_instance
 from src.tuiwen.dependencies import check_authentication, get_session
 from src.tuiwen.models import ResponsePublic
 from src.tuiwen.post.models import Post, PostCreate, Comment, Like, Image as TWImage, ImageBase, PostRightStatusUpdate, \
-    CommentInput, LikeInput, Follow
+    CommentInput, LikeInput, Follow, FollowCountModel, LikeCountModel
 from src.tuiwen.utils.utils import allowed_file, convert_to_cst_time
 
 router_post = APIRouter(prefix="/posts", tags=["post"], dependencies=[Depends(check_authentication)])
 
 
-@router_post.post("/", summary="发布帖子", response_model=Post)
+@router_post.post("/", summary="发布帖子", response_model=Post, status_code=status.HTTP_201_CREATED)
 async def create_post(post: PostCreate, request: Request, session: AsyncSession = Depends(get_session)):
     post_data = Post.model_dump(post, exclude={"from_ip"})
     instance = Post(**post_data)
@@ -41,28 +41,25 @@ async def get_posts_lasted(session: AsyncSession = Depends(get_session)):
         post.gmt_created = convert_to_cst_time(post.gmt_created)
     return ds
 
-@router_post.put('/{post_id}/right/', summary="更新帖子的公开状态", response_model=ResponsePublic)
+@router_post.put('/{post_id}/right/', summary="更新帖子的公开状态", status_code=status.HTTP_205_RESET_CONTENT)
 async def update_post_right(post_id: str, post_right: PostRightStatusUpdate, request: Request, session: AsyncSession = Depends(get_session)):
     statement = update(Post).where(Post.post_id == post_id, Post.account_id == request.state.account_id).values(right_status=post_right.right_status)
     await session.exec(statement)
     await session.commit()
 
-    return ResponsePublic
-
-@router_post.delete("/{post_id}/", summary="删除指定的帖子", response_model=ResponsePublic)
+@router_post.delete("/{post_id}/", summary="删除指定的帖子", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_post(post_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_session)):
     statement = delete(Post).where(Post.post_id == post_id, Post.account_id == request.state.account_id)
 
     await session.exec(statement)
     await session.commit()
 
-    return ResponsePublic
 
 ########################################################################################################################
 router_comment = APIRouter(prefix="/comments", tags=["comment"], dependencies=[Depends(check_authentication)])
 
 
-@router_comment.post('/', summary="新增评论", response_model=Comment)
+@router_comment.post('/', summary="新增评论", response_model=Comment, status_code=status.HTTP_201_CREATED)
 async def create_comment(comment: CommentInput, session: AsyncSession = Depends(get_session)):
     comment_data = CommentInput.model_dump(comment, exclude={"id", "gmt_created"})
     instance = Comment(**comment_data)
@@ -73,14 +70,13 @@ async def create_comment(comment: CommentInput, session: AsyncSession = Depends(
     return instance
 
 
-@router_comment.delete('/{comment_id}/', summary='删除指定的评论', response_model=ResponsePublic)
+@router_comment.delete('/{comment_id}/', summary='删除指定的评论', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_comment(comment_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_session)):
     statement = delete(Comment).where(Comment.comment_id == comment_id, Comment.account_id == request.state.account_id)
 
     await session.exec(statement)
     await session.commit()
 
-    return ResponsePublic
 
 @router_comment.get('/{obj_type}/{obj_id}/', summary="查询指定帖子的评论", response_model=list[Comment])
 async def get_comments(obj_id: str, obj_type: int = Comment.ObjTypeEnum.POST, session: AsyncSession = Depends(get_session)):
@@ -94,7 +90,7 @@ async def get_comments(obj_id: str, obj_type: int = Comment.ObjTypeEnum.POST, se
 router_like = APIRouter(prefix="/likes", tags=["like"], dependencies=[Depends(check_authentication)])
 
 
-@router_like.post('/', summary="点赞", response_model=Like)
+@router_like.post('/', summary="点赞", response_model=Like, status_code=status.HTTP_201_CREATED)
 async def create_like(like: LikeInput, session: AsyncSession = Depends(get_session)):
     like_data = LikeInput.model_dump(like, exclude={"id", "gmt_created"})
     instance = Like(**like_data)
@@ -104,29 +100,29 @@ async def create_like(like: LikeInput, session: AsyncSession = Depends(get_sessi
     instance.gmt_created = convert_to_cst_time(instance.gmt_created)
     return instance
 
-@router_like.delete('/{obj_id}/', summary='取消赞', response_model=ResponsePublic)
+@router_like.delete('/{obj_id}/', summary='取消赞', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_like(obj_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_session)):
     statement = delete(Like).where(Like.obj_id == obj_id, Like.account_id == request.state.account_id,
                                    Like.obj_type==Like.ObjTypeEnum.POST)
     await session.exec(statement)
     await session.commit()
-    return ResponsePublic()
 
 
-@router_like.get('/{obj_id}/count/', summary="获取指定帖子的点赞数")
-async def get_like_count(obj_id: str, request: Request, session: AsyncSession = Depends(get_session)):
+@router_like.get('/{obj_id}/count/', summary="获取指定帖子的点赞数", response_model=LikeCountModel)
+async def get_like_count(obj_id: str, request: Request, session: AsyncSession = Depends(get_session)) -> LikeCountModel:
     stmt = select(Like.id).where(Like.obj_id == obj_id,  Like.obj_type == Like.ObjTypeEnum.POST)
     stmt_sub  = select(Like).where(Like.obj_id == obj_id, Like.obj_type == Like.ObjTypeEnum.POST, Like.account_id == request.state.account_id)
     stmt2 = select(exists().select_from(stmt_sub))
     like_count = len((await session.exec(stmt)).all())
     is_liked = (await session.exec(stmt2)).first()
 
-    return {"count": like_count, "is_liked": is_liked}
+    return LikeCountModel(count=like_count, is_liked=is_liked)
+
 ########################################################################################################################
 router_upload = APIRouter(prefix="/upload", tags=["upload"], dependencies=[Depends(check_authentication)])
 
 
-@router_upload.post('/image/', summary="图片上传", response_model=ImageBase)
+@router_upload.post('/image/', summary="图片上传", response_model=ImageBase, status_code=status.HTTP_201_CREATED)
 async def upload_image(file: Annotated[UploadFile, Doc("图片文件")], session: AsyncSession = Depends(get_session)):
     # 检查文件类型
     if not allowed_file(file, file_type=settings.ALLOWED_IMAGE_FORMATS.split(",")):
@@ -165,7 +161,7 @@ async def upload_image(file: Annotated[UploadFile, Doc("图片文件")], session
 
 router_follow = APIRouter(prefix="/follows", tags=["follow"], dependencies=[Depends(check_authentication)])
 
-@router_follow.post('/', summary="关注", response_model=Follow)
+@router_follow.post('/', summary="关注", response_model=Follow, status_code=status.HTTP_201_CREATED)
 async def follow(follow: Follow, session: AsyncSession = Depends(get_session)):
     follow_data = Follow.model_dump(follow, exclude={"id", "gmt_created"})
     instance = Follow(**follow_data)
@@ -174,16 +170,21 @@ async def follow(follow: Follow, session: AsyncSession = Depends(get_session)):
     return instance
 
 
-@router_follow.delete('/{follower_id}/{followee_id}/', summary="取消关注", response_model=ResponsePublic)
+@router_follow.delete('/{follower_id}/{followee_id}/', summary="取消关注", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_follow(follower_id: str, followee_id:str, session: AsyncSession = Depends(get_session)):
     statement = delete(Follow).where(Follow.follower_id == follower_id, Follow.followee_id == followee_id)
     await session.exec(statement)
     await session.commit()
-    return ResponsePublic()
 
 
-@router_follow.get('/{account_id}/count/', summary="获取指定帐户的关注和正在关注数量")
-async def get_follow_info_by_id(account_id: str, request: Request, session: AsyncSession = Depends(get_session)):
+@router_follow.get('/{account_id}/count/', summary="获取指定帐户的关注和正在关注数量及获赞数量",
+                   response_model=FollowCountModel)
+async def get_follow_info_by_id(account_id: str, request: Request, session: AsyncSession = Depends(get_session)) -> FollowCountModel:
+    """
+    获取指定帐户的关注和正在关注数量及获赞数量
+
+    - **account_id**: 平台账号唯一标识
+    """
     stmt = select(Follow).where(Follow.followee_id == account_id)  # 粉丝数
     stmt2 = select(Follow).where(Follow.follower_id == account_id) # 正在关注
 
@@ -195,5 +196,8 @@ async def get_follow_info_by_id(account_id: str, request: Request, session: Asyn
     followee_count = len((await session.exec(stmt2)).all())
     # 是否正在关注
     is_following = (await session.exec(stmt_following)).first()
+    # 获赞数量
+    like_count = 0
 
-    return {"follower_count": follower_count, "followee_count": followee_count, "is_following": is_following}
+    return FollowCountModel(follower_count=follower_count, followee_count=followee_count, is_following=is_following,
+                            like_count=like_count)

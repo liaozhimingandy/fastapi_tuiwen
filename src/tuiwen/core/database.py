@@ -39,6 +39,7 @@ async def create_table_async():
     """ 异步的形式创建数据库 """
     from src.tuiwen.account.models import Account
     from src.tuiwen.post.models import Post, Comment, Like, Image, Follow
+    from src.tuiwen.log.models import Log
     async with engine.begin() as conn:
         # 使用 SQLAlchemy 的异步连接创建表
         await conn.run_sync(SQLModel.metadata.drop_all)

@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic_core import ValidationError
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import select, or_, text
+from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
@@ -37,7 +37,8 @@ router_oauth = APIRouter(prefix="/oauth", tags=["oauth"], dependencies=[Depends(
 
 
 @router_public.post("/oauth/authorize/password/", tags=["oauth"],
-                   summary="用户使用用户名或邮箱进和密码进行认证获取刷新令牌", response_model=RefreshToken)
+                    summary="用户使用用户名或邮箱进和密码进行认证获取刷新令牌",
+                    response_model=RefreshToken)
 async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
                     session: AsyncSession = Depends(get_session)):
     """
@@ -54,8 +55,10 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     """
 
     try:
-        statement = select(Account).where(or_(Account.email == form_data.username, Account.username == form_data.username), Account.password == form_data.password,
-                                          Account.is_active == True)
+        statement = select(Account).where(
+            or_(Account.email == form_data.username, Account.username == form_data.username),
+            Account.password == form_data.password,
+            Account.is_active == True)
         instance = (await session.exec(statement)).first()
         assert instance is not None, '请重新检查你的用户名和密码'
     except AssertionError as e:
@@ -68,7 +71,8 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     await session.refresh(instance)
     data = {"account_id": instance.account_id, "salt": instance.salt, 'scopes': SCOPES_BASIC}
 
-    refresh_token = generate_jwt_token(data, expires_in=timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES), grant_type="refresh_token")
+    refresh_token = generate_jwt_token(data, expires_in=timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
+                                       grant_type="refresh_token")
 
     data.update(**{'jwt_account_id': instance.account_id})
     access_token = generate_jwt_token(data, grant_type="access_token")
@@ -101,13 +105,16 @@ async def refresh_token(account_id: str, refresh_token: str = Depends(oauth2_sch
 
     data = {"account_id": account_id, "salt": payload.get('salt'), 'jwt_account_id': account_id, 'scopes': SCOPES_BASIC}
 
-    access_token = generate_jwt_token(data, grant_type="access_token", expires_in=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    access_token = generate_jwt_token(data, grant_type="access_token",
+                                      expires_in=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
 
     return AccessToken(access_token=access_token, account_id=account_id)
+
 
 @router_oauth.get("/test-oauth/", summary="测试接口(基础权限)")
 def test_oauth(user: Account = Depends(get_current_user)) -> Any:
     return {"message": f"hello word, 欢迎您,{user.account_id}"}
+
 
 @router_oauth.get("/test-oauth-admin/", summary="测试接口(需要更高权限)")
 def test_oauth_admin(user: Account = Security(get_current_user, scopes=['admin'])) -> Any:
@@ -119,8 +126,8 @@ def test_oauth_admin(user: Account = Security(get_current_user, scopes=['admin']
 router_app = APIRouter(prefix="/oauth/app", tags=["oauth"], dependencies=[Depends(check_authentication)])
 
 
-# @router_public.get("/oauth/app/authorize/{app_id}/{app_secret}/client_credential/", summary="app进行认证获取刷新令牌",
-#                    response_model=AppRefreshToken, tags=["oauth", ])
+@router_public.get("/oauth/app/authorize/{app_id}/{app_secret}/client_credential/", summary="app进行认证获取刷新令牌",
+                   response_model=AppRefreshToken, tags=["oauth", ])
 async def app_authorize(app_id: str, app_secret: str, session: AsyncSession = Depends(get_session)):
     """
     app进行认证获取刷新令牌 <br>
@@ -163,7 +170,7 @@ async def app_authorize(app_id: str, app_secret: str, session: AsyncSession = De
 
 
 @router_app.get("/refresh-token/{app_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
-                response_model=AppAccessToken, )
+                response_model=AppAccessToken)
 def app_refresh_token(app_id: str, refresh_token: str = Depends(oauth2_scheme)):
     """
     使用刷新令牌进行更新获取权限令牌,请使用postman测试,header携带认证信息,后续会实现,refresh_token有效期为7天,请妥善保管,重新登录认证后,
@@ -189,6 +196,7 @@ def app_refresh_token(app_id: str, refresh_token: str = Depends(oauth2_scheme)):
 
     return AppAccessToken(access_token=access_token, app_id=app_id)
 
+
 ########################################################################################################################
 @router_public.get("/health-check/", tags=["health"], summary="服务检查检查")
 @router_public.get("/", tags=["root"], summary="服务检查检查")
@@ -196,12 +204,14 @@ async def health_check() -> dict[str, Any]:
     current_time = convert_to_cst_time(datetime.now())
     return {"message": "ok", "gmt_created": current_time}
 
+
 ########################################################################################################################
 
 router_account = APIRouter(prefix="/accounts", tags=["account", ], dependencies=[Depends(check_authentication)])
 
 
-@router_public.post("/accounts/register/", summary="用户注册", tags=["account", ], response_model=AccountPublic)
+@router_public.post("/accounts/register/", summary="用户注册", tags=["account", ],
+                    response_model=AccountPublic, status_code=status.HTTP_201_CREATED)
 async def register(account: AccountCreate, session: AsyncSession = Depends(get_session)):
     # 执行原生sql
     # result = (await session.exec(text("select id from tuiwen_account"))).all()
@@ -217,14 +227,18 @@ async def register(account: AccountCreate, session: AsyncSession = Depends(get_s
         await session.commit()
         await session.refresh(instance)
     except IntegrityError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该邮箱已被注册,如果您是该邮箱的拥有者,请前往登录")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="该邮箱已被注册,如果您是该邮箱的拥有者,请前往登录")
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     return instance
 
 
-@router_account.get("/{account_id}/", summary="查询账户信息", response_model=AccountPublic)
+@router_account.get("/{account_id}/", summary="查询账户信息", response_model=AccountPublic,
+                    responses={
+                        404: {"description": "no such account"}
+                    })
 async def get_account(account_id: str, session: AsyncSession = Depends(get_session)):
     statement = select(Account).where(Account.account_id == account_id)
     instance = (await session.exec(statement)).first()
@@ -264,14 +278,12 @@ async def search(keyword: str, session: AsyncSession = Depends(get_session), off
     statement = select(Account).where(
         or_(Account.username.contains(keyword), Account.nick_name.contains(keyword))).offset(offset).limit(limit)
     ds = (await session.exec(statement)).all()
-    data = [item for item in ds]
-    if not data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="没有搜索到相关帐户")
 
-    return data
+    return ds
 
 
-@router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=['account'], response_model=AccountPublic)
+@router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=['account'],
+                   response_model=AccountPublic)
 async def password_reset(account: AccountPasswordReset, session: AsyncSession = Depends(get_session)):
     statement = select(Account).where(Account.account_id == account.account_id)
     instance = (await session.exec(statement)).first()
@@ -294,8 +306,10 @@ async def password_reset(account: AccountPasswordReset, session: AsyncSession = 
     return instance
 
 
-@router_account.put("/password/change/", summary="账号密码修改", response_model=AccountPublic)
-async def password_change(request: Request, account: AccountPasswordChange, session: AsyncSession = Depends(get_session),):
+@router_account.put("/password/change/", summary="账号密码修改", response_model=AccountPublic,
+                    status_code=status.HTTP_200_OK)
+async def password_change(request: Request, account: AccountPasswordChange,
+                          session: AsyncSession = Depends(get_session), ):
     statement = select(Account).where(Account.account_id == request.state.account_id,
                                       Account.password == account.password_current)
     instance = (await session.exec(statement)).first()

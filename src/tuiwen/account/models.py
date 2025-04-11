@@ -17,7 +17,7 @@ from enum import Enum
 
 from pydantic import EmailStr
 from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM, Column, JSON
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, text
 
 from src.tuiwen.core import settings
 
@@ -127,7 +127,8 @@ class Account(AccountBase, table=True):
                                sa_column_kwargs={'comment': '存储用户自定义配置信息'},
                                sa_type=JSON)
     gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                  sa_column=Column(DateTime(timezone=True), default=datetime.now, comment='创建日期时间')
+                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
+                                                   comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                   )
     gmt_modified: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
                                    sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now, comment='最后修改时间')
@@ -169,7 +170,8 @@ class App(SQLModel, table=False):
                                     sa_column_kwargs={'comment': '应用英文名称'})
     is_active: bool = Field(default=True, description='激活状态', sa_column_kwargs={'comment': '激活状态'})
     gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                  sa_column=Column(DateTime(timezone=True), default=datetime.now, comment='创建日期时间')
+                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
+                                                   comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                   )
     gmt_modified: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
                                    sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now, comment='最后修改时间')

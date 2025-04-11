@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
-
 from dotenv import load_dotenv, find_dotenv
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html, get_swagger_ui_oauth2_redirect_html, get_redoc_html
@@ -59,14 +59,24 @@ servers = [
     {"url": "http://127.0.0.1:8000", "description": "本地开发环境"},
 ]
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """app生命周期函数"""
     # app 启动前
     # app.state.pool = await get_async_pool()
+    from pyfiglet import Figlet
+    ft = Figlet(font="ansi_shadow")
+    ascii_art = ft.renderText("API-TUIWEN")
+    cleaned_lines = [line.rstrip() for line in ascii_art.split("\n")]
+    final_art = "\n".join(cleaned_lines).rstrip("\n")  # 去除整个文本的末尾换行符
+    print(final_art)
+    print(f'version: {__version__} doc_url: http://localhost:8000/docs/')
+
     yield
     # app 关闭前
     # app.state.pool.close()
+
 
 app = FastAPI(title="内部API文档",
               description=description,
@@ -88,8 +98,8 @@ app = FastAPI(title="内部API文档",
               redoc_url=None,
               generate_unique_id_function=custom_generate_unique_id,
               lifespan=lifespan,
+              redirect_slashes=True
               )
-
 
 app.include_router(api_router)
 
@@ -136,6 +146,7 @@ async def redoc_html():
 
 @app.exception_handler(HTTPException)
 async def custom_http_exception_handler(request, exc):
+    # 统一异常处理
     return JSONResponse(
         status_code=exc.status_code,
         content={"message": f"Oops! {exc.detail} occurred"},
