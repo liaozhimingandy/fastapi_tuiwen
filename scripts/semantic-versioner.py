@@ -10,6 +10,7 @@
     @Desc: 
 =================================================
 """
+import os
 import re
 import subprocess
 from datetime import datetime
@@ -69,11 +70,13 @@ DEFAULT_CONFIG = {
     }
 }
 
+
 def get_current_branch():
     """获取当前分支名称"""
     result = subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-                           capture_output=True, text=True, encoding='utf-8')
+                            capture_output=True, text=True, encoding='utf-8')
     return result.stdout.strip()
+
 
 def get_current_version():
     """获取当前版本号"""
@@ -158,11 +161,36 @@ def determine_version_bump(commits):
     return bump_level
 
 
+def get_build_metadata(config, branch_config):
+    """获取构建元数据"""
+    if not branch_config.get('build_metadata'):
+        return ""
+
+    build_meta = branch_config['build_metadata']
+
+    # 替换占位符
+    if '{commit_sha}' in build_meta:
+        result = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'],
+                                capture_output=True, text=True)
+        commit_sha = result.stdout.strip()
+        build_meta = build_meta.replace('{commit_sha}', commit_sha)
+
+    if '{build_number}' in build_meta:
+        build_number = os.environ.get('GITHUB_RUN_NUMBER', '1')
+        build_meta = build_meta.replace('{build_number}', build_number)
+
+    if '{timestamp}' in build_meta:
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        build_meta = build_meta.replace('{timestamp}', timestamp)
+
+    return f"+{build_meta}"
+
+
 def increment_version(current_version, bump_level, branch):
     """根据升级级别递增版本号，支持预发布版本"""
     branch_config = DEFAULT_CONFIG['branches'].get(branch, {})
     pre_release = branch_config.get('pre_release')
-    build_meta = branch_config.get('build_metadata')
+    build_meta = get_build_metadata(DEFAULT_CONFIG, branch_config)
     auto_increment = branch_config.get('auto_increment', False)
 
     # 分离预发布标签和构建元数据
@@ -306,12 +334,14 @@ def create_git_tag(new_version, is_pre_release=False):
 
     print(f"✅ 已创建 Git tag: {tag_name}")
 
+
 def create_github_release(version, is_pre_release=False):
     """创建GitHub发布（需要GH CLI）"""
     pre_release_flag = "--prerelease" if is_pre_release else ""
     subprocess.run(f'gh release create v{version} {pre_release_flag} -t "Release v{version}"',
-                  shell=True)
+                   shell=True)
     print(f"✅ Created GitHub release: v{version}")
+
 
 def main():
     parser = argparse.ArgumentParser(description='Automated Semantic Versioning')

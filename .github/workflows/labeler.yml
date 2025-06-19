@@ -1,4 +1,49 @@
 name: labeler.yml
 on:
+  push:
+    branches:
+      - main
 
 jobs:
+  build:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install packaging
+
+      - name: Authenticate with GitHub CLI
+        run: gh auth login --with-token ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run semantic versioner
+        run: python semantic-versioner.py --release
+
+      - name: Push changes and tags
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "liaozhimingandy@qq.com+github-actions[bot]@users.noreply.github.com"
+          git push
+          git push --tags
+
+      - name: Deploy to production
+        run: |
+          # 添加您的部署脚本
+          echo "Deploying v$(cat VERSION) to production"
+
+      - name: Notify stakeholders
+        run: |
+          # 添加通知脚本
+          echo "Notifying stakeholders about new production release"
