@@ -25,10 +25,15 @@ jobs:
       - name: Install dependencies
         run: pip install packaging
 
-      - name: Authenticate with GitHub CLI
-        run: gh auth login --with-token ${{ secrets.GH_TOKEN }}
+      - name: Setup GitHub CLI
+        run: |
+          # 确保使用最新版 GitHub CLI
+          sudo apt update
+          sudo apt install -y gh
 
       - name: Run semantic versioner
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python semantic-versioner.py --release
 
       - name: Push changes and tags
