@@ -33,13 +33,15 @@ jobs:
           sudo apt update
           sudo apt install -y gh
 
-      - name: Run semantic versioner
-        run: python scripts/semantic-versioner.py --release
+#      - name: Run semantic versioner
+#        run:
 
       - name: Push changes and tags
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          python scripts/semantic-versioner.py --release
           
           # 设置使用令牌认证的远程URL
           remote_url="https://${{ env.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
