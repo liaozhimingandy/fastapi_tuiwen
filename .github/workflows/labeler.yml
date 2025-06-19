@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -45,7 +45,7 @@ jobs:
           remote_url="https://${{ env.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           
           # 推送更改和标签
-          git push origin main
+          git push origin HEAD:main
           git push origin --tags
 
       - name: Deploy to production
