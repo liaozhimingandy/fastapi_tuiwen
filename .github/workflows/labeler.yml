@@ -34,7 +34,7 @@ jobs:
       - name: Run semantic versioner
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python semantic-versioner.py --release
+        run: python scripts/semantic-versioner.py --release
 
       - name: Push changes and tags
         run: |
