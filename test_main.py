@@ -20,6 +20,7 @@ from hashlib import md5
 import pytz
 import pytest
 from starlette.testclient import TestClient
+from fastapi import status
 
 from main import app
 
@@ -60,7 +61,7 @@ class TestMain:
         # with httpx.Client() as client:
         r = client.post(f"/accounts/register/", json=data,
                         headers={"Content-Type": "application/json"})
-        assert r.status_code == 200
+        assert r.status_code == status.HTTP_201_CREATED
         TestMain.username = data.get('email')
         TestMain.passowrd = data.get('password')
         TestMain.account_id = r.json().get('account_id')
@@ -103,18 +104,18 @@ class TestMain:
         assert r.status_code == 200
         # 404
         r = client.get(f"/accounts/{TestMain.account_id}{random.randint(0, 9000)}/")
-        assert r.status_code == 404
+        assert r.status_code == status.HTTP_404_NOT_FOUND
 
     def test_account_search(self, client: TestClient) -> None:
         """搜索功能"""
-        keyword = "s"
+        keyword = "test"
         # ok
         r = client.get(f"/accounts/search/{keyword}/")
         assert r.status_code == 200
 
         # 404
         r = client.get(f"/accounts/search/{keyword}-{str(uuid.uuid4())}/")
-        assert r.status_code == 404
+        assert r.status_code == status.HTTP_404_NOT_FOUND
 
     def test_put_account(self, client: TestClient) -> None:
         """更新帐户信息"""
@@ -138,7 +139,7 @@ class TestMain:
         data['code'] = "666777"
         r = client.put(f'/accounts/password/reset/', json=data,
                        headers={"Content-Type": "application/json"})
-        assert r.status_code == 400
+        assert r.status_code == status.HTTP_400_BAD_REQUEST
 
 
     def test_password_change(self, client: TestClient) -> None:
@@ -149,7 +150,7 @@ class TestMain:
             "password_new": TestMain.md5_hash.hexdigest()
         }
         r = client.put(f'/accounts/password/change/', json=data)
-        assert r.status_code == 400
+        assert r.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_create_post(self, client: TestClient) -> None:
         """创建帖子"""
@@ -166,7 +167,7 @@ class TestMain:
             "longitude": "string"
         }
         r = client.post(f'/posts/', json=data)
-        assert r.status_code == 200
+        assert r.status_code == status.HTTP_201_CREATED
         TestMain.post_id = data.get('post_id')
 
     def test_get_posts_lasted(self, client: TestClient) -> None:
@@ -183,12 +184,12 @@ class TestMain:
             "right_status": 2
         }
         r = client.put(f"/posts/{data['post_id']}/right/", json=data)
-        assert 200 == r.status_code
+        assert r.status_code == status.HTTP_205_RESET_CONTENT
 
     def test_delete_post(self, client: TestClient) -> None:
         """删除帖子"""
         r = client.delete(f"/posts/{TestMain.post_id}/")
-        assert r.status_code == 200
+        assert r.status_code == status.HTTP_204_NO_CONTENT
 
     def test_create_comment(self, client: TestClient) -> None:
         """创建评论"""
@@ -203,13 +204,13 @@ class TestMain:
             "gmt_created": datetime.now(pytz.timezone('Asia/Shanghai')).isoformat(),
         }
         r = client.post(f'/comments/', json=data)
-        assert r.status_code == 200
+        assert r.status_code == status.HTTP_201_CREATED
         TestMain.comment_id = data.get('comment_id')
 
     def test_delete_comment(self, client: TestClient) -> None:
         """删除帖子"""
         r = client.delete(f"/comments/{TestMain.comment_id}/")
-        assert r.status_code == 200
+        assert r.status_code == status.HTTP_204_NO_CONTENT
 
     def test_create_like(self, client: TestClient) -> None:
         """给帖子点赞"""
@@ -220,12 +221,12 @@ class TestMain:
             "gmt_created": datetime.now(pytz.timezone('Asia/Shanghai')).isoformat()
         }
         r = client.post(f'/likes/', json=data)
-        assert r.status_code == 200
+        assert r.status_code == status.HTTP_201_CREATED
 
     def test_delete_like(self, client: TestClient) -> None:
         """取消点赞"""
         r = client.delete(f"/likes/{TestMain.post_id}/")
-        assert r.status_code == 200
+        assert r.status_code == status.HTTP_204_NO_CONTENT
 
     def test_get_like_count(self, client: TestClient) -> None:
         """获取指定帖子的点赞数量"""
@@ -235,11 +236,12 @@ class TestMain:
 
     def test_upload_image(self, client: TestClient) -> None:
         """测试图片上传"""
-        with open(r'C:\Users\liaoz\Downloads\610d9b4d-d5dd-4758-8cd3-eb029b2a39dc.jpg', 'rb') as f:
+
+        with open(r'C:\Users\liaoz\Pictures\【可乐】智能云千帆行业实战：金融大模型应用探索与开发实践1915.867.png', 'rb') as f:
             files = {'file': ('test.jpg', f, 'image/jpeg')}
             response = client.post(f'/upload/image/', files=files,
                                    headers={"Authorization": f"Bearer {TestMain.token.get('access_token')}"})
-            assert response.status_code == 200
+            assert response.status_code == status.HTTP_201_CREATED
 
     def test_create_follower(self, client: TestClient) -> None:
         """创建关注"""
@@ -249,16 +251,16 @@ class TestMain:
             "followee_id": f'{TestMain.account_id}-test'
         }
         r = client.post(f'/follows/', json=data)
-        assert r.status_code == 200
+        assert r.status_code == status.HTTP_201_CREATED
 
         # 400
         r = client.post(f'/follows/', json=data)
-        assert r.status_code == 400
+        assert r.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_delete_follower(self, client: TestClient) -> None:
         """删除关注"""
         r = client.delete(f'/follows/{self.account_id}/{self.account_id}-test/')
-        assert r.status_code == 200
+        assert r.status_code == status.HTTP_204_NO_CONTENT
 
     def test_get_follow_info_by_id(self, client: TestClient) -> None:
         """获取指定帐户的关注和正在关注数量"""

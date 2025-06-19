@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 from . import database
-from .config import settings, Settings
+from .config import get_settings, Settings
 
 __all__ = [
     "database",
-    "settings",
+    "get_settings",
     "Settings",
 ]

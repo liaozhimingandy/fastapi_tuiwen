@@ -4,7 +4,7 @@ from datetime import timedelta, datetime, timezone
 
 import jwt
 
-from src.tuiwen.core import settings
+from src.tuiwen.core import get_settings
 
 
 def generate_jwt_token(data: dict, expires_in: timedelta = timedelta(days=1),
@@ -41,7 +41,7 @@ def generate_jwt_token(data: dict, expires_in: timedelta = timedelta(days=1),
 
     # SECRET_KEY对声明集进行签名的密钥
     # jwt.encode()对声明集进行编码并返回 JWT 字符串。
-    return jwt.encode(payload, key=settings.SECRET_KEY, algorithm='HS256')
+    return jwt.encode(payload, key=get_settings().SECRET_KEY, algorithm='HS256')
 
 
 def verify_jwt_token(data: str, grant_type: str = "access_token") -> dict:
@@ -55,7 +55,7 @@ def verify_jwt_token(data: str, grant_type: str = "access_token") -> dict:
     :return:
     """
     try:
-        decode = jwt.decode(data, key=settings.SECRET_KEY, algorithms=['HS256'], audience='www.alsoapp.com')
+        decode = jwt.decode(data, key=get_settings().SECRET_KEY, algorithms=['HS256'], audience='www.alsoapp.com')
         assert decode["grant_type"] == grant_type, f'{decode["grant_type"]} != {grant_type}'
     except jwt.ExpiredSignatureError as e:
         return {"message": str(e)}  # Signature has expired

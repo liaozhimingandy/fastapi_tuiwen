@@ -8,35 +8,33 @@
     @Date：2025/1/11 11:44
     @Desc: 
 ================================================="""
-from typing import Any
+from typing import Any, Annotated
 
 import asyncpg
-from dotenv import load_dotenv, find_dotenv
 
 from sqlalchemy.exc import IntegrityError
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-# 从本地加载.env文件到环境变量中
-_ = load_dotenv(find_dotenv())
-from src.tuiwen.core.config import settings
+from src.tuiwen.core import config
+from src.tuiwen.core.config import get_settings
 
 # 创建异步引擎
 # sqlite_file_name = "tuiwen.sqlite3"
 # DATABASE_URL = f"sqlite+aiosqlite:///{sqlite_file_name}"
 # DATABASE_URL = postgresql+asyncpg://zhiming:zhiming@localhost:5432/tuiwen
-DATABASE_URL = str(settings.SQLALCHEMY_DATABASE_URI)
-engine = create_async_engine(DATABASE_URL, echo=not settings.DEBUG)  # Annotated[bool, Doc("是否显示数据库层面日志")]
+DATABASE_URL = str(get_settings().SQLALCHEMY_DATABASE_URI)
+engine = create_async_engine(DATABASE_URL, echo=not get_settings().DEBUG)  # Annotated[bool, Doc("是否显示数据库层面日志")]
 
 # 创建异步session
-async_session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
-
+AsyncSessionLocal = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=True)
 
 async def create_table_async():
     """ 异步的形式创建数据库 """
+
     from src.tuiwen.account.models import Account
     from src.tuiwen.post.models import Post, Comment, Like, Image, Follow
     from src.tuiwen.log.models import Log
@@ -47,7 +45,17 @@ async def create_table_async():
         print("Tables created successfully")  # 添加日志输出，确认创建
 
 
-async def get_async_pool():
+async def init_db():
+    """
+    初始化数据库,创建表
+    :return:
+    """
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+        print("Tables created successfully")  # 添加日志输出，确认创建
+
+
+async def get_async_pool(settings: Annotated[config.Settings, Depends(get_settings)]):
     """获取数据库连接池;适合手动管理连接"""
     return await asyncpg.create_pool(
         user=settings.POSTGRES_USER,
@@ -70,12 +78,15 @@ async def add_instance(session, instance) -> Any:
         await session.commit()
         await session.refresh(instance)
     except IntegrityError:
+        await session.rollback() # 回滚事务
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请勿重复提交")
     except Exception as e:
+        await session.rollback() # 回滚事务
         raise e  # 将异常重新抛出
 
     return instance
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(create_table_async())

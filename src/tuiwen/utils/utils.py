@@ -19,7 +19,7 @@ from PIL import Image
 from fastapi import UploadFile
 from fastapi.routing import APIRoute
 
-from src.tuiwen.core import settings
+from src.tuiwen.core import get_settings
 
 
 def get_datetime_now():
@@ -94,6 +94,6 @@ def convert_to_cst_time(time: datetime) -> datetime:
     """
     if time is None:
         time = time.replace(tzinfo=timezone('UTC'))
-    return time.astimezone(timezone(settings.TIME_ZONE))
+    return time.astimezone(timezone(get_settings().TIME_ZONE))
 
 

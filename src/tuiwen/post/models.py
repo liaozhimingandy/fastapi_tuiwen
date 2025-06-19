@@ -7,9 +7,9 @@ from pydantic import field_validator, BaseModel
 from sqlalchemy import DateTime, Enum as SaENUM, JSON, Column
 from sqlmodel import SQLModel, Field, Index, text
 
-from src.tuiwen.core import settings
+from src.tuiwen.core import get_settings
 
-TABLE_PREFIX = settings.TABLE_PREFIX
+TABLE_PREFIX = get_settings().TABLE_PREFIX
 
 
 class PostRightStatusUpdate(SQLModel):
@@ -132,7 +132,7 @@ class CommentInput(SQLModel):
 
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(pytz.timezone(settings.TIME_ZONE))
+        return value.astimezone(pytz.timezone(get_settings().TIME_ZONE))
 
 
 class Comment(CommentInput, table=True):

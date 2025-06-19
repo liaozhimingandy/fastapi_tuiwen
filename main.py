@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-from dotenv import load_dotenv, find_dotenv
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -7,11 +6,8 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_swagger_ui_oauth2_redi
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
-# 从本地加载.env文件到环境变量中
-_ = load_dotenv(find_dotenv())
-
 from src.tuiwen import api_router
-from src.tuiwen.core import settings
+from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import get_version_from_pyproject, custom_generate_unique_id
 
 __version__, description = get_version_from_pyproject("pyproject.toml")
@@ -59,12 +55,16 @@ servers = [
     {"url": "http://127.0.0.1:8000", "description": "本地开发环境"},
 ]
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """app生命周期函数"""
     # app 启动前
     # app.state.pool = await get_async_pool()
+
+    # 初始化数据库
+    # await init_db()
+    # await create_table_async()
+
     from pyfiglet import Figlet
     ft = Figlet(font="ansi_shadow")
     ascii_art = ft.renderText("API-TUIWEN")
@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="内部API文档",
               description=description,
               version=__version__,
-              debug=settings.DEBUG,
+              debug=get_settings().DEBUG,
               terms_of_service="https://www.alsoapp.com/terms/",
               contact={
                   "name": "廖志明",
@@ -111,7 +111,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # 配置允许跨域的域名、请求方法等
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,  # 允许跨域访问的来源
+    allow_origins=get_settings().BACKEND_CORS_ORIGINS,  # 允许跨域访问的来源
     allow_credentials=True,  # 允许发送 cookies
     allow_methods=["*"],  # 允许所有 HTTP 方法，包括 OPTIONS
     allow_headers=["*"],  # 允许所有请求头

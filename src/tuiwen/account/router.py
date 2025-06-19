@@ -28,7 +28,7 @@ from src.tuiwen.utils.jwt_token import generate_jwt_token, verify_jwt_token
 from src.tuiwen.dependencies import get_current_user, check_authentication, oauth2_scheme, get_session
 from src.tuiwen.router import router_public
 from src.tuiwen.utils.utils import get_random_salt, convert_to_cst_time
-from src.tuiwen.core import settings
+from src.tuiwen.core import get_settings
 
 SCOPES_BASIC = 'basic'
 
@@ -71,7 +71,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     await session.refresh(instance)
     data = {"account_id": instance.account_id, "salt": instance.salt, 'scopes': SCOPES_BASIC}
 
-    refresh_token = generate_jwt_token(data, expires_in=timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
+    refresh_token = generate_jwt_token(data, expires_in=timedelta(minutes=get_settings().REFRESH_TOKEN_EXPIRE_MINUTES),
                                        grant_type="refresh_token")
 
     data.update(**{'jwt_account_id': instance.account_id})
@@ -106,18 +106,18 @@ async def refresh_token(account_id: str, refresh_token: str = Depends(oauth2_sch
     data = {"account_id": account_id, "salt": payload.get('salt'), 'jwt_account_id': account_id, 'scopes': SCOPES_BASIC}
 
     access_token = generate_jwt_token(data, grant_type="access_token",
-                                      expires_in=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+                                      expires_in=timedelta(minutes=get_settings().ACCESS_TOKEN_EXPIRE_MINUTES))
 
     return AccessToken(access_token=access_token, account_id=account_id)
 
 
 @router_oauth.get("/test-oauth/", summary="测试接口(基础权限)")
-def test_oauth(user: Account = Depends(get_current_user)) -> Any:
+async def test_oauth(user: Account = Depends(get_current_user)) -> Any:
     return {"message": f"hello word, 欢迎您,{user.account_id}"}
 
 
 @router_oauth.get("/test-oauth-admin/", summary="测试接口(需要更高权限)")
-def test_oauth_admin(user: Account = Security(get_current_user, scopes=['admin'])) -> Any:
+async def test_oauth_admin(user: Account = Security(get_current_user, scopes=['admin'])) -> Any:
     return {"message": f"hello word, 欢迎您,{user.account_id}"}
 
 
@@ -171,7 +171,7 @@ async def app_authorize(app_id: str, app_secret: str, session: AsyncSession = De
 
 @router_app.get("/refresh-token/{app_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
                 response_model=AppAccessToken)
-def app_refresh_token(app_id: str, refresh_token: str = Depends(oauth2_scheme)):
+async def app_refresh_token(app_id: str, refresh_token: str = Depends(oauth2_scheme)):
     """
     使用刷新令牌进行更新获取权限令牌,请使用postman测试,header携带认证信息,后续会实现,refresh_token有效期为7天,请妥善保管,重新登录认证后,
     该token作废;
@@ -273,11 +273,14 @@ async def update_account(account_id: str, account: AccountPublicCommon, session:
 
 
 @router_account.get("/search/{keyword}/", summary="通过关键词搜索账户", response_model=List[AccountPublic])
-async def search(keyword: str, session: AsyncSession = Depends(get_session), offset: int = 0,
+async def search(keyword: str, *, session: AsyncSession = Depends(get_session), offset: int = 0,
                  limit: Annotated[int, Query(le=10)] = 10, ):
     statement = select(Account).where(
         or_(Account.username.contains(keyword), Account.nick_name.contains(keyword))).offset(offset).limit(limit)
     ds = (await session.exec(statement)).all()
+
+    if not ds:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
     return ds
 

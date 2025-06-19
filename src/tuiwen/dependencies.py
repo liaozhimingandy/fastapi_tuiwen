@@ -6,7 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 
 from src.tuiwen.account.models import Account
-from src.tuiwen.core.database import async_session
+from src.tuiwen.core.database import AsyncSessionLocal
 from src.tuiwen.utils.jwt_token import verify_jwt_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/oauth/authorize/password/", scopes={
@@ -124,7 +124,7 @@ async def get_current_active_user(
 # 获取异步session的依赖
 async def get_session() -> AsyncSession:
     """获取数据库会话"""
-    async with async_session () as session:
+    async with AsyncSessionLocal() as session:
         yield session
 
 

@@ -19,9 +19,9 @@ from pydantic import EmailStr
 from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM, Column, JSON
 from sqlmodel import SQLModel, Field, text
 
-from src.tuiwen.core import settings
+from src.tuiwen.core import get_settings
 
-TABLE_PREFIX = settings.TABLE_PREFIX
+TABLE_PREFIX = get_settings().TABLE_PREFIX
 
 
 def uuid_generator(size: int = 7):
@@ -77,7 +77,7 @@ class AccountPublicCommon(SQLModel):
     gmt_birth: date | None = Field(None, description='出生日期', sa_column_kwargs={'comment': '出生日期'})
     area_code: AreaCodeEnum = Field(default=AreaCodeEnum.CHINA, description='区域代码',
                                     sa_column_kwargs={'comment': '区域代码'}, sa_type=SaENUM(AreaCodeEnum, values_callable=lambda x: [e.value for e in x]))
-    sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SaENUM(SexEnum, values_callable=lambda x: [str(e. value) for e in x]),
+    sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SaENUM(SexEnum, values_callable=lambda x: [str(e.value) for e in x]),
                          description='性别',sa_column_kwargs={'comment': '性别'})
     avatar: str = Field(None, max_length=200, description='头像链接', sa_column_kwargs={'comment': '头像链接'})
 

@@ -9,7 +9,7 @@ from typing_extensions import Doc
 from sqlmodel import select, delete, update, exists
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Request
 
-from src.tuiwen.core import settings
+from src.tuiwen.core import get_settings, Settings
 from src.tuiwen.core.database import add_instance
 from src.tuiwen.dependencies import check_authentication, get_session
 from src.tuiwen.models import ResponsePublic
@@ -123,7 +123,7 @@ router_upload = APIRouter(prefix="/upload", tags=["upload"], dependencies=[Depen
 
 
 @router_upload.post('/image/', summary="图片上传", response_model=ImageBase, status_code=status.HTTP_201_CREATED)
-async def upload_image(file: Annotated[UploadFile, Doc("图片文件")], session: AsyncSession = Depends(get_session)):
+async def upload_image(file: Annotated[UploadFile, Doc("图片文件")], session: AsyncSession = Depends(get_session), settings: Settings = Depends(get_settings)):
     # 检查文件类型
     if not allowed_file(file, file_type=settings.ALLOWED_IMAGE_FORMATS.split(",")):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"invalid file type. Only {settings.ALLOWED_IMAGE_FORMATS} images are allowed.")
