@@ -1,9 +1,9 @@
 name: Docker Image CI
 
 on:
-  push:
-    tags:
-      - 'v*' # 仅当推送的标签匹配 v* 模式时触发
+  workflow_run:
+    workflows: ["labeler.yml"]
+    types: [completed]
 
 jobs:
   build:
