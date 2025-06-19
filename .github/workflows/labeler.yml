@@ -39,9 +39,15 @@ jobs:
       - name: Push changes and tags
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "liaozhimingandy@qq.com+github-actions[bot]@users.noreply.github.com"
-          git push
-          git push --tags
+          git config user.email "liaozhimingandy+github-actions[bot]@users.noreply.github.com"
+          
+          # 设置使用令牌认证的远程URL
+          remote_url="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git remote set-url origin "$remote_url"
+          
+          # 推送更改和标签
+          git push origin HEAD:main
+          git push origin --tags
 
       - name: Deploy to production
         run: |
