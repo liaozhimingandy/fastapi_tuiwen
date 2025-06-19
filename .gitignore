@@ -5,4 +5,3 @@ tuiwen.sqlite3
 .idea/*
 *.pyc
 .pdm-python
-pdm.lock
