@@ -45,8 +45,8 @@ jobs:
           remote_url="https://${{ env.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           
           # 推送更改和标签
-          git push origin HEAD:main
-          git push origin --tags
+          git push origin HEAD:main -v
+          git push origin --tags -v
 
       - name: Deploy to production
         run: |
