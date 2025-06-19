@@ -205,7 +205,7 @@ def increment_version(current_version, bump_level, branch):
             return f"{new_base}-{pre_release}.1{build_meta}"
     else:
         # 正式版本
-        return f"{new_base}{build_meta}"
+        return f"{new_base}{build_meta if build_meta else ''}"
 
 
 def generate_changelog(commits, new_version, current_version=None, is_pre_release=False):
@@ -268,8 +268,23 @@ def update_changelog_file(new_content, file_path=CHANGELOG_FILE):
         with open(file_path, 'r', encoding='utf-8') as f:
             existing_content = f.read()
 
-        # 在开头插入新内容
-        updated_content = f"{new_content}\n\n{existing_content}"
+        # 确保内容以# Changelog开头
+        if existing_content.startswith("# Changelog"):
+            # 如果已有标题，保留标题并在其后插入新内容
+            # 分割标题和内容部分
+            header_end = existing_content.find("\n\n")
+            if header_end != -1:
+                header = existing_content[:header_end].strip()
+                rest_content = existing_content[header_end:].lstrip()
+            else:
+                header = "# Changelog"
+                rest_content = existing_content
+
+            # 构建新内容：标题 + 新变更日志 + 旧内容
+            updated_content = f"{header}\n\n{new_content}\n\n{rest_content}"
+        else:
+            # 如果开头不是# Changelog，则添加标题
+            updated_content = f"# Changelog\n\n{new_content}\n\n{existing_content}"
     except FileNotFoundError:
         # 文件不存在时创建新文件
         updated_content = f"# Changelog\n\n{new_content}"
