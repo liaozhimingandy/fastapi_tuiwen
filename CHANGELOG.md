@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4] - 2025-06-19
+
+### Version Upgrade: `0.1.3` → `0.1.4`
+
+### Bug Fixes
+- **core:** 修复已知问题 (baabf47)
+
 ## [0.1.3] - 2025-06-19
 
 ### Version Upgrade: `0.1.2` → `0.1.3`
