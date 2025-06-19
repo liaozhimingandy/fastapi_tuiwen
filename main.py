@@ -8,9 +8,9 @@ from starlette.staticfiles import StaticFiles
 
 from src.tuiwen import api_router
 from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import get_version_from_pyproject, custom_generate_unique_id
+from src.tuiwen.utils.utils import custom_generate_unique_id, get_version_from_txt
 
-__version__, description = get_version_from_pyproject("pyproject.toml")
+__version__, description = get_version_from_txt("VERSION")
 
 # 标签描述配置
 tags_metadata = [

@@ -36,6 +36,44 @@ COMMIT_TYPES = {
 VERSION_FILE = 'VERSION'
 CHANGELOG_FILE = 'CHANGELOG.md'
 
+# 预发布标签配置
+PRE_RELEASE_TAGS = {
+    'develop': 'dev',  # 开发分支使用 dev 标签
+    'test': 'alpha',  # 测试分支使用 alpha 标签
+    'beta': 'beta',  # 预发布分支使用 beta 标签
+}
+
+# 默认预发布配置
+DEFAULT_CONFIG = {
+    "branches": {
+        "develop": {
+            "pre_release": "dev",
+            "build_metadata": "sha.{commit_sha}",
+            "auto_increment": True
+        },
+        "test": {
+            "pre_release": "alpha",
+            "build_metadata": "build.{build_number}",
+            "auto_increment": True
+        },
+        "beta": {
+            "pre_release": "beta",
+            "build_metadata": "build.{build_number}",
+            "auto_increment": True
+        },
+        "main": {
+            "pre_release": None,
+            "build_metadata": None,
+            "auto_increment": False
+        }
+    }
+}
+
+def get_current_branch():
+    """获取当前分支名称"""
+    result = subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                           capture_output=True, text=True, encoding='utf-8')
+    return result.stdout.strip()
 
 def get_current_version():
     """获取当前版本号"""
@@ -51,7 +89,7 @@ def save_new_version(new_version):
     """保存新版本号"""
     with open(VERSION_FILE, 'w') as f:
         f.write(new_version)
-    print(f"✅ Updated version to {new_version}")
+    print(f"✅ 版本更新到 {new_version}")
 
 
 def get_commit_history(since_tag=None):
@@ -120,21 +158,57 @@ def determine_version_bump(commits):
     return bump_level
 
 
-def increment_version(current_version, bump_level):
-    """根据升级级别递增版本号"""
-    v = version.parse(current_version)
+def increment_version(current_version, bump_level, branch):
+    """根据升级级别递增版本号，支持预发布版本"""
+    branch_config = DEFAULT_CONFIG['branches'].get(branch, {})
+    pre_release = branch_config.get('pre_release')
+    build_meta = branch_config.get('build_metadata')
+    auto_increment = branch_config.get('auto_increment', False)
 
+    # 分离预发布标签和构建元数据
+    base_version = current_version
+    pre_tag = None
+    pre_counter = None
+
+    # 处理预发布版本
+    if '-' in base_version:
+        base_version, pre_tag_part = base_version.split('-', 1)
+        if '.' in pre_tag_part:
+            pre_tag, pre_counter = pre_tag_part.split('.', 1)
+        else:
+            pre_tag = pre_tag_part
+            pre_counter = "0"
+
+    # 解析基础版本
+    v = version.parse(base_version)
+
+    # 计算新的基础版本
     if bump_level == 'major':
-        return f"{v.major + 1}.0.0"
+        new_base = f"{v.major + 1}.0.0"
     elif bump_level == 'minor':
-        return f"{v.major}.{v.minor + 1}.0"
+        new_base = f"{v.major}.{v.minor + 1}.0"
     elif bump_level == 'patch':
-        return f"{v.major}.{v.minor}.{v.micro + 1}"
+        new_base = f"{v.major}.{v.minor}.{v.micro + 1}"
     else:
-        return current_version
+        new_base = base_version
+
+    # 处理预发布版本
+    if pre_release:
+        # 如果是开发分支且自动递增
+        if auto_increment and pre_tag == pre_release and pre_counter:
+            try:
+                new_counter = int(pre_counter) + 1
+            except ValueError:
+                new_counter = 1
+            return f"{new_base}-{pre_release}.{new_counter}{build_meta}"
+        else:
+            return f"{new_base}-{pre_release}.1{build_meta}"
+    else:
+        # 正式版本
+        return f"{new_base}{build_meta}"
 
 
-def generate_changelog(commits, new_version, current_version=None):
+def generate_changelog(commits, new_version, current_version=None, is_pre_release=False):
     """生成变更日志内容"""
     release_date = datetime.now().strftime('%Y-%m-%d')
     grouped = defaultdict(list)
@@ -161,7 +235,12 @@ def generate_changelog(commits, new_version, current_version=None):
             grouped[parsed['type']].append(entry)
 
     # 构建变更日志
-    changelog = [f"## [{new_version}] - {release_date}", ]
+    changelog = []
+
+    if is_pre_release:
+        changelog.append(f"## [{new_version}] - {release_date} (Pre-release)")
+    else:
+        changelog.append(f"## [{new_version}] - {release_date}")
 
     # 添加版本升级说明
     if current_version:
@@ -186,7 +265,7 @@ def update_changelog_file(new_content, file_path=CHANGELOG_FILE):
     """更新变更日志文件"""
     try:
         # 读取现有内容
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             existing_content = f.read()
 
         # 在开头插入新内容
@@ -196,24 +275,41 @@ def update_changelog_file(new_content, file_path=CHANGELOG_FILE):
         updated_content = f"# Changelog\n\n{new_content}"
 
     # 写入文件
-    with open(file_path, 'w') as f:
+    with open(file_path, 'w', encoding='utf-8') as f:
         f.write(updated_content)
 
-    print(f"✅ Updated {file_path}")
+    print(f"✅ 已更新 {file_path}")
 
 
-def create_git_tag(new_version):
+def create_git_tag(new_version, is_pre_release=False):
     """创建Git版本标签"""
     tag_name = f"v{new_version}"
-    subprocess.run(['git', 'tag', '-a', tag_name, '-m', f"Version {new_version}"], encoding='utf-8')
-    print(f"✅ Created Git tag: {tag_name}")
+    tag_message = f"Version {new_version}"
+    if is_pre_release:
+        tag_message += " (Pre-release)"
+    subprocess.run(['git', 'tag', '-a', tag_name, '-m', tag_message], encoding='utf-8')
 
+    print(f"✅ 已创建 Git tag: {tag_name}")
+
+def create_github_release(version, is_pre_release=False):
+    """创建GitHub发布（需要GH CLI）"""
+    pre_release_flag = "--prerelease" if is_pre_release else ""
+    subprocess.run(f'gh release create v{version} {pre_release_flag} -t "Release v{version}"',
+                  shell=True)
+    print(f"✅ Created GitHub release: v{version}")
 
 def main():
     parser = argparse.ArgumentParser(description='Automated Semantic Versioning')
     parser.add_argument('--release', action='store_true', help='Create a new release')
     parser.add_argument('--dry-run', action='store_true', help='Simulate without making changes')
+    parser.add_argument('--github-release', action='store_true', help='Create GitHub release')
     args = parser.parse_args()
+
+    # 获取当前分支
+    current_branch = get_current_branch()
+    print(f"当前分支: {current_branch}")
+
+    is_pre_release = DEFAULT_CONFIG.get('branches').get(current_branch).get('pre_release') is not None
 
     # 获取当前版本
     current_version = get_current_version()
@@ -232,7 +328,7 @@ def main():
     print(f"版本升级级别: {bump_level}")
 
     # 计算新版本
-    new_version = increment_version(current_version, bump_level)
+    new_version = increment_version(current_version, bump_level, current_branch)
 
     if new_version == current_version:
         print("⚠️ 无需更改版本")
@@ -245,7 +341,11 @@ def main():
         return
 
     # 生成变更日志
-    changelog_content = generate_changelog(commits, new_version, current_version)
+    changelog_content = generate_changelog(
+        commits,
+        new_version,
+        current_version,
+        is_pre_release=is_pre_release)
 
     # 更新文件
     save_new_version(new_version)
@@ -253,11 +353,20 @@ def main():
 
     if args.release:
         # 提交更改并创建标签
-        subprocess.run(['git', 'add', VERSION_FILE, CHANGELOG_FILE])
-        subprocess.run(['git', 'commit', '-m', f"chore(release): v{new_version}"])
-        create_git_tag(new_version)
+        subprocess.run(['git', 'add', VERSION_FILE, CHANGELOG_FILE], encoding='utf-8')
+        commit_msg = f"chore(release): v{new_version}"
+        if is_pre_release:
+            commit_msg += f" [Pre-release: {DEFAULT_CONFIG.get('branches')
+            .get(current_branch).get('pre_release')}]"
+        subprocess.run(['git', 'commit', '-m', commit_msg], encoding='utf-8')
+        create_git_tag(new_version, is_pre_release=is_pre_release)
+
+        if args.github_release:
+            create_github_release(new_version, is_pre_release=is_pre_release)
+
         print(f"🚀 新版本 {new_version} 已发布!")
 
 
 if __name__ == "__main__":
+    # python .\scripts\semantic-versioner.py --release
     main()

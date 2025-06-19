@@ -44,10 +44,17 @@ def allowed_file(file: UploadFile, file_type: list[str]) -> bool:
 
 # 从pyproject.toml加载应用版本号等信息
 def get_version_from_pyproject(file_name: str) -> tuple[str, str]:
-    with open(file_name, "rb") as f:
+    with open(file_name, "rb", encoding='utf-8') as f:
         data = tomllib.load(f)
     # 假设版本号位于 [tool.poetry] 或 [project] 中
     return data.get("project", {}).get("version"), data.get("project", {}).get("description")
+
+def get_version_from_txt(file_name: str) -> tuple[str, str]:
+    """从文件中加载版本号"""
+    with open(file_name, "r", encoding='utf-8') as f:
+        data = f.readline()
+    # 假设版本号位于 [tool.poetry] 或 [project] 中
+    return data, ""
 
 
 def get_random_salt(length: int = 8) -> str:
