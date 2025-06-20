@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3] - 2025-06-20
+
+### Version Upgrade: `0.3.2` → `0.3.3`
+
+### Bug Fixes
+- **core:** 调整dockerfile文件 (ec596ef)
+
 ## [0.3.2] - 2025-06-20
 
 ### Version Upgrade: `0.3.1` → `0.3.2`
