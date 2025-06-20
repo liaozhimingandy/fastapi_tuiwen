@@ -18,8 +18,12 @@ COPY . /app
 WORKDIR /app
 RUN uv sync --verbose --frozen --no-cache -i ${PIPURL}
 
+# 将虚拟环境 bin 加入 PATH
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
 # 设置容器启动时的命令，运行 Uvicorn 服务器并启动 FastAPI 应用
-CMD ["/app/.venv/bin/fastapi", "run", "main.py", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
 
 # 构建命令
 # docker build -t liaozhiming/fastapi_tuiwen:latest .
