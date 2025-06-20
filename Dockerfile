@@ -5,8 +5,8 @@ ARG TAG=3.13-slim
 FROM python:${TAG}
 
 # pip镜像源
-# ENV PIPURL https://mirrors.aliyun.com/pypi/simple/
-# ENV PIPURL "https://pypi.org/simple/"
+ENV PIPURL https://mirrors.aliyun.com/pypi/simple/
+#ENV PIPURL "https://pypi.org/simple/"
 
 # 安装 uv.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
