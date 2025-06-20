@@ -19,7 +19,7 @@ WORKDIR /app
 RUN uv sync --verbose --frozen --no-cache -i ${PIPURL}
 
 # 设置容器启动时的命令，运行 Uvicorn 服务器并启动 FastAPI 应用
-CMD ["/app/.venv/bin/fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["/app/.venv/bin/fastapi", "run", "main.py", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
 
 # 构建命令
 # docker build -t liaozhiming/fastapi_tuiwen:latest .
