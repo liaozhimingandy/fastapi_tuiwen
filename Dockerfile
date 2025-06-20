@@ -1,4 +1,5 @@
 # 定义镜像的标签
+# 参考文档: https://docs.astral.sh/uv/guides/integration/fastapi/#deployment
 ARG TAG=3.13-slim
 
 FROM python:${TAG} as base
@@ -11,11 +12,10 @@ ENV PIPURL "https://mirrors.aliyun.com/pypi/simple/"
 WORKDIR /app
 
 # 复制项目依赖文件到容器
-COPY pdm.lock .
+COPY pyproject.toml .
 
 # 安装 pdm 及项目依赖
-RUN pip install --no-cache-dir pdm -i ${PIPURL} --default-timeout=1000 \
-    && pdm export -o requirements.txt --without-hashes
+RUN pip install --no-cache-dir uv -i ${PIPURL} --default-timeout=1000 && uv export -o requirements.txt
 
 FROM python:${TAG}
 

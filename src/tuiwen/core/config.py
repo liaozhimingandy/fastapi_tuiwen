@@ -2,7 +2,6 @@ import os
 from functools import lru_cache
 from typing import Any, Annotated
 
-from dotenv import load_dotenv, find_dotenv
 from pydantic import computed_field, BeforeValidator, Field
 from pydantic_core import MultiHostUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict

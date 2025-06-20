@@ -1,6 +1,6 @@
 services:
   app:
-    image: liaozhiming/fastapi_tuiwen:latest
+    image: liaozhiming/fastapi_tuiwen:0.1.6
     restart: unless-stopped
     ports:
       - "8000:8000"
