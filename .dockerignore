@@ -9,4 +9,6 @@ __pycache__/*
 .idea/*
 .env
 ./docker-compose.yml
-./static/*
+./static/medias/*
+logs/*
+tuiwen.sqlite3

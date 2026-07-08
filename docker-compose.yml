@@ -1,11 +1,13 @@
 services:
   app:
-    image: fastapi_tuiwen:0.3.2
+    image: fastapi_tuiwen:0.3.4-beta
     restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
       - .env
+    extra_hosts:
+      - db.tuiwen.alsoapp.com:172.17.0.2
     environment:
       - TZ=Asia/Shanghai
     healthcheck:

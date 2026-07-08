@@ -8,7 +8,7 @@ from starlette.staticfiles import StaticFiles
 from src.tuiwen import api_router
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import custom_generate_unique_id, get_version_from_txt
-from tuiwen.utils import logger
+from src.tuiwen.utils import logger
 
 __version__, description = get_version_from_txt("VERSION")
 
@@ -62,8 +62,10 @@ async def lifespan(app: FastAPI):
     # app.state.pool = await get_async_pool()
 
     # 初始化数据库
+    # from src.tuiwen.core.database import init_db, create_table_async
     # await init_db()
     # await create_table_async()
+    # logger.info("初始化数据库")
 
     from pyfiglet import Figlet
     ft = Figlet(font="ansi_shadow")
@@ -72,7 +74,8 @@ async def lifespan(app: FastAPI):
     final_art = "\n".join(cleaned_lines).rstrip("\n")  # 去除整个文本的末尾换行符
     print(final_art)
     print(f'version: {__version__} doc_url: http://localhost:8000/docs/')
-    logger.info(f'version: {__version__} doc_url: http://localhost:8000/docs/')
+    logger.info("服务启动")
+
     yield
     # app 关闭前
     # app.state.pool.close()
