@@ -5,8 +5,8 @@ ARG TAG=3.13-slim
 FROM python:${TAG}
 
 # pip镜像源
-# ENV PIPURL https://mirrors.aliyun.com/pypi/simple/
-# ENV PIPURL "https://pypi.org/simple/"
+ENV PIPURL https://mirrors.aliyun.com/pypi/simple/
+#ENV PIPURL "https://pypi.org/simple/"
 
 # 安装 uv.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -17,6 +17,10 @@ COPY . /app
 # 安装应用依赖.
 WORKDIR /app
 RUN uv sync --verbose --frozen --no-cache -i ${PIPURL}
+
+# 将虚拟环境 bin 加入 PATH
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # 设置容器启动时的命令，运行 Uvicorn 服务器并启动 FastAPI 应用
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

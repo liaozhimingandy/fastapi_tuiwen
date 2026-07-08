@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html, get_swagger_ui_oauth2_redirect_html, get_redoc_html
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
@@ -9,6 +8,7 @@ from starlette.staticfiles import StaticFiles
 from src.tuiwen import api_router
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import custom_generate_unique_id, get_version_from_txt
+from tuiwen.utils import logger
 
 __version__, description = get_version_from_txt("VERSION")
 
@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     final_art = "\n".join(cleaned_lines).rstrip("\n")  # 去除整个文本的末尾换行符
     print(final_art)
     print(f'version: {__version__} doc_url: http://localhost:8000/docs/')
-
+    logger.info(f'version: {__version__} doc_url: http://localhost:8000/docs/')
     yield
     # app 关闭前
     # app.state.pool.close()
@@ -144,10 +144,11 @@ async def redoc_html():
     )
 
 
-@app.exception_handler(HTTPException)
-async def custom_http_exception_handler(request, exc):
-    # 统一异常处理
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"message": f"Oops! {exc.detail} occurred"},
-    )
+
+# @app.exception_handler(HTTPException)
+# async def custom_http_exception_handler(request, exc):
+#     # 统一异常处理
+#     return JSONResponse(
+#         status_code=exc.status_code,
+#         content={"message": f"Oops! {exc.detail} occurred"},
+#     )
