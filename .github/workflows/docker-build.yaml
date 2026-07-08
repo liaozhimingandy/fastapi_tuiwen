@@ -1,9 +1,9 @@
 name: Docker Image CI
 
 on:
-  workflow_run:
-    workflows: ["labeler.yml"]
-    types: [completed]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   build:

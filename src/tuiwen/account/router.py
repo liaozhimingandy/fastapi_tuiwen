@@ -199,7 +199,6 @@ async def app_refresh_token(app_id: str, refresh_token: str = Depends(oauth2_sch
 
 ########################################################################################################################
 @router_public.get("/health-check/", tags=["health"], summary="服务检查检查")
-@router_public.get("/", tags=["root"], summary="服务检查检查")
 async def health_check() -> dict[str, Any]:
     current_time = convert_to_cst_time(datetime.now())
     return {"message": "ok", "gmt_created": current_time}
