@@ -85,12 +85,12 @@ def custom_generate_unique_id(route: APIRoute) -> str:
     return f"{route.tags[0]}-{route.name.replace('_', '-')}"
 
 
-def convert_to_cst_time(time: datetime) -> datetime:
+def convert_to_cst_time(dt: datetime) -> datetime | None:
     """
     将指定时间对象转成北京东八时区的时间
 
     Args:
-        time (datetime): datetime
+        dt (datetime): datetime
 
     Returns:
         北京时区的时间字符串
@@ -99,8 +99,7 @@ def convert_to_cst_time(time: datetime) -> datetime:
         convert_to_cst_time(datetime.now())
 
     """
-    if time is None:
-        time = time.replace(tzinfo=timezone('UTC'))
-    return time.astimezone(timezone(get_settings().TIME_ZONE))
+    if dt is not None:
+        return dt.astimezone(timezone(get_settings().TIME_ZONE))
 
 

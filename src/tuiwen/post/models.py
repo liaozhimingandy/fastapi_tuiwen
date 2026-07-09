@@ -3,11 +3,12 @@ import uuid
 from datetime import datetime, timezone
 
 import pytz
-from pydantic import field_validator, BaseModel
+from pydantic import field_validator, BaseModel, field_serializer
 from sqlalchemy import DateTime, Enum as SaENUM, JSON, Column
 from sqlmodel import SQLModel, Field, Index, text
 
 from src.tuiwen.core import get_settings
+from src.tuiwen.utils.utils import convert_to_cst_time
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -89,6 +90,10 @@ class Post(PostCreate, table=True):
                                                     onupdate=datetime.now, comment='最后修改时间')
                                    )
 
+    @field_serializer("gmt_created", "gmt_modified")
+    def serialize_gmt_created(self, value: datetime):
+        return convert_to_cst_time(value)
+
 
 class CommentInput(SQLModel):
     """
@@ -134,6 +139,10 @@ class CommentInput(SQLModel):
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(pytz.timezone(get_settings().TIME_ZONE))
 
+    @field_serializer("gmt_created")
+    def serialize_gmt_created(self, value: datetime):
+        return convert_to_cst_time(value)
+
 
 class Comment(CommentInput, table=True):
     __tablename__ = f"{TABLE_PREFIX}comment"  # 表名
@@ -160,6 +169,9 @@ class LikeInput(SQLModel):
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False, server_default=text("NOW()")))
 
+    @field_serializer("gmt_created")
+    def serialize_gmt_created(self, value: datetime):
+        return convert_to_cst_time(value)
 
 class Like(LikeInput, table=True):
     __tablename__ = f"{TABLE_PREFIX}like"  # 表名

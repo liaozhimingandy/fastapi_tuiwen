@@ -1,7 +1,7 @@
 import hashlib
 import uuid
 import os
-from typing import Annotated, Any
+from typing import Annotated
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, Request
 from src.tuiwen.core import get_settings, Settings
 from src.tuiwen.core.database import add_instance
 from src.tuiwen.dependencies import check_authentication, get_session
-from src.tuiwen.models import ResponsePublic
 from src.tuiwen.post.models import Post, PostCreate, Comment, Like, Image as TWImage, ImageBase, PostRightStatusUpdate, \
     CommentInput, LikeInput, Follow, FollowCountModel, LikeCountModel
 from src.tuiwen.utils.utils import allowed_file, convert_to_cst_time
@@ -22,24 +21,23 @@ router_post = APIRouter(prefix="/posts", tags=["post"], dependencies=[Depends(ch
 
 @router_post.post("/", summary="发布帖子", response_model=Post, status_code=status.HTTP_201_CREATED)
 async def create_post(post: PostCreate, request: Request, session: AsyncSession = Depends(get_session)):
-    post_data = Post.model_dump(post, exclude={"from_ip"})
-    instance = Post(**post_data)
-    # 提取ip地址
-    instance.from_ip = request.client.host
+    post_data = post.model_dump(exclude={"from_ip"})
 
+    # 提取ip地址
+    client_ip = None
+    if request.client:
+        client_ip = request.client.host
+
+    instance = Post(**post_data, from_ip=client_ip)
     instance = await add_instance(session, instance)
 
-    # 处理时区问题: todo: 寻找更优雅的实现方式
-    instance.gmt_created = convert_to_cst_time(instance.gmt_created)
     return instance
 
 @router_post.get("/lasted/", summary="返回最近十条帖子", response_model=list[Post])
 async def get_posts_lasted(session: AsyncSession = Depends(get_session)):
     statement = select(Post).where(Post.right_status == Post.RightStatusEnum.PUBLIC).order_by(-Post.id).limit(10)
-    ds = (await (session.exec(statement))).all()
-    for post in ds:
-        post.gmt_created = convert_to_cst_time(post.gmt_created)
-    return ds
+    dataset = (await session.exec(statement)).all()
+    return dataset
 
 @router_post.put('/{post_id}/right/', summary="更新帖子的公开状态", status_code=status.HTTP_205_RESET_CONTENT)
 async def update_post_right(post_id: str, post_right: PostRightStatusUpdate, request: Request, session: AsyncSession = Depends(get_session)):
@@ -66,7 +64,6 @@ async def create_comment(comment: CommentInput, session: AsyncSession = Depends(
 
     instance = await add_instance(session, instance)
 
-    instance.gmt_created = convert_to_cst_time(instance.gmt_created)
     return instance
 
 
@@ -80,11 +77,9 @@ async def delete_comment(comment_id: uuid.UUID, request: Request, session: Async
 
 @router_comment.get('/{obj_type}/{obj_id}/', summary="查询指定帖子的评论", response_model=list[Comment])
 async def get_comments(obj_id: str, obj_type: int = Comment.ObjTypeEnum.POST, session: AsyncSession = Depends(get_session)):
-    stmt = select(Comment).where(Comment.obj_id == obj_id, Comment.obj_type ==  Comment.ObjTypeEnum(obj_type))
-    ds = (await (session.exec(stmt))).all()
-    for post in ds:
-        post.gmt_created = convert_to_cst_time(post.gmt_created)
-    return ds
+    statement = select(Comment).where(Comment.obj_id == obj_id, Comment.obj_type == Comment.ObjTypeEnum(obj_type))
+    dataset = (await (session.exec(statement))).all()
+    return dataset
 
 ########################################################################################################################
 router_like = APIRouter(prefix="/likes", tags=["like"], dependencies=[Depends(check_authentication)])
@@ -92,12 +87,11 @@ router_like = APIRouter(prefix="/likes", tags=["like"], dependencies=[Depends(ch
 
 @router_like.post('/', summary="点赞", response_model=Like, status_code=status.HTTP_201_CREATED)
 async def create_like(like: LikeInput, session: AsyncSession = Depends(get_session)):
-    like_data = LikeInput.model_dump(like, exclude={"id", "gmt_created"})
+    like_data = like.model_dump(exclude={"id", "gmt_created"})
     instance = Like(**like_data)
 
     instance = await add_instance(session, instance)
 
-    instance.gmt_created = convert_to_cst_time(instance.gmt_created)
     return instance
 
 @router_like.delete('/{obj_id}/', summary='取消赞', status_code=status.HTTP_204_NO_CONTENT)
@@ -110,11 +104,11 @@ async def delete_like(obj_id: uuid.UUID, request: Request, session: AsyncSession
 
 @router_like.get('/{obj_id}/count/', summary="获取指定帖子的点赞数", response_model=LikeCountModel)
 async def get_like_count(obj_id: str, request: Request, session: AsyncSession = Depends(get_session)) -> LikeCountModel:
-    stmt = select(Like.id).where(Like.obj_id == obj_id,  Like.obj_type == Like.ObjTypeEnum.POST)
-    stmt_sub  = select(Like).where(Like.obj_id == obj_id, Like.obj_type == Like.ObjTypeEnum.POST, Like.account_id == request.state.account_id)
-    stmt2 = select(exists().select_from(stmt_sub))
-    like_count = len((await session.exec(stmt)).all())
-    is_liked = (await session.exec(stmt2)).first()
+    statement = select(Like.id).where(Like.obj_id == obj_id,  Like.obj_type == Like.ObjTypeEnum.POST)
+    statement_sub  = select(Like).where(Like.obj_id == obj_id, Like.obj_type == Like.ObjTypeEnum.POST, Like.account_id == request.state.account_id)
+    statement2 = select(exists().select_from(statement_sub))
+    like_count = len((await session.exec(statement)).all())
+    is_liked = (await session.exec(statement2)).first()
 
     return LikeCountModel(count=like_count, is_liked=is_liked)
 
