@@ -13,13 +13,13 @@
 from datetime import timedelta, datetime
 from typing import List, Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.responses import RedirectResponse
 from pydantic_core import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
-from starlette import status
 
 from .models import Account, AccountCreate, AccountPublic, AccountPublicCommon, AccountPasswordChange, \
     AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken
@@ -202,6 +202,12 @@ async def app_refresh_token(app_id: str, refresh_token: str = Depends(oauth2_sch
 async def health_check() -> dict[str, Any]:
     current_time = convert_to_cst_time(datetime.now())
     return {"message": "ok", "gmt_created": current_time}
+
+
+@router_public.get("/", tags=["root"], summary="根路径", include_in_schema=False)
+async def root(request: Request) -> RedirectResponse:
+    url_for_redirect = request.url_for("health_check")
+    return RedirectResponse(url=url_for_redirect, status_code=301)
 
 
 ########################################################################################################################
