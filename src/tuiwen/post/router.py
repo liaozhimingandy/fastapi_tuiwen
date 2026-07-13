@@ -59,7 +59,7 @@ router_comment = APIRouter(prefix="/comments", tags=["comment"], dependencies=[D
 
 @router_comment.post('/', summary="新增评论", response_model=Comment, status_code=status.HTTP_201_CREATED)
 async def create_comment(comment: CommentInput, session: AsyncSession = Depends(get_session)):
-    comment_data = CommentInput.model_dump(comment, exclude={"id", "gmt_created"})
+    comment_data = comment.model_dump(exclude={"id", "gmt_created"})
     instance = Comment(**comment_data)
 
     instance = await add_instance(session, instance)
@@ -157,7 +157,7 @@ router_follow = APIRouter(prefix="/follows", tags=["follow"], dependencies=[Depe
 
 @router_follow.post('/', summary="关注", response_model=Follow, status_code=status.HTTP_201_CREATED)
 async def follow(follow: Follow, session: AsyncSession = Depends(get_session)):
-    follow_data = Follow.model_dump(follow, exclude={"id", "gmt_created"})
+    follow_data = follow.model_dump(exclude={"id", "gmt_created"})
     instance = Follow(**follow_data)
 
     instance = await add_instance(session, instance)

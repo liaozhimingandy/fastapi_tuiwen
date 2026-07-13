@@ -222,7 +222,7 @@ async def register(account: AccountCreate, session: AsyncSession = Depends(get_s
     # result = (await session.exec(text("select id from tuiwen_account"))).all()
     # print(result)
     try:
-        account_data = AccountCreate.model_dump(account)
+        account_data = account.model_dump()
         instance = Account(**account_data)
 
         if not instance.username:
@@ -304,7 +304,7 @@ async def password_reset(account: AccountPasswordReset, session: AsyncSession = 
     except AssertionError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    account_data = Account.model_dump(account, exclude_unset=True, exclude={'account_id'})
+    account_data = account.model_dump(exclude_unset=True, exclude={'account_id'})
     instance.sqlmodel_update(account_data)
     instance.salt = get_random_salt(8)
     session.add(instance)
