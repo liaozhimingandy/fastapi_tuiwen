@@ -28,7 +28,7 @@ from src.tuiwen.core.config import get_settings
 # DATABASE_URL = postgresql+asyncpg://zhiming:zhiming@localhost:5432/tuiwen
 
 DATABASE_URL = str(get_settings().SQLALCHEMY_DATABASE_URI)
-engine = create_async_engine(DATABASE_URL, echo=not get_settings().DEBUG)  # Annotated[bool, Doc("是否显示数据库层面日志")]
+engine = create_async_engine(DATABASE_URL, echo=get_settings().DEBUG)  # Annotated[bool, Doc("是否显示数据库层面日志")]
 
 # 创建异步session
 AsyncSessionLocal = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=True)

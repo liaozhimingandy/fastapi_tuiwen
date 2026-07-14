@@ -29,6 +29,7 @@ from src.tuiwen.dependencies import get_current_user, check_authentication, oaut
 from src.tuiwen.router import router_public
 from src.tuiwen.utils.utils import get_random_salt, convert_to_cst_time
 from src.tuiwen.core import get_settings
+from ..models import PageResponse
 
 SCOPES_BASIC = 'basic'
 
@@ -277,17 +278,17 @@ async def update_account(account_id: str, account: AccountPublicCommon, session:
     return instance
 
 
-@router_account.get("/search/{keyword}/", summary="通过关键词搜索账户", response_model=List[AccountPublic])
+@router_account.get("/search/{keyword}/", summary="通过关键词搜索账户", response_model=PageResponse[AccountPublic])
 async def search(keyword: str, *, session: AsyncSession = Depends(get_session), offset: int = 0,
-                 limit: Annotated[int, Query(le=10)] = 10, ):
+                 limit: Annotated[int, Query(le=10)] = 10, ) -> PageResponse[AccountPublic]:
     statement = select(Account).where(
         or_(Account.username.contains(keyword), Account.nick_name.contains(keyword))).offset(offset).limit(limit)
-    ds = (await session.exec(statement)).all()
+    dataset = (await session.exec(statement)).all()
 
-    if not ds:
+    if not dataset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
-    return ds
+    return PageResponse(items=dataset, total=len(dataset), page_size=limit)
 
 
 @router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=['account'],

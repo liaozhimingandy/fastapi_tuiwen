@@ -14,7 +14,8 @@ from src.tuiwen.core.database import add_instance
 from src.tuiwen.dependencies import check_authentication, get_session
 from src.tuiwen.post.models import Post, PostCreate, Comment, Like, Image as TWImage, ImageBase, PostRightStatusUpdate, \
     CommentInput, LikeInput, Follow, FollowCountModel, LikeCountModel
-from src.tuiwen.utils.utils import allowed_file, convert_to_cst_time
+from src.tuiwen.models import PageResponse
+from src.tuiwen.utils.utils import allowed_file
 
 router_post = APIRouter(prefix="/posts", tags=["post"], dependencies=[Depends(check_authentication)])
 
@@ -33,11 +34,13 @@ async def create_post(post: PostCreate, request: Request, session: AsyncSession 
 
     return instance
 
-@router_post.get("/lasted/", summary="返回最近十条帖子", response_model=list[Post])
+@router_post.get("/lasted/", summary="返回最近十条帖子", response_model=PageResponse[Post],
+                 response_model_include={'items', 'total'})
 async def get_posts_lasted(session: AsyncSession = Depends(get_session)):
     statement = select(Post).where(Post.right_status == Post.RightStatusEnum.PUBLIC).order_by(-Post.id).limit(10)
     dataset = (await session.exec(statement)).all()
-    return dataset
+
+    return PageResponse(items=dataset, total=len(dataset))
 
 @router_post.put('/{post_id}/right/', summary="更新帖子的公开状态", status_code=status.HTTP_205_RESET_CONTENT)
 async def update_post_right(post_id: str, post_right: PostRightStatusUpdate, request: Request, session: AsyncSession = Depends(get_session)):
@@ -75,11 +78,12 @@ async def delete_comment(comment_id: uuid.UUID, request: Request, session: Async
     await session.commit()
 
 
-@router_comment.get('/{obj_type}/{obj_id}/', summary="查询指定帖子的评论", response_model=list[Comment])
+@router_comment.get('/{obj_type}/{obj_id}/', summary="查询指定帖子的评论", response_model=PageResponse[Comment], response_model_include={'items', 'total'})
 async def get_comments(obj_id: str, obj_type: int = Comment.ObjTypeEnum.POST, session: AsyncSession = Depends(get_session)):
     statement = select(Comment).where(Comment.obj_id == obj_id, Comment.obj_type == Comment.ObjTypeEnum(obj_type))
     dataset = (await (session.exec(statement))).all()
-    return dataset
+
+    return PageResponse(items=dataset, total=len(dataset))
 
 ########################################################################################################################
 router_like = APIRouter(prefix="/likes", tags=["like"], dependencies=[Depends(check_authentication)])

@@ -4,7 +4,7 @@ from typing import Any, Annotated
 
 from pydantic import computed_field, BeforeValidator, Field
 from pydantic_core import MultiHostUrl
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 
 def parse_cors(v: Any) -> list[str] | str:
