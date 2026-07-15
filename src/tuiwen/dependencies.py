@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any, AsyncGenerator
 
 from fastapi import Depends, HTTPException, Security, Request, FastAPI
 from fastapi.security import OAuth2PasswordBearer, SecurityScopes
@@ -122,13 +122,13 @@ async def get_current_active_user(
 
 
 # 获取异步session的依赖
-async def get_session() -> AsyncSession:
+async def get_session() -> AsyncGenerator[Any, Any]:
     """获取数据库会话"""
     async with AsyncSessionLocal() as session:
         yield session
 
 
-async def get_conn(app: FastAPI) -> AsyncSession:
+async def get_conn(app: FastAPI) -> AsyncGenerator[Any, Any]:
     """返回数据库会话;适合手动管理连接"""
     async with app.state.pool.acquire() as conn:
         yield conn

@@ -11,7 +11,7 @@
 =================================================
 """
 from datetime import timedelta, datetime
-from typing import List, Annotated, Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -29,16 +29,17 @@ from src.tuiwen.dependencies import get_current_user, check_authentication, oaut
 from src.tuiwen.router import router_public
 from src.tuiwen.utils.utils import get_random_salt, convert_to_cst_time
 from src.tuiwen.core import get_settings
-from ..models import PageResponse
+from src.tuiwen.core.config import Tag
+from src.tuiwen.models import PageResponse
 
 SCOPES_BASIC = 'basic'
 
 ##################################################### oauth ############################################################
-router_oauth = APIRouter(prefix="/oauth", tags=["oauth"], dependencies=[Depends(check_authentication)])
+router_oauth = APIRouter(prefix="/oauth", tags=[Tag.oauth], dependencies=[Depends(check_authentication)])
 
 
-@router_public.post("/oauth/authorize/password/", tags=["oauth"],
-                    summary="用户使用用户名或邮箱进和密码进行认证获取刷新令牌",
+@router_public.post("/oauth/authorize/password/",
+                    summary="用户使用用户名或邮箱进和密码进行认证获取刷新令牌", tags=[Tag.oauth],
                     response_model=RefreshToken)
 async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
                     session: AsyncSession = Depends(get_session)):
@@ -84,7 +85,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 
 
 @router_oauth.get("/refresh-token/{account_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
-                  response_model=AccessToken)
+                  tags=[Tag.oauth], response_model=AccessToken)
 async def refresh_token(account_id: str, refresh_token: str = Depends(oauth2_scheme)):
     """
     使用刷新令牌进行更新获取权限令牌,请使用postman测试,header携带认证信息,后续会实现,refresh_token有效期为7天,请妥善保管,重新登录认证后,
@@ -124,11 +125,11 @@ async def test_oauth_admin(user: Account = Security(get_current_user, scopes=['a
 
 ##################################################### app ##############################################################
 
-router_app = APIRouter(prefix="/oauth/app", tags=["oauth"], dependencies=[Depends(check_authentication)])
+router_app = APIRouter(prefix="/oauth/app", tags=[Tag.app], dependencies=[Depends(check_authentication)])
 
 
 @router_public.get("/oauth/app/authorize/{app_id}/{app_secret}/client_credential/", summary="app进行认证获取刷新令牌",
-                   response_model=AppRefreshToken, tags=["oauth", ])
+                   response_model=AppRefreshToken, tags=[Tag.app], include_in_schema=False)
 async def app_authorize(app_id: str, app_secret: str, session: AsyncSession = Depends(get_session)):
     """
     app进行认证获取刷新令牌 <br>
@@ -145,9 +146,9 @@ async def app_authorize(app_id: str, app_secret: str, session: AsyncSession = De
 
     try:
         statement = select(App).where(App.app_id == app_id, App.app_secret == app_secret, App.is_active == True)
-        reuslts = await session.exec(statement)
+        dataset = await session.exec(statement)
 
-        instance = reuslts.first()
+        instance = dataset.first()
 
         assert instance is not None, '请重新检查你的app_id和app_secret'
     except AssertionError as e:
@@ -171,7 +172,7 @@ async def app_authorize(app_id: str, app_secret: str, session: AsyncSession = De
 
 
 @router_app.get("/refresh-token/{app_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
-                response_model=AppAccessToken)
+                response_model=AppAccessToken, tags=[Tag.app])
 async def app_refresh_token(app_id: str, refresh_token: str = Depends(oauth2_scheme)):
     """
     使用刷新令牌进行更新获取权限令牌,请使用postman测试,header携带认证信息,后续会实现,refresh_token有效期为7天,请妥善保管,重新登录认证后,
@@ -213,10 +214,10 @@ async def root(request: Request) -> RedirectResponse:
 
 ########################################################################################################################
 
-router_account = APIRouter(prefix="/accounts", tags=["account", ], dependencies=[Depends(check_authentication)])
+router_account = APIRouter(prefix="/accounts", tags=[Tag.account, ], dependencies=[Depends(check_authentication)])
 
 
-@router_public.post("/accounts/register/", summary="用户注册", tags=["account", ],
+@router_public.post("/accounts/register/", summary="用户注册", tags=[Tag.account],
                     response_model=AccountPublic, status_code=status.HTTP_201_CREATED)
 async def register(account: AccountCreate, session: AsyncSession = Depends(get_session)):
     # 执行原生sql
@@ -291,7 +292,7 @@ async def search(keyword: str, *, session: AsyncSession = Depends(get_session), 
     return PageResponse(items=dataset, total=len(dataset), page_size=limit)
 
 
-@router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=['account'],
+@router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=[Tag.account],
                    response_model=AccountPublic)
 async def password_reset(account: AccountPasswordReset, session: AsyncSession = Depends(get_session)):
     statement = select(Account).where(Account.account_id == account.account_id)

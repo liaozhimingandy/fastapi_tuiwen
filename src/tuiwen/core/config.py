@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 from functools import lru_cache
 from typing import Any, Annotated
 
@@ -51,6 +52,17 @@ class Settings(BaseSettings):
             port=self.POSTGRES_PORT,
             path=self.POSTGRES_DB,
         )
+
+
+class Tag(Enum):
+    account = 'account'
+    post = 'post'
+    like = 'like'
+    comment = 'comment'
+    log = 'log'
+    oauth = 'oauth'
+    app = 'app'
+    upload = 'upload'
 
 
 @lru_cache
