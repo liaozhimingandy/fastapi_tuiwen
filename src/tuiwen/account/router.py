@@ -25,18 +25,17 @@ from .models import Account, AccountCreate, AccountPublic, AccountPublicCommon, 
     AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken
 
 from src.tuiwen.utils.jwt_token import generate_jwt_token, verify_jwt_token
-from src.tuiwen.dependencies import get_current_user, check_authentication, oauth2_scheme, get_session
-from src.tuiwen.router import router_public
 from src.tuiwen.utils.utils import get_random_salt, convert_to_cst_time
 from src.tuiwen.core import get_settings
 from src.tuiwen.core.config import Tag
 from src.tuiwen.models import PageResponse
+from src.tuiwen.dependencies import get_current_user, get_session, oauth2_scheme
 
 SCOPES_BASIC = 'basic'
 
 ##################################################### oauth ############################################################
-router_oauth = APIRouter(prefix="/oauth", tags=[Tag.oauth], dependencies=[Depends(check_authentication)])
-
+router_oauth = APIRouter(prefix="/oauth", tags=[Tag.oauth])
+router_public = APIRouter()
 
 @router_public.post("/oauth/authorize/password/",
                     summary="用户使用用户名或邮箱进和密码进行认证获取刷新令牌", tags=[Tag.oauth],
@@ -125,7 +124,7 @@ async def test_oauth_admin(user: Account = Security(get_current_user, scopes=['a
 
 ##################################################### app ##############################################################
 
-router_app = APIRouter(prefix="/oauth/app", tags=[Tag.app], dependencies=[Depends(check_authentication)])
+router_app = APIRouter(prefix="/oauth/app", tags=[Tag.app])
 
 
 @router_public.get("/oauth/app/authorize/{app_id}/{app_secret}/client_credential/", summary="app进行认证获取刷新令牌",
@@ -214,7 +213,7 @@ async def root(request: Request) -> RedirectResponse:
 
 ########################################################################################################################
 
-router_account = APIRouter(prefix="/accounts", tags=[Tag.account, ], dependencies=[Depends(check_authentication)])
+router_account = APIRouter(prefix="/accounts", tags=[Tag.account, ])
 
 
 @router_public.post("/accounts/register/", summary="用户注册", tags=[Tag.account],

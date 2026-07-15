@@ -101,7 +101,7 @@ app = FastAPI(title="内部API文档",
               redoc_url=None,
               generate_unique_id_function=custom_generate_unique_id,
               lifespan=lifespan,
-              redirect_slashes=True
+              redirect_slashes=True,
               )
 
 app.include_router(api_router)

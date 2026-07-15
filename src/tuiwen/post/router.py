@@ -16,9 +16,9 @@ from src.tuiwen.post.models import Post, PostCreate, Comment, Like, Image as TWI
     CommentInput, LikeInput, Follow, FollowCountModel, LikeCountModel
 from src.tuiwen.models import PageResponse
 from src.tuiwen.utils.utils import allowed_file
-from tuiwen.core.config import Tag
+from src.tuiwen.core.config import Tag
 
-router_post = APIRouter(prefix="/posts", tags=[Tag.post], dependencies=[Depends(check_authentication)])
+router_post = APIRouter(prefix="/posts", tags=[Tag.post])
 
 
 @router_post.post("/", summary="发布帖子", response_model=Post, status_code=status.HTTP_201_CREATED)
@@ -58,7 +58,7 @@ async def delete_post(post_id: uuid.UUID, request: Request, session: AsyncSessio
 
 
 ########################################################################################################################
-router_comment = APIRouter(prefix="/comments", tags=[Tag.comment], dependencies=[Depends(check_authentication)])
+router_comment = APIRouter(prefix="/comments", tags=[Tag.comment])
 
 
 @router_comment.post('/', summary="新增评论", response_model=Comment, status_code=status.HTTP_201_CREATED)
@@ -87,7 +87,7 @@ async def get_comments(obj_id: str, obj_type: int = Comment.ObjTypeEnum.POST, se
     return PageResponse(items=dataset, total=len(dataset))
 
 ########################################################################################################################
-router_like = APIRouter(prefix="/likes", tags=[Tag.like], dependencies=[Depends(check_authentication)])
+router_like = APIRouter(prefix="/likes", tags=[Tag.like])
 
 
 @router_like.post('/', summary="点赞", response_model=Like, status_code=status.HTTP_201_CREATED)
@@ -118,7 +118,7 @@ async def get_like_count(obj_id: str, request: Request, session: AsyncSession = 
     return LikeCountModel(count=like_count, is_liked=is_liked)
 
 ########################################################################################################################
-router_upload = APIRouter(prefix="/upload", tags=[Tag.upload], dependencies=[Depends(check_authentication)])
+router_upload = APIRouter(prefix="/upload", tags=[Tag.upload])
 
 
 @router_upload.post('/image/', summary="图片上传", response_model=ImageBase, status_code=status.HTTP_201_CREATED)
@@ -158,7 +158,7 @@ async def upload_image(file: Annotated[UploadFile, Doc("图片文件")], session
 ########################################################################################################################
 # follow
 
-router_follow = APIRouter(prefix="/follows", tags=["follow"], dependencies=[Depends(check_authentication)])
+router_follow = APIRouter(prefix="/follows", tags=["follow"])
 
 @router_follow.post('/', summary="关注", response_model=Follow, status_code=status.HTTP_201_CREATED)
 async def follow(follow: Follow, session: AsyncSession = Depends(get_session)):

@@ -87,6 +87,7 @@ async def add_instance(session, instance) -> Any:
 
     return instance
 
+
 if __name__ == "__main__":
     import asyncio
 
