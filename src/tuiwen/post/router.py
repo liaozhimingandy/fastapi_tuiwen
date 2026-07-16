@@ -9,14 +9,13 @@ from typing_extensions import Doc
 from sqlmodel import select, delete, update, exists
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Request
 
-from src.tuiwen.core import get_settings, Settings
-from src.tuiwen.core.database import add_instance
-from src.tuiwen.dependencies import check_authentication, get_session
+from src.tuiwen.core import get_settings, Settings, Tag, add_instance
+from src.tuiwen.dependencies import get_session
 from src.tuiwen.post.models import Post, PostCreate, Comment, Like, Image as TWImage, ImageBase, PostRightStatusUpdate, \
     CommentInput, LikeInput, Follow, FollowCountModel, LikeCountModel
 from src.tuiwen.models import PageResponse
-from src.tuiwen.utils.utils import allowed_file
-from src.tuiwen.core.config import Tag
+from src.tuiwen.utils import allowed_file
+
 
 router_post = APIRouter(prefix="/posts", tags=[Tag.post])
 

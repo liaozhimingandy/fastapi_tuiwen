@@ -2,13 +2,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html, get_swagger_ui_oauth2_redirect_html, get_redoc_html
-from starlette.middleware.cors import CORSMiddleware
-from starlette.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-from src.tuiwen import api_router
-from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import custom_generate_unique_id, get_version_from_txt
-from src.tuiwen.utils import logger
+from src.tuiwen import (api_router, logger, custom_generate_unique_id,
+                        get_version_from_txt, get_settings)
+
 
 __version__, description = get_version_from_txt("VERSION")
 
@@ -62,10 +61,10 @@ async def lifespan(app: FastAPI):
     # app.state.pool = await get_async_pool()
 
     # 初始化数据库
-    # from src.tuiwen.core.database import init_db, create_table_async
+    # from src.tuiwen.core import init_db, create_table_async
     # await init_db()
     # await create_table_async()
-    # logger.info("初始化数据库")
+    # logger.info("初始化数据库成功")
 
     from pyfiglet import Figlet
     ft = Figlet(font="ansi_shadow")

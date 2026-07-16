@@ -1,4 +1,4 @@
-from . import models
-from . import router
+from .models import Account
 
-__all__ = ["models", "router"]
+
+__all__ = ['Account']

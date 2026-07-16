@@ -1,16 +1,11 @@
-from __future__ import annotations
-from typing import TYPE_CHECKING, Annotated, AsyncGenerator, Any
+from typing import Annotated, AsyncGenerator, Any
 
 from fastapi import Depends, HTTPException, Security, Request, FastAPI, status
-from fastapi.security import SecurityScopes
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import SecurityScopes, OAuth2PasswordBearer
 
-from src.tuiwen.core.database import AsyncSessionLocal
-from src.tuiwen.utils.jwt_token import verify_jwt_token
-
-
-if TYPE_CHECKING:
-    from src.tuiwen.account.models import Account
+from src.tuiwen.core import AsyncSessionLocal
+from src.tuiwen.utils import verify_jwt_token
+from src.tuiwen.account import Account
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/oauth/authorize/password/", scopes={
@@ -96,7 +91,6 @@ async def get_current_user(security_scopes: SecurityScopes, token: Annotated[str
         raise credentials_exception
 
     token_scopes = payload.get("scopes", [])
-    from src.tuiwen.account.models import Account
     instance = Account(account_id=payload["account_id"])
     # #  数据库查询用户信息
     # statement = select(Account).where(Account.account_id == payload["account_id"])
