@@ -13,7 +13,7 @@
 from datetime import timedelta, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request, status, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import RedirectResponse
 from pydantic_core import ValidationError
@@ -39,7 +39,7 @@ router_public = APIRouter()
                     summary="用户使用用户名或邮箱进和密码进行认证获取刷新令牌", tags=[Tag.oauth],
                     response_model=RefreshToken)
 async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-                    session: AsyncSession = Depends(get_session)):
+                    session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     """
     用户进行认证获取刷新令牌 <br>
 
@@ -83,7 +83,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 
 @router_oauth.get("/refresh-token/{account_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
                   tags=[Tag.oauth], response_model=AccessToken)
-async def refresh_token(account_id: str, refresh_token: str = Depends(oauth2_scheme)):
+async def refresh_token(account_id: Annotated[str, "账户ID"], refresh_token: Annotated[str, "刷新令牌" ]= Depends(oauth2_scheme)):
     """
     使用刷新令牌进行更新获取权限令牌,请使用postman测试,header携带认证信息,后续会实现,refresh_token有效期为7天,请妥善保管,重新登录认证后,
     该token作废; <br>
@@ -111,12 +111,12 @@ async def refresh_token(account_id: str, refresh_token: str = Depends(oauth2_sch
 
 
 @router_oauth.get("/test-oauth/", summary="测试接口(基础权限)")
-async def test_oauth(user: Account = Depends(get_current_user)) -> Any:
+async def test_oauth(user: Annotated[Account, "账户信息"] = Depends(get_current_user)) -> Any:
     return {"message": f"hello word, 欢迎您,{user.account_id}"}
 
 
 @router_oauth.get("/test-oauth-admin/", summary="测试接口(需要更高权限)")
-async def test_oauth_admin(user: Account = Security(get_current_user, scopes=['admin'])) -> Any:
+async def test_oauth_admin(user: Annotated[Account, "认证的用户信息"] = Security(get_current_user, scopes=['admin'])) -> Any:
     return {"message": f"hello word, 欢迎您,{user.account_id}"}
 
 
@@ -127,7 +127,8 @@ router_app = APIRouter(prefix="/oauth/app", tags=[Tag.app])
 
 @router_public.get("/oauth/app/authorize/{app_id}/{app_secret}/client_credential/", summary="app进行认证获取刷新令牌",
                    response_model=AppRefreshToken, tags=[Tag.app], include_in_schema=False)
-async def app_authorize(app_id: str, app_secret: str, session: AsyncSession = Depends(get_session)):
+async def app_authorize(app_id: Annotated[str, "app_id"], app_secret: Annotated[str, "密钥"],
+                        session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     """
     app进行认证获取刷新令牌 <br>
 
@@ -170,7 +171,7 @@ async def app_authorize(app_id: str, app_secret: str, session: AsyncSession = De
 
 @router_app.get("/refresh-token/{app_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
                 response_model=AppAccessToken, tags=[Tag.app])
-async def app_refresh_token(app_id: str, refresh_token: str = Depends(oauth2_scheme)):
+async def app_refresh_token(app_id: Annotated[str, "app id"], refresh_token: Annotated[str, "刷新令牌"] = Depends(oauth2_scheme)):
     """
     使用刷新令牌进行更新获取权限令牌,请使用postman测试,header携带认证信息,后续会实现,refresh_token有效期为7天,请妥善保管,重新登录认证后,
     该token作废;
@@ -204,7 +205,7 @@ async def health_check() -> dict[str, Any]:
 
 
 @router_public.get("/", tags=["root"], summary="根路径", include_in_schema=False)
-async def root(request: Request) -> RedirectResponse:
+async def root(request: Annotated[Request, "请求对象"]) -> RedirectResponse:
     url_for_redirect = request.url_for("health_check")
     return RedirectResponse(url=url_for_redirect, status_code=301)
 
@@ -216,7 +217,8 @@ router_account = APIRouter(prefix="/accounts", tags=[Tag.account, ])
 
 @router_public.post("/accounts/register/", summary="用户注册", tags=[Tag.account],
                     response_model=AccountPublic, status_code=status.HTTP_201_CREATED)
-async def register(account: AccountCreate, session: AsyncSession = Depends(get_session)):
+async def register(account: Annotated[AccountCreate, Body(..., description="用户信息")],
+                   session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     # 执行原生sql
     # result = (await session.exec(text("select id from tuiwen_account"))).all()
     # print(result)
@@ -243,7 +245,7 @@ async def register(account: AccountCreate, session: AsyncSession = Depends(get_s
                     responses={
                         404: {"description": "no such account"}
                     })
-async def get_account(account_id: str, session: AsyncSession = Depends(get_session)):
+async def get_account(account_id: Annotated[str, "账户ID"], session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     statement = select(Account).where(Account.account_id == account_id)
     instance = (await session.exec(statement)).first()
     if not instance:
@@ -252,8 +254,9 @@ async def get_account(account_id: str, session: AsyncSession = Depends(get_sessi
 
 
 @router_account.put("/{account_id}/", summary="更新账户基本信息", response_model=AccountPublic)
-async def update_account(account_id: str, account: AccountPublicCommon, session: AsyncSession = Depends(get_session),
-                         user: Account = Depends(get_current_user)):
+async def update_account(account_id: Annotated[str, "账户ID"], account: Annotated[AccountPublicCommon, Body(..., description="更新的账户信息")],
+                         session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session),
+                         user: Annotated[Account, "认证的用户信息"] = Depends(get_current_user)):
     try:
         assert user.account_id == account_id, '请不要跨账户操作'
     except AssertionError as e:
@@ -277,7 +280,7 @@ async def update_account(account_id: str, account: AccountPublicCommon, session:
 
 
 @router_account.get("/search/{keyword}/", summary="通过关键词搜索账户", response_model=PageResponse[AccountPublic])
-async def search(keyword: str, *, session: AsyncSession = Depends(get_session), offset: int = 0,
+async def search(keyword: Annotated[str, "关键词"], *, session: AsyncSession = Depends(get_session), offset: Annotated[int, "偏移量"] = 0,
                  limit: Annotated[int, Query(le=10)] = 10, ) -> PageResponse[AccountPublic]:
     statement = select(Account).where(
         or_(Account.username.contains(keyword), Account.nick_name.contains(keyword))).offset(offset).limit(limit)
@@ -291,7 +294,8 @@ async def search(keyword: str, *, session: AsyncSession = Depends(get_session), 
 
 @router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=[Tag.account],
                    response_model=AccountPublic)
-async def password_reset(account: AccountPasswordReset, session: AsyncSession = Depends(get_session)):
+async def password_reset(account: Annotated[AccountPasswordReset, Body(..., description="密码充值的必要信息")],
+                         session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     statement = select(Account).where(Account.account_id == account.account_id)
     instance = (await session.exec(statement)).first()
     if not instance:
@@ -315,8 +319,9 @@ async def password_reset(account: AccountPasswordReset, session: AsyncSession = 
 
 @router_account.put("/password/change/", summary="账号密码修改", response_model=AccountPublic,
                     status_code=status.HTTP_200_OK)
-async def password_change(request: Request, account: AccountPasswordChange,
-                          session: AsyncSession = Depends(get_session), ):
+async def password_change(request: Annotated[Request, "请求对象"],
+                          account: Annotated[AccountPasswordChange, Body(..., description="修改密码的必要入参")],
+                          session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session), ):
     statement = select(Account).where(Account.account_id == request.state.account_id,
                                       Account.password == account.password_current)
     instance = (await session.exec(statement)).first()

@@ -16,6 +16,7 @@ import random
 import unittest
 import uuid
 from hashlib import md5
+import time
 
 import pytz
 import pytest
@@ -170,9 +171,9 @@ class TestMain:
         assert r.status_code == status.HTTP_201_CREATED
         TestMain.post_id = data.get('post_id')
 
-    def test_get_posts_lasted(self, client: TestClient) -> None:
+    def test_get_posts_latest(self, client: TestClient) -> None:
         """获取最新帖子"""
-        r = client.get(f"/posts/lasted/")
+        r = client.get(f"/posts/latest/")
         assert r.status_code == 200
 
     def test_update_post_right(self, client: TestClient) -> None:
@@ -267,6 +268,15 @@ class TestMain:
         r = client.get(f'/follows/{self.account_id}/count/')
         assert r.status_code == 200
         assert r.json().get('is_following') == False
+
+    def test_get_posts(self, client: TestClient) -> None:
+        """获取下页数据"""
+        r = client.get(f'/posts/', params={'limit': 10, 'timestamp': int(time.time())})
+        assert r.status_code == 200
+
+    def test_get_comments(self, client: TestClient) -> None:
+        r = client.get(f'/comments/1/{self.post_id}/', params={'limit': 10, 'timestamp': int(time.time())})
+        assert r.status_code == 200
 
     # @pytest.mark.skip(reason="测试完成后删除测试用户")
     # def test_delete_test_user(self, session: Session) -> None:

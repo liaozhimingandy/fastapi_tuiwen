@@ -228,8 +228,8 @@ class Follow(SQLModel, table=True):
 
 
 class FollowCountModel(BaseModel):
-    follower_count: int = Field(0, description='关注者数量')
-    followee_count: int = Field(0, description='被关注者数量')
+    follower_count: int = Field(0, description='粉丝数')
+    followee_count: int = Field(0, description='关注的数量')
     is_following: bool = Field(False, description='是否正在关注')
     like_count: int = Field(0, description='获赞数量')
 
