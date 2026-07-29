@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.tuiwen import (api_router, logger, custom_generate_unique_id,
-                        get_version_from_txt, get_settings)
+                        get_version_from_txt, get_settings, dispose_engine, close_async_pool)
 
 
 __version__, description = get_version_from_txt("VERSION")
@@ -61,10 +61,9 @@ async def lifespan(app: FastAPI):
     # app.state.pool = await get_async_pool()
 
     # 初始化数据库
-    # from src.tuiwen.core import init_db, create_table_async
+    # from src.tuiwen.core import init_db
     # await init_db()
-    # await create_table_async()
-    # logger.info("初始化数据库成功")
+    # logger.info("init database success")
 
     from pyfiglet import Figlet
     ft = Figlet(font="ansi_shadow")
@@ -73,11 +72,12 @@ async def lifespan(app: FastAPI):
     final_art = "\n".join(cleaned_lines).rstrip("\n")  # 去除整个文本的末尾换行符
     print(final_art)
     print(f'version: {__version__} doc_url: http://localhost:8000/docs/')
-    logger.info("服务启动")
+    logger.info("server started")
 
     yield
-    # app 关闭前
-    # app.state.pool.close()
+    # 停机：释放所有连接资源
+    await close_async_pool()
+    await dispose_engine()
 
 
 app = FastAPI(title="内部API文档",

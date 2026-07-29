@@ -222,19 +222,37 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
     # 执行原生sql
     # result = (await session.exec(text("select id from tuiwen_account"))).all()
     # print(result)
+
+    account_data = account.model_dump()
+    instance = Account(**account_data)
+
+    if not instance.username:
+        instance.username = instance.account_id
+
+    # 判断数据库是否存在
+    exist_stmt = select(Account).where(or_(Account.email == instance.email,Account.username == instance.username))
+    exist_user = (await session.exec(exist_stmt)).first()
+
+    if exist_user:
+        # 精准判断是哪个字段重复，返回对应提示，用户体验更好
+        if exist_user.email == instance.email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="该邮箱已被注册,如您是账号所有者,请直接登录"
+            )
+        if exist_user.username == instance.username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="该账号ID已被占用，请更换后重试"
+            )
+
     try:
-        account_data = account.model_dump()
-        instance = Account(**account_data)
-
-        if not instance.username:
-            instance.username = instance.account_id
-
         session.add(instance)
         await session.commit()
         await session.refresh(instance)
     except IntegrityError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="该邮箱已被注册,如果您是该邮箱的拥有者,请前往登录")
+                            detail="注册失败,该账号信息已被占用,请重试")
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

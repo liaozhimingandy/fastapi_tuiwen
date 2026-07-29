@@ -119,11 +119,17 @@ async def get_current_active_user(
     return current_user
 
 
-# 获取异步session的依赖
+# ========== 会话依赖（供路由层使用） ==========
 async def get_session() -> AsyncGenerator[Any, Any]:
-    """获取数据库会话"""
+    """标准异步会话依赖，自动管理会话生命周期"""
     async with AsyncSessionLocal() as session:
-        yield session
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
 
 async def get_conn(app: FastAPI) -> AsyncGenerator[Any, Any]:

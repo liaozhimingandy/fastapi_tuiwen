@@ -36,7 +36,7 @@ async def create_post(post: Annotated[PostCreate, Body(..., description="帖子�
 
 
 @router_post.get("/latest/", summary="返回最近十条帖子", response_model=PageResponse[Post],
-                 response_model_include={'items', 'total'}, deprecated=True)
+                 response_model_include={'items', 'total'})
 async def get_posts_latest(session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     statement = select(Post).where(Post.right_status == Post.RightStatusEnum.PUBLIC).order_by(-Post.id).limit(10)
     dataset = (await session.exec(statement)).all()
@@ -50,19 +50,6 @@ async def get_posts(limit: Annotated[int, "返回多少条记录"]=Query(10, ge=
                     timestamp: Annotated[int | None, "数据最旧的那个时间戳"]=Query(None, description="时间游标(13位毫秒级时间戳，如1717020800000)",
                                                   example=1717020800),
                     session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
-    """
-    Args:
-        session: 会话依赖
-        limit: 返回条数
-        timestamp: 最后那条消息的时间戳
-
-    Returns:
-        字符串
-
-    Example usage:
-        暂无
-
-    """
     cursor_time = None
     if timestamp is not None:
         # === 关键安全校验 ===
@@ -151,21 +138,6 @@ async def get_comments(obj_id: Annotated[str, "评论ID"]=Path(..., description=
                        timestamp: Annotated[int | None, "时间戳"]=Query(None, description="时间游标(13位毫秒级时间戳，如1717020800000)",
                                                      example=1717020800),
                        session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
-    """
-     Args:
-        obj_id: 对象id
-        obj_type: 对象类型
-        session: 会话依赖
-        limit: 返回条数
-        timestamp: 最后那条消息的时间戳
-
-    Returns:
-        字符串
-
-    Example usage:
-        暂无
-
-    """
 
     cursor_time = None
     if timestamp is not None:
