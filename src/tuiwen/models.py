@@ -33,4 +33,4 @@ class PageResponse(BaseModel, Generic[T]):
     items: List[T] = Field(..., description="列表数据")
     total: int = Field(0, description="总记录数")
     page: int = Field(0, description="总页数")
-    page_size: int = Field(0, description="每页大小")
+    page_size: int = Field(10, description="每页大小")

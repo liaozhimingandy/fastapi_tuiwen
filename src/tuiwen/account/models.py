@@ -79,6 +79,7 @@ class AccountPublicCommon(SQLModel):
     sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SaENUM(SexEnum, values_callable=lambda x: [str(e.value) for e in x]),
                          description='性别',sa_column_kwargs={'comment': '性别'})
     avatar: str = Field(None, max_length=200, description='头像链接', sa_column_kwargs={'comment': '头像链接'})
+    bio: str | None = Field(None, max_length=256, description='用户自我简介', sa_column_kwargs={'comment': '用户自我简介'})
 
 
 class AccountLogin(SQLModel):

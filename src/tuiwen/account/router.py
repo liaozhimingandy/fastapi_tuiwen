@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from ..core.database import add_instance
 from .models import Account, AccountCreate, AccountPublic, AccountPublicCommon, AccountPasswordChange, \
     AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken
 
@@ -65,9 +66,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 
     # 作废之前的salt
     instance.salt = get_random_salt(8)
-    session.add(instance)
-    await session.commit()
-    await session.refresh(instance)
+    instance = await add_instance(session, instance)
     data = {"account_id": instance.account_id, "salt": instance.salt, 'scopes': SCOPES_BASIC}
 
     refresh_token = generate_jwt_token(data, expires_in=timedelta(minutes=get_settings().REFRESH_TOKEN_EXPIRE_MINUTES),
@@ -154,9 +153,7 @@ async def app_authorize(app_id: Annotated[str, "app_id"], app_secret: Annotated[
 
     # 作废之前的salt
     instance.salt = get_random_salt()
-    session.add(instance)
-    await session.commit()
-    await session.refresh(instance)
+    instance = await add_instance(session, instance)
     data = {"app_id": instance.app_id, "salt": instance.salt, 'scopes': SCOPES_BASIC}
 
     refresh_token = generate_jwt_token(data, expires_in=timedelta(days=7), grant_type="refresh_token")
@@ -247,9 +244,7 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
             )
 
     try:
-        session.add(instance)
-        await session.commit()
-        await session.refresh(instance)
+        instance = await add_instance(session, instance)
     except IntegrityError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="注册失败,该账号信息已被占用,请重试")
@@ -288,12 +283,8 @@ async def update_account(account_id: Annotated[str, "账户ID"], account: Annota
     account_data = account.model_dump(exclude_unset=True)
     instance.sqlmodel_update(account_data)
 
-    try:
-        session.add(instance)
-        await session.commit()
-        await session.refresh(instance)
-    except IntegrityError:
-        raise HTTPException(status_code=400, detail="用户名或邮箱已存在!")
+    instance = await add_instance(session, instance)
+
     return instance
 
 
@@ -328,9 +319,11 @@ async def password_reset(account: Annotated[AccountPasswordReset, Body(..., desc
     account_data = account.model_dump(exclude_unset=True, exclude={'account_id'})
     instance.sqlmodel_update(account_data)
     instance.salt = get_random_salt(8)
-    session.add(instance)
-    await session.commit()
-    await session.refresh(instance)
+
+    instance = await add_instance(session, instance)
+    # session.add(instance)
+    # await session.commit()
+    # await session.refresh(instance)
 
     return instance
 
@@ -353,8 +346,7 @@ async def password_change(request: Annotated[Request, "请求对象"],
 
     instance.password = account.password_new
     instance.salt = get_random_salt(8)
-    session.add(instance)
-    await session.commit()
-    await session.refresh(instance)
+
+    instance = await add_instance(session, instance)
 
     return instance
