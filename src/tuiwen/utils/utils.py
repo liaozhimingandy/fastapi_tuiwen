@@ -10,6 +10,9 @@
     @Desc: 通用工具类
 =================================================
 """
+import hashlib
+import random
+import string
 import tomllib
 import uuid
 from datetime import datetime
@@ -25,6 +28,7 @@ from src.tuiwen.core import get_settings
 def get_datetime_now():
     # 返回当前时间
     return datetime.now(timezone.utc)
+
 
 # 创建一个图片类型检查函数
 def allowed_file(file: UploadFile, file_type: list[str]) -> bool:
@@ -49,6 +53,7 @@ def get_version_from_pyproject(file_name: str) -> tuple[str, str]:
     # 假设版本号位于 [tool.poetry] 或 [project] 中
     return data.get("project", {}).get("version"), data.get("project", {}).get("description")
 
+
 def get_version_from_txt(file_name: str) -> tuple[str, str]:
     """从文件中加载版本号"""
     with open(file_name, "r", encoding='utf-8') as f:
@@ -68,7 +73,8 @@ def get_random_salt(length: int = 8) -> str:
         字符串salt
 
     """
-    return str(uuid.uuid4().hex[:length])
+    chars = string.ascii_letters + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
@@ -103,3 +109,21 @@ def convert_to_cst_time(dt: datetime) -> datetime | None:
         return dt.astimezone(timezone(get_settings().TIME_ZONE))
 
 
+def hash_password(front_md5: str, salt: str) -> str:
+    """
+        前端已经传 MD5 过来
+        后端：md5 + salt → 再做一次 SHA256 哈希
+        返回64位字符串的密码
+        Args:
+            front_md5: 前端的md5
+            salt: 随机盐
+
+        Returns:
+            哈希后的值
+
+        Examples Usage:
+            hash_password(a, b)
+
+        """
+    combine = (front_md5 + salt).encode('utf-8')
+    return hashlib.sha256(combine).hexdigest()

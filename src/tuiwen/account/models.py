@@ -115,10 +115,10 @@ class Account(AccountBase, table=True):
     __table_args__ = {'comment': '账户信息'}  # 表备注
 
     id: int = Field(..., primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
-    user_type: int | None = Field(default=1, sa_type=SMALLINT, description='账户类型',
+    user_type: int = Field(default=1, sa_type=SMALLINT, description='账户类型',
                                   sa_column_kwargs={'comment': '账户类型'})
-    password: str | None = Field(None, max_length=32, min_length=32, description='用户密码;经过MD5计算加密', sa_column_kwargs={'comment': '用户密码'})
-    salt: str | None = Field(default=None, max_length=8, description='盐', sa_column_kwargs={'comment': '盐'})
+    password: str = Field(None, max_length=64, min_length=64, description='用户密码;经过MD5计算加密', sa_column_kwargs={'comment': '用户密码'})
+    salt: str = Field(default=None, max_length=8, description='盐', sa_column_kwargs={'comment': '盐'})
     allow_add_friend: bool | None = Field(default=True, description='允许添加好友',
                                           sa_column_kwargs={'comment': '允许添加好友'})
     im_id: str | None = Field(None, max_length=64, description='im ID', sa_column_kwargs={'comment': 'im ID'},
@@ -139,15 +139,15 @@ class AccountPublic(AccountBase):
     pass
 
 class AccountPasswordReset(SQLModel):
-    account_id: str = Field(..., description='用户ID')
-    password: str | None = Field(..., max_length=32, min_length=32, description='用户密码')
+    username: str = Field(..., description='用户名或者邮箱')
+    password: str = Field(..., max_length=32, min_length=32, description='用户密码')
     code: str = Field(..., max_length=6, min_length=6, description="验证码")
 
 
 class AccountPasswordChange(SQLModel):
     account_id: str = Field(..., description='用户ID')
-    password_current: str | None = Field(..., max_length=32, min_length=32, description='当前用户密码')
-    password_new: str | None = Field(..., max_length=36, min_length=32, description='用户新密码')
+    password_current: str = Field(..., max_length=32, min_length=32, description='当前用户密码')
+    password_new: str = Field(..., max_length=36, min_length=32, description='用户新密码')
 
 
 class App(SQLModel, table=False):
@@ -196,3 +196,23 @@ class AppAccessToken(Token):
 
 class AppRefreshToken(AppAccessToken):
     refresh_token: str = Field(..., description="刷新令牌")
+
+########################################################################################################################
+# 验证码
+########################################################################################################################
+class CodeChannel(str, Enum):
+    SMS = "sms"
+    EMAIL = "email"
+
+
+class CodeScene(str, Enum):
+    LOGIN = "login"
+    REGISTER = "register"
+    RESET_PWD = "reset_pwd"
+    BIND = "bind"
+
+class CodeVerify(SQLModel):
+    channel: CodeChannel = Field(..., description="渠道")
+    account: str = Field(..., description="手机号或邮箱")
+    scene: CodeScene = Field(..., description="场景")
+    code: str | None = Field(None, min_length=4, max_length=6, description="验证码")

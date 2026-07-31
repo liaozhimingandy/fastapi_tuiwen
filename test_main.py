@@ -182,7 +182,7 @@ class TestMain:
     def test_create_post(self, test_register_and_login) -> None:
         """创建帖子"""
         data = {
-            "post_id": str(uuid.uuid4()),
+            "post_id": str(uuid.uuid7()),
             "content": {},
             "account_id": TestMain.account_id,
             "from_ip": "",
@@ -201,8 +201,15 @@ class TestMain:
     def test_get_posts_latest(self, test_register_and_login) -> None:
         """获取最新帖子"""
         client = test_register_and_login.get('client')
-        r = client.get(f"/posts/latest/")
+        r = client.get(f"/posts/", params={"limit": 10})
+        assert r.status_code == 200 and r.json()['total'] > 0, "帖子数量为0"
+
+    def test_get_account_posts(self, test_register_and_login) -> None:
+        client = test_register_and_login.get('client')
+        r = client.get(f'/posts/accounts/{TestMain.account_id}/', params={'limit': 10, 'cursor': TestMain.post_id})
+        print(f"--->{r.text}")
         assert r.status_code == 200
+        assert r.json()['total'] == 0, "帖子数量为0"
 
     def test_update_post_right(self, test_register_and_login) -> None:
         """测试更新帖子状态"""
@@ -219,6 +226,7 @@ class TestMain:
         """删除帖子"""
         client = test_register_and_login.get('client')
         r = client.delete(f"/posts/{TestMain.post_id}/")
+        print(f"id=>>{TestMain.post_id}")
         assert r.status_code == status.HTTP_204_NO_CONTENT
 
     def test_create_comment(self, test_register_and_login) -> None:
@@ -237,6 +245,13 @@ class TestMain:
         r = client.post(f'/comments/', json=data)
         assert r.status_code == status.HTTP_201_CREATED
         TestMain.comment_id = data.get('comment_id')
+
+    def test_get_comments(self, test_register_and_login) -> None:
+        client = test_register_and_login.get('client')
+        r = client.get(f'/comments/1/{self.post_id}/', params={'limit': 10, 'cursor': TestMain.comment_id})
+        assert r.status_code == 200 and r.json().get('total') == 0, '不应该有数据'
+        r = client.get(f'/comments/1/{self.post_id}/', params={'limit': 10})
+        assert r.status_code == 200 and r.json().get('total') > 0, '可能有数据'
 
     def test_delete_comment(self, test_register_and_login) -> None:
         """删除帖子"""
@@ -309,13 +324,10 @@ class TestMain:
     def test_get_posts(self, test_register_and_login) -> None:
         """获取下页数据"""
         client = test_register_and_login.get('client')
-        r = client.get(f'/posts/', params={'limit': 10, 'timestamp': int(time.time())})
+        r = client.get(f'/posts/', params={'limit': 10, 'cusror': TestMain.post_id})
         assert r.status_code == 200
+        assert r.json().get('total') > 0, '没有数据了'
 
-    def test_get_comments(self, test_register_and_login) -> None:
-        client = test_register_and_login.get('client')
-        r = client.get(f'/comments/1/{self.post_id}/', params={'limit': 10, 'timestamp': int(time.time())})
-        assert r.status_code == 200
 
     # @pytest.mark.skip(reason="测试完成后删除测试用户")
     # def test_delete_test_user(self, session: Session) -> None:

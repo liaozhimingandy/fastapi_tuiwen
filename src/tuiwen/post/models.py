@@ -1,5 +1,6 @@
 from enum import Enum
 import uuid
+from uuid import UUID
 from datetime import datetime, timezone
 
 import pytz
@@ -11,6 +12,11 @@ from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import convert_to_cst_time
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
+
+class PostType(Enum):
+    POST = 1         # 普通动态/帖子
+    BLOG = 2         # 博客
+
 
 
 class PostRightStatusUpdate(SQLModel):
@@ -28,8 +34,9 @@ class PostRightStatusUpdate(SQLModel):
             }
             return mapping[self.value]
 
-    post_id: uuid.UUID = Field(default_factory=uuid.uuid4, index=True, description='帖子ID',
-                               sa_column_kwargs={'comment': '帖子ID'}, unique=True)
+    post_id: UUID = Field(default_factory=uuid.uuid7, index=True, description='帖子ID',
+                          sa_column_kwargs={'comment': '帖子ID', "server_default": text("uuidv7()")},
+                          unique=True)
     account_id: str = Field(..., index=True, max_length=32, description='用户ID',
                             sa_column_kwargs={'comment': '用户ID'})
     right_status: RightStatusEnum = Field(default=RightStatusEnum.PUBLIC, description='权限状态',
@@ -39,7 +46,6 @@ class PostRightStatusUpdate(SQLModel):
 
 
 class PostCreate(PostRightStatusUpdate):
-
     class FromDeviceEnum(Enum):
         """设备来源类型"""
 
@@ -60,11 +66,13 @@ class PostCreate(PostRightStatusUpdate):
             }
             return mapping[self.value]
 
-    content: dict | None = Field(default={}, description='json内容', max_length=1024, sa_column_kwargs={'comment': '内容'},
-                         sa_type=JSON)
-    from_ip: str | None = Field(None, description='来源ip',  max_length=32, sa_column_kwargs={'comment': '来源ip'})
-    from_device: FromDeviceEnum = Field(FromDeviceEnum.UNKNOWN, description='来源设备名称',
-                                        sa_column_kwargs={'comment': '来源设备名称'},
+    content: dict | None = Field(default={}, description='json内容', max_length=1024,
+                                 sa_column_kwargs={'comment': '内容'},
+                                 sa_type=JSON)
+    post_type: PostType = Field(PostType.POST.value, index=True, description="类型",sa_column_kwargs={'comment': '内容类型'},
+                                sa_type=SaENUM(PostType, values_callable=lambda x: [str(e.value) for e in x]), nullable=False)
+    from_ip: str | None = Field(None, description='来源ip', max_length=32, sa_column_kwargs={'comment': '来源ip'})
+    from_device: FromDeviceEnum = Field(FromDeviceEnum.UNKNOWN, description='来源设备名称', sa_column_kwargs={'comment': '来源设备名称'},
                                         sa_type=SaENUM(FromDeviceEnum, values_callable=lambda x: [str(e.value) for e in x]))
     location: str | None = Field(None, max_length=64, description='位置', sa_column_kwargs={'comment': '位置'})
     is_top: bool | None = Field(False, description='是否置顶', sa_column_kwargs={'comment': '是否置顶'})
@@ -82,9 +90,10 @@ class Post(PostCreate, table=True):
 
     id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
     status: int | None = Field(default=1, description='帖子状态', sa_column_kwargs={'comment': '帖子状态'})
-    gmt_created: datetime = Field(..., default_factory= datetime.now, description='创建日期时间',
+    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                   comment="创建日期时间", nullable=False, server_default=text("NOW()")))
+                                                   comment="创建日期时间", nullable=False,
+                                                   server_default=text("NOW()")))
     gmt_modified: datetime = Field(..., default_factory=datetime.now, description='最后修改时间',
                                    sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                     onupdate=datetime.now, comment='最后修改时间')
@@ -114,8 +123,9 @@ class CommentInput(SQLModel):
             return mapping[self.value]
 
     id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
-    comment_id: uuid.UUID = Field(default_factory=uuid.uuid4, index=True, description='评论ID',
-                                  sa_column_kwargs={'comment': '评论ID'}, unique=True)
+    comment_id: UUID = Field(default_factory=uuid.uuid7, index=True, description='评论ID',
+                             sa_column_kwargs={'comment': '评论ID', "server_default": text("uuidv7()")},
+                             unique=True)
     is_root: bool = Field(False, description='是否为一级评论', sa_column_kwargs={'comment': '是否为一级评论'})
     parent_id: str | None = Field(None, description='父评论', max_length=32, sa_column_kwargs={'comment': '父评论'})
     content: str = Field(..., description='评论内容', max_length=255, sa_column_kwargs={'comment': '评论内容'})
@@ -126,8 +136,9 @@ class CommentInput(SQLModel):
     obj_type: ObjTypeEnum = Field(default=ObjTypeEnum.POST, description="评论对象类别",
                                   sa_column_kwargs={'comment': '评论对象类别'},
                                   sa_type=SaENUM(ObjTypeEnum, values_callable=lambda x: [str(e.value) for e in x]))
-    gmt_created: datetime = Field(..., default_factory= datetime.now, description='创建日期时间',
-                                  sa_column=Column(DateTime(timezone=True), default=datetime.now, comment="创建日期时间", nullable=False))
+    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
+                                                   comment="创建日期时间", nullable=False))
 
     @field_validator('gmt_created', mode="after")  # type: ignore[prop-decorator]
     @classmethod
@@ -159,19 +170,21 @@ class LikeInput(SQLModel):
         POST = 1
 
     id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
-    obj_id: uuid.UUID = Field(index=True, description='赞对象ID', sa_column_kwargs={'comment': '赞对象ID'})
+    obj_id: UUID = Field(index=True, description='赞对象ID', sa_column_kwargs={'comment': '赞对象ID'})
     obj_type: ObjTypeEnum = Field(default=ObjTypeEnum.POST, description="评论对象类别",
                                   sa_column_kwargs={'comment': '评论对象类别'},
                                   sa_type=SaENUM(ObjTypeEnum, values_callable=lambda x: [str(e.value) for e in x]))
     account_id: str = Field(..., index=True, max_length=32, description='点赞的用户',
                             sa_column_kwargs={'comment': '点赞的用户'})
-    gmt_created: datetime = Field(..., default_factory= datetime.now, description='创建日期时间',
+    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                   comment="创建日期时间", nullable=False, server_default=text("NOW()")))
+                                                   comment="创建日期时间", nullable=False,
+                                                   server_default=text("NOW()")))
 
     @field_serializer("gmt_created")
     def serialize_gmt_created(self, value: datetime):
         return convert_to_cst_time(value)
+
 
 class Like(LikeInput, table=True):
     __tablename__ = f"{TABLE_PREFIX}like"  # 表名
@@ -200,9 +213,10 @@ class Image(ImageBase, table=True):
 
     id: int = Field(primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
     image_name: str = Field(..., max_length=128, description='图片名称', sa_column_kwargs={'comment': '图片名称'})
-    gmt_created: datetime = Field(..., default_factory= datetime.now, description='创建日期时间',
+    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                   comment="创建日期时间", nullable=False, server_default=text("NOW()")))
+                                                   comment="创建日期时间", nullable=False,
+                                                   server_default=text("NOW()")))
 
 
 class Follow(SQLModel, table=True):
@@ -213,12 +227,13 @@ class Follow(SQLModel, table=True):
 
     id: int = Field(primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
     follower_id: str = Field(..., index=True, max_length=32, description='关注者',
-                            sa_column_kwargs={'comment': '关注者'})
+                             sa_column_kwargs={'comment': '关注者'})
     followee_id: str = Field(..., index=True, max_length=32, description='被关注者',
-                            sa_column_kwargs={'comment': '被关注者'})
-    gmt_created: datetime = Field(..., default_factory= datetime.now, description='创建日期时间',
+                             sa_column_kwargs={'comment': '被关注者'})
+    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                   comment="创建日期时间", nullable=False, server_default=text("NOW()")))
+                                                   comment="创建日期时间", nullable=False,
+                                                   server_default=text("NOW()")))
 
     # 创建联合索引;
     __table_args__ = (

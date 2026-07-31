@@ -1,6 +1,6 @@
 # 定义镜像的标签
 # 参考文档: https://docs.astral.sh/uv/guides/integration/fastapi/#deployment
-ARG TAG=3.13-slim
+ARG TAG=3.14-slim
 
 FROM python:${TAG}  AS builder-image
 

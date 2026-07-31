@@ -13,7 +13,7 @@
 from datetime import timedelta, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request, status, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request, status, Body, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import RedirectResponse
 from pydantic_core import ValidationError
@@ -21,9 +21,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from utils import hash_password
 from ..core.database import add_instance
 from .models import Account, AccountCreate, AccountPublic, AccountPublicCommon, AccountPasswordChange, \
-    AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken
+    AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken, CodeVerify
 
 from src.tuiwen.utils import generate_jwt_token, verify_jwt_token, get_random_salt, convert_to_cst_time
 from src.tuiwen.core import get_settings, Tag
@@ -243,6 +244,10 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
                 detail="该账号ID已被占用，请更换后重试"
             )
 
+    # 更新用户信息
+    instance.salt = get_random_salt(8)
+    instance.password = hash_password(front_md5=instance.password, salt=instance.salt)
+
     try:
         instance = await add_instance(session, instance)
     except IntegrityError:
@@ -267,7 +272,8 @@ async def get_account(account_id: Annotated[str, "账户ID"], session: Annotated
 
 
 @router_account.put("/{account_id}/", summary="更新账户基本信息", response_model=AccountPublic)
-async def update_account(account_id: Annotated[str, "账户ID"], account: Annotated[AccountPublicCommon, Body(..., description="更新的账户信息")],
+async def update_account(account_id: Annotated[str, "账户ID"],
+                         account: Annotated[AccountPublicCommon, Body(..., description="更新的账户信息")],
                          session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session),
                          user: Annotated[Account, "认证的用户信息"] = Depends(get_current_user)):
     try:
@@ -280,7 +286,11 @@ async def update_account(account_id: Annotated[str, "账户ID"], account: Annota
     if not instance:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
-    account_data = account.model_dump(exclude_unset=True)
+    # 排除被更新字段
+    forbidden_fields = {"account_id", "id", "username", "email", "mobile", "password", "salt", "is_active",
+                        "user_type", "im_id", "gmt_created", "gmt_modified"}
+
+    account_data = account.model_dump(exclude_unset=True, exclude=forbidden_fields)
     instance.sqlmodel_update(account_data)
 
     instance = await add_instance(session, instance)
@@ -301,11 +311,22 @@ async def search(keyword: Annotated[str, "关键词"], *, session: AsyncSession 
     return PageResponse(items=dataset, total=len(dataset), page_size=limit)
 
 
+@router_public.post("/accounts/send/code/", summary="发送验证码", tags=[Tag.account])
+async def account_send_code(data: Annotated[CodeVerify, "验证码信息"],
+                            background_tasks: Annotated[BackgroundTasks, "后台任务"]):
+    # todo
+    # send_notification
+    code = data.model_dump(exclude={'code'})
+    instance = CodeVerify(**code, code='666666')
+    background_tasks.add_task(lambda a: print(a), instance)
+    return {"message": "验证码已经发送至你的邮箱,请查收!"}
+
 @router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=[Tag.account],
                    response_model=AccountPublic)
 async def password_reset(account: Annotated[AccountPasswordReset, Body(..., description="密码充值的必要信息")],
                          session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
-    statement = select(Account).where(Account.account_id == account.account_id)
+    statement = select(Account).where(or_(Account.username == account.username,
+                                          Account.email == account.username))
     instance = (await session.exec(statement)).first()
     if not instance:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
@@ -316,14 +337,12 @@ async def password_reset(account: Annotated[AccountPasswordReset, Body(..., desc
     except AssertionError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    account_data = account.model_dump(exclude_unset=True, exclude={'account_id'})
-    instance.sqlmodel_update(account_data)
+    # 更新用户信息
     instance.salt = get_random_salt(8)
+    instance.password = hash_password(front_md5=account.password, salt=instance.salt)
 
+    # 保存到数据库
     instance = await add_instance(session, instance)
-    # session.add(instance)
-    # await session.commit()
-    # await session.refresh(instance)
 
     return instance
 
@@ -344,8 +363,8 @@ async def password_change(request: Annotated[Request, "请求对象"],
     except AssertionError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    instance.password = account.password_new
     instance.salt = get_random_salt(8)
+    instance.password = hash_password(front_md5=account.password_new, salt=instance.salt)
 
     instance = await add_instance(session, instance)
 
