@@ -74,10 +74,7 @@ class Settings(BaseSettings):
                 f"错误: {str(e)} | "
                 f"权限: {oct(os.stat(self.POSTGRES_PASSWORD_FILE).st_mode)[-3:] if os.path.exists(self.POSTGRES_PASSWORD_FILE) else 'N/A'}")
 
-        finally:
-            return self
-
-
+        return self
 
 class Tag(Enum):
     account = 'account'

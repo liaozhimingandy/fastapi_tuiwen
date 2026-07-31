@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from utils import hash_password
+from ..utils import hash_password
 from ..core.database import add_instance
 from .models import Account, AccountCreate, AccountPublic, AccountPublicCommon, AccountPasswordChange, \
     AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken, CodeVerify

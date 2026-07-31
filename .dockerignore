@@ -12,3 +12,4 @@ __pycache__/*
 ./static/medias/*
 logs/*
 tuiwen.sqlite3
+test_main.py
