@@ -49,6 +49,7 @@ async def check_authentication(request: Request, token: Annotated[str, Depends(o
         raise credentials_exception
 
     request.state.account_id = payload["account_id"]
+    request.state.salt = payload["salt"]
 
 
 async def get_current_user(security_scopes: SecurityScopes, token: Annotated[str, Depends(oauth2_scheme)]):

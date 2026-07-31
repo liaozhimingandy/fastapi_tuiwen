@@ -58,18 +58,14 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     try:
         statement = select(Account).where(
             or_(Account.email == form_data.username, Account.username == form_data.username),
-            Account.password == form_data.password,
             Account.is_active == True)
         instance = (await session.exec(statement)).first()
-        assert instance is not None, '请重新检查你的用户名和密码'
+        assert instance is not None and instance.password == hash_password(form_data.password, instance.salt), '请重新检查你的用户名和密码'
+
     except AssertionError as e:
         raise HTTPException(status_code=404, detail=str(e), headers={'WWW-Authenticate': 'Bearer'})
 
-    # 作废之前的salt
-    instance.salt = get_random_salt(8)
-    instance = await add_instance(session, instance)
     data = {"account_id": instance.account_id, "salt": instance.salt, 'scopes': SCOPES_BASIC}
-
     refresh_token = generate_jwt_token(data, expires_in=timedelta(minutes=get_settings().REFRESH_TOKEN_EXPIRE_MINUTES),
                                        grant_type="refresh_token")
 
@@ -353,7 +349,7 @@ async def password_change(request: Annotated[Request, "请求对象"],
                           account: Annotated[AccountPasswordChange, Body(..., description="修改密码的必要入参")],
                           session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session), ):
     statement = select(Account).where(Account.account_id == request.state.account_id,
-                                      Account.password == account.password_current)
+                                      Account.password == hash_password(account.password_current, request.state.salt))
     instance = (await session.exec(statement)).first()
     if not instance:
         raise HTTPException(status_code=400, detail="原密码不对,请重新输入原密码")

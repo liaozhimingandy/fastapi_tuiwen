@@ -22,15 +22,15 @@ class PostType(Enum):
 class PostRightStatusUpdate(SQLModel):
     class RightStatusEnum(Enum):
         """帖子权限"""
-
+        PRIVATE = 0
         PUBLIC = 1
-        PRIVATE = 2
 
         @property
         def label(self):
             mapping = {
-                1: "公开",
-                2: "仅自己"
+                0: "仅自己",
+                1: "公开"
+
             }
             return mapping[self.value]
 

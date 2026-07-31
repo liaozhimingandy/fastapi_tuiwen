@@ -6,7 +6,7 @@ from typing import Annotated
 from uuid import UUID
 
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select, delete, update, exists
+from sqlmodel import select, delete, update, exists, or_
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, Request, Query, Path, Body, status
 
 from src.tuiwen.core import get_settings, Settings, Tag, add_instance
@@ -38,8 +38,10 @@ async def create_post(post: Annotated[PostCreate, Body(..., description="帖子�
 
 @router_post.get("/latest/", summary="返回最近十条帖子", response_model=PageResponse[Post],
                  response_model_include={'items', 'total'})
-async def get_posts_latest(session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
-    statement = select(Post).where(Post.right_status == Post.RightStatusEnum.PUBLIC).order_by(-Post.id).limit(10)
+async def get_posts_latest(request: Annotated[Request, "请求对象"],
+                           session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
+    statement = select(Post).where(
+        or_(Post.right_status == Post.RightStatusEnum.PUBLIC, Post.account_id == request.state.account_id))
     dataset = (await session.exec(statement)).all()
 
     return PageResponse(items=dataset, total=len(dataset))
@@ -54,8 +56,6 @@ async def get_account_posts(account_id: Annotated[str, Path(..., description="�
                             cursor: Annotated[UUID | None, "数据最旧的ID"] = Query(None),
                             session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)
                             ):
-
-
     statement = select(Post).where(Post.account_id == account_id)
     # 如果和认证用户一致,则返回所有，否则查公开帖子
     if not account_id == request.state.account_id:
@@ -78,13 +78,14 @@ async def get_account_posts(account_id: Annotated[str, Path(..., description="�
 
 @router_post.get("/", summary="返回帖子", response_model=PageResponse[Post],
                  response_model_include={'items', 'total'})
-async def get_posts(limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
+async def get_posts(request: Annotated[Request, "请求对象"],
+                    limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
                     cursor: Annotated[UUID | None, "数据最旧的那个post_id"] = Query(None),
-                    session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session), ):
-
-
+                    session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)
+                    ):
     # 构建查询（保持UTC时间比较）
-    statement = select(Post).where(Post.right_status == Post.RightStatusEnum.PUBLIC)
+    statement = select(Post).where(
+        or_(Post.right_status == Post.RightStatusEnum.PUBLIC, Post.account_id == request.state.account_id))
 
     if cursor:
         statement = statement.where(Post.post_id < cursor)
@@ -151,8 +152,6 @@ async def get_comments(
         limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
         cursor: Annotated[UUID | None, "最早的那个id"] = Query(None),
         session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
-
-
     statement = select(Comment).where(Comment.obj_id == obj_id, Comment.obj_type == Comment.ObjTypeEnum(obj_type))
     if cursor:
         statement = statement.where(Comment.comment_id < cursor)
