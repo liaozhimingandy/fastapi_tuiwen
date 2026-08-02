@@ -42,6 +42,23 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = Field(60 * 24 * 28, description="refresh token expire minutes")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(60 * 24 * 1, description="access token expire minutes")
 
+    # ===================== Redis 配置（和 PG 同风格）=====================
+    REDIS_HOST: str = Field("127.0.0.1", description="redis host")
+    REDIS_PORT: int = Field(6379, description="redis port")
+    REDIS_DB: int = Field(0, description="redis database")
+    REDIS_PASSWORD: Optional[str] = Field(
+        default=None,
+        validate_default=True,
+        description="Redis 密码，优先从文件读取"
+    )
+    REDIS_PASSWORD_FILE: Optional[str] = Field(
+        default=None,
+        description="Redis 密码文件路径"
+    )
+    REDIS_SOCKET_TIMEOUT: int = Field(2, description="redis socket timeout")
+    REDIS_EXPIRE: int = Field(30, description="redis expire")
+    # ====================================================================
+
     BACKEND_CORS_ORIGINS: Annotated[
         list[str] | str, BeforeValidator(parse_cors)
     ]
@@ -67,12 +84,11 @@ class Settings(BaseSettings):
         try:
             with open(self.POSTGRES_PASSWORD_FILE, 'r') as f:
                 self.POSTGRES_PASSWORD = f.read().strip()
+            with open(self.REDIS_PASSWORD_FILE, 'r') as f:
+                self.REDIS_PASSWORD = f.read().strip()
         except Exception as e:
             logger.error(e)
-            raise ValueError(
-                f"密码文件读取失败: {self.POSTGRES_PASSWORD_FILE} | "
-                f"错误: {str(e)} | "
-                f"权限: {oct(os.stat(self.POSTGRES_PASSWORD_FILE).st_mode)[-3:] if os.path.exists(self.POSTGRES_PASSWORD_FILE) else 'N/A'}")
+            raise ValueError(f"错误: {str(e)}")
 
         return self
 
@@ -85,7 +101,7 @@ class Tag(Enum):
     oauth = 'oauth'
     app = 'app'
     upload = 'upload'
-    notifications = 'notifications'
+    notices = 'notices'
 
 
 @lru_cache

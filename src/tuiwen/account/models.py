@@ -34,7 +34,7 @@ def salt_default():
 
 def userid_default():
     """用户id随机生成"""
-    return f"{os.getenv("PREFIX_ID", "twid_")}{uuid_generator(7)}"
+    return f'{os.getenv("PREFIX_ID", "twid_")}{uuid_generator(7)}'
 
 
 def app_id_default():

@@ -120,12 +120,12 @@ async def close_async_pool() -> None:
     if _asyncpg_pool is not None:
         await _asyncpg_pool.close()
         _asyncpg_pool = None
-        logger.info("asyncpg pool closed")
+        logger.info("❌ asyncpg pool closed")
 
 async def dispose_engine() -> None:
     """销毁 SQLAlchemy 引擎，释放所有连接，应用停机时调用"""
     await engine.dispose()
-    logger.info("数据库引擎已销毁,所有连接已释放")
+    logger.info("❌ 数据库引擎已销毁,所有连接已释放")
 
 if __name__ == "__main__":
     import asyncio

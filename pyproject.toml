@@ -15,6 +15,8 @@ dependencies = [
     "pyjwt>=2.13.0",
     "pytest>=9.1.1",
     "pytz>=2026.3.post1",
+    "redis>=8.1.0",
+    "setuptools>=83.0.0",
     "sqlmodel>=0.0.39",
     "uvicorn>=0.52.0",
 ]

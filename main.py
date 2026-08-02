@@ -1,3 +1,5 @@
+import sys
+import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,7 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.tuiwen import (api_router, logger, custom_generate_unique_id,
-                        get_version_from_txt, get_settings, dispose_engine, close_async_pool)
+                        get_version_from_txt, get_settings, dispose_engine, close_async_pool, init_mail_sender,
+                        init_redis, close_redis)
 
 __version__, description = get_version_from_txt("VERSION")
 
@@ -80,12 +83,27 @@ async def lifespan(app: FastAPI):
     final_art = "\n".join(cleaned_lines).rstrip("\n")  # 去除整个文本的末尾换行符
     print(final_art)
     print(f'version: {__version__} doc_url: http://localhost:8000/docs/')
-    logger.info("server started")
+    logger.info("✅ server started")
+
+    # 1. 初始化异步 Redis（最核心依赖）
+    try:
+        await init_redis()
+        logger.info("✅ Redis 同步连接初始化成功")
+    except Exception as e:
+        logger.error("\n【FATAL】Redis 核心组件连接失败，服务无法启动")
+        sys.exit(1)
+
+    init_mail_sender(is_prod=False)
+    logger.info("✅ 全局邮件服务初始化完成")
 
     yield
     # 停机：释放所有连接资源
     await close_async_pool()
     await dispose_engine()
+    try:
+       await close_redis()
+    except:
+        pass
 
 
 app = FastAPI(title="内部API文档",

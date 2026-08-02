@@ -13,8 +13,49 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - /d/Git/secrets/postgres_password.txt:/run/secrets/postgres_password.txt:ro
+      - /d/Git/secrets/redis_password.txt:/run/secrets/redis_password.txt:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; response = httpx.get('http://localhost:8000/health-check/'); exit(1) if response.status_code != 200 else exit(0)"]
       interval: 30s
       timeout: 5s
       retries: 5
+
+  postgres:
+    image: postgres:18.3
+    container_name: dev-tw-common-pg-01
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password.txt
+      - POSTGRES_DB=tuiwen
+      - TZ=Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - /d/Git/secrets/postgres_password.txt:/run/secrets/postgres_password.txt:ro
+      - pg_data:/var/lib/postgresql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d tuiwen" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2.7
+    container_name: dev-tw-common-redis-01
+    restart: unless-stopped
+    command: sh -c "redis-server --requirepass $$(cat /run/secrets/redis_password.txt)"
+    ports:
+      - "6379:6379"
+    volumes:
+      - /d/Git/secrets/redis_password.txt:/run/secrets/redis_password.txt:ro
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pg_data:
+  redis_data:
