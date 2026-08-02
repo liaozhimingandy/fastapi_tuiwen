@@ -17,22 +17,22 @@ class PostType(Enum):
     POST = 1         # 普通动态/帖子
     BLOG = 2         # 博客
 
+class RightStatusEnum(Enum):
+    """帖子权限"""
+    PRIVATE = 0
+    PUBLIC = 1
+
+    @property
+    def label(self):
+        mapping = {
+            0: "仅自己",
+            1: "公开"
+
+        }
+        return mapping[self.value]
 
 
 class PostRightStatusUpdate(SQLModel):
-    class RightStatusEnum(Enum):
-        """帖子权限"""
-        PRIVATE = 0
-        PUBLIC = 1
-
-        @property
-        def label(self):
-            mapping = {
-                0: "仅自己",
-                1: "公开"
-
-            }
-            return mapping[self.value]
 
     post_id: UUID = Field(default_factory=uuid.uuid7, index=True, description='帖子ID',
                           sa_column_kwargs={'comment': '帖子ID', "server_default": text("uuidv7()")},

@@ -21,21 +21,25 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from ..utils import hash_password
+from ..utils import hash_password, send_verify_email, redis_set, redis_get, redis_delete
 from ..core.database import add_instance
 from .models import Account, AccountCreate, AccountPublic, AccountPublicCommon, AccountPasswordChange, \
     AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken, CodeVerify
 
 from src.tuiwen.utils import generate_jwt_token, verify_jwt_token, get_random_salt, convert_to_cst_time
-from src.tuiwen.core import get_settings, Tag
+from src.tuiwen.core import Tag
 from src.tuiwen.models import PageResponse
 from src.tuiwen.dependencies import get_current_user, get_session, oauth2_scheme
+from src.tuiwen.core.config import get_settings
+
+config = get_settings()
 
 SCOPES_BASIC = 'basic'
 
 ##################################################### oauth ############################################################
 router_oauth = APIRouter(prefix="/oauth", tags=[Tag.oauth])
 router_public = APIRouter()
+
 
 @router_public.post("/oauth/authorize/password/",
                     summary="用户使用用户名或邮箱进和密码进行认证获取刷新令牌", tags=[Tag.oauth],
@@ -60,7 +64,8 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
             or_(Account.email == form_data.username, Account.username == form_data.username),
             Account.is_active == True)
         instance = (await session.exec(statement)).first()
-        assert instance is not None and instance.password == hash_password(form_data.password, instance.salt), '请重新检查你的用户名和密码'
+        assert instance is not None and instance.password == hash_password(form_data.password,
+                                                                           instance.salt), '请重新检查你的用户名和密码'
 
     except AssertionError as e:
         raise HTTPException(status_code=404, detail=str(e), headers={'WWW-Authenticate': 'Bearer'})
@@ -79,7 +84,8 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 
 @router_oauth.get("/refresh-token/{account_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
                   tags=[Tag.oauth], response_model=AccessToken)
-async def refresh_token(account_id: Annotated[str, "账户ID"], refresh_token: Annotated[str, "刷新令牌" ]= Depends(oauth2_scheme)):
+async def refresh_token(account_id: Annotated[str, "账户ID"],
+                        refresh_token: Annotated[str, "刷新令牌"] = Depends(oauth2_scheme)):
     """
     使用刷新令牌进行更新获取权限令牌,请使用postman测试,header携带认证信息,后续会实现,refresh_token有效期为7天,请妥善保管,重新登录认证后,
     该token作废; <br>
@@ -112,7 +118,8 @@ async def test_oauth(user: Annotated[Account, "账户信息"] = Depends(get_curr
 
 
 @router_oauth.get("/test-oauth-admin/", summary="测试接口(需要更高权限)")
-async def test_oauth_admin(user: Annotated[Account, "认证的用户信息"] = Security(get_current_user, scopes=['admin'])) -> Any:
+async def test_oauth_admin(
+        user: Annotated[Account, "认证的用户信息"] = Security(get_current_user, scopes=['admin'])) -> Any:
     return {"message": f"hello word, 欢迎您,{user.account_id}"}
 
 
@@ -165,7 +172,8 @@ async def app_authorize(app_id: Annotated[str, "app_id"], app_secret: Annotated[
 
 @router_app.get("/refresh-token/{app_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
                 response_model=AppAccessToken, tags=[Tag.app])
-async def app_refresh_token(app_id: Annotated[str, "app id"], refresh_token: Annotated[str, "刷新令牌"] = Depends(oauth2_scheme)):
+async def app_refresh_token(app_id: Annotated[str, "app id"],
+                            refresh_token: Annotated[str, "刷新令牌"] = Depends(oauth2_scheme)):
     """
     使用刷新令牌进行更新获取权限令牌,请使用postman测试,header携带认证信息,后续会实现,refresh_token有效期为7天,请妥善保管,重新登录认证后,
     该token作废;
@@ -224,7 +232,7 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
         instance.username = instance.account_id
 
     # 判断数据库是否存在
-    exist_stmt = select(Account).where(or_(Account.email == instance.email,Account.username == instance.username))
+    exist_stmt = select(Account).where(or_(Account.email == instance.email, Account.username == instance.username))
     exist_user = (await session.exec(exist_stmt)).first()
 
     if exist_user:
@@ -255,11 +263,15 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
     return instance
 
 
-@router_account.get("/{account_id}/", summary="查询账户信息", response_model=AccountPublic,
-                    responses={
-                        404: {"description": "no such account"}
-                    })
-async def get_account(account_id: Annotated[str, "账户ID"], session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
+@router_public.get("/accounts/{account_id}/", summary="查询账户信息",
+                   response_model=AccountPublic,
+                   name="get_account_public",
+                   tags=[Tag.account, ],
+                   responses={
+                       404: {"description": "no such account"}
+                   })
+async def get_account(account_id: Annotated[str, "账户ID"],
+                      session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     statement = select(Account).where(Account.account_id == account_id)
     instance = (await session.exec(statement)).first()
     if not instance:
@@ -295,7 +307,8 @@ async def update_account(account_id: Annotated[str, "账户ID"],
 
 
 @router_account.get("/search/{keyword}/", summary="通过关键词搜索账户", response_model=PageResponse[AccountPublic])
-async def search(keyword: Annotated[str, "关键词"], *, session: AsyncSession = Depends(get_session), offset: Annotated[int, "偏移量"] = 0,
+async def search(keyword: Annotated[str, "关键词"], *, session: AsyncSession = Depends(get_session),
+                 offset: Annotated[int, "偏移量"] = 0,
                  limit: Annotated[int, Query(le=10)] = 10, ) -> PageResponse[AccountPublic]:
     statement = select(Account).where(
         or_(Account.username.contains(keyword), Account.nick_name.contains(keyword))).offset(offset).limit(limit)
@@ -310,12 +323,20 @@ async def search(keyword: Annotated[str, "关键词"], *, session: AsyncSession 
 @router_public.post("/accounts/send/code/", summary="发送验证码", tags=[Tag.account])
 async def account_send_code(data: Annotated[CodeVerify, "验证码信息"],
                             background_tasks: Annotated[BackgroundTasks, "后台任务"]):
-    # todo
+    import random
     # send_notification
     code = data.model_dump(exclude={'code'})
-    instance = CodeVerify(**code, code='666666')
-    background_tasks.add_task(lambda a: print(a), instance)
+    instance = CodeVerify(**code, code="".join(random.choices("0123456789", k=6)))
+    data = {
+        'code': instance.code,
+        'expire': 30,
+        'to_email': instance.account,
+    }
+    # 存到redis
+    await redis_set(f"tw:dev:reset_pwd:account:{instance.account}", instance.code, expire=config.REDIS_EXPIRE)
+    background_tasks.add_task(send_verify_email, **data)
     return {"message": "验证码已经发送至你的邮箱,请查收!"}
+
 
 @router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=[Tag.account],
                    response_model=AccountPublic)
@@ -327,11 +348,27 @@ async def password_reset(account: Annotated[AccountPasswordReset, Body(..., desc
     if not instance:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
-    # 判断验证码是否一致 todo
-    try:
-        assert account.code == "666666", "你的验证码不对"
-    except AssertionError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    # 按业界规范构造 key
+    redis_key = f"tw:dev:reset_pwd:account:{account.username}"
+
+    # 从 Redis 获取验证码
+    correct_code = await redis_get(redis_key)
+
+    # 校验逻辑
+    if not correct_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="验证码已过期或未发送"
+        )
+
+    if correct_code != account.code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="验证码不正确"
+        )
+
+        # 验证通过后立即删除验证码，防止重复使用
+    await redis_delete(redis_key)
 
     # 更新用户信息
     instance.salt = get_random_salt(8)

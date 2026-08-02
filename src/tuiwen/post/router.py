@@ -11,11 +11,13 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, Request, Quer
 from src.tuiwen.core import get_settings, Settings, Tag, add_instance
 from src.tuiwen.dependencies import get_session
 from src.tuiwen.post.models import Post, PostCreate, Comment, Like, Image as TWImage, ImageBase, PostRightStatusUpdate, \
-    CommentInput, LikeInput, Follow, FollowCountModel, LikeCountModel
+    CommentInput, LikeInput, Follow, FollowCountModel, LikeCountModel, RightStatusEnum
 from src.tuiwen.models import PageResponse
 from src.tuiwen.utils import allowed_file
 
 router_post = APIRouter(prefix="/posts", tags=[Tag.post])
+# 不需要认证的路由
+router_public = APIRouter(prefix="/posts",  tags=[Tag.post])
 
 
 @router_post.post("/", summary="发布帖子", response_model=Post, status_code=status.HTTP_201_CREATED)
@@ -43,12 +45,22 @@ async def get_post(post_id: Annotated[UUID, "帖子唯一标识"],
 
     return instance
 
+@router_public.get("/s/{post_id}/", summary="返回公开的指定的帖子", response_model=Post)
+async def get_s_post(post_id: Annotated[UUID, "帖子唯一标识"],
+                   session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
+    # 构建查询
+    statement = select(Post).where(Post.post_id == post_id, Post.right_status == RightStatusEnum.PUBLIC)
+    instance = (await session.exec(statement)).first()
+
+    return instance
+
+
 @router_post.get("/latest/", summary="返回最近十条帖子", response_model=PageResponse[Post],
                  response_model_include={'items', 'total'})
 async def get_posts_latest(request: Annotated[Request, "请求对象"],
                            session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     statement = select(Post).where(
-        or_(Post.right_status == Post.RightStatusEnum.PUBLIC, Post.account_id == request.state.account_id))
+        or_(Post.right_status == RightStatusEnum.PUBLIC, Post.account_id == request.state.account_id))
     dataset = (await session.exec(statement)).all()
 
     return PageResponse(items=dataset, total=len(dataset))
@@ -67,7 +79,7 @@ async def get_account_posts(account_id: Annotated[str, Path(..., description="�
     # 如果和认证用户一致,则返回所有，否则查公开帖子
     if not account_id == request.state.account_id:
         statement = statement.where(
-            Post.right_status == Post.RightStatusEnum.PUBLIC
+            Post.right_status == RightStatusEnum.PUBLIC
         )
 
     # 仅当有游标时添加时间条件
@@ -92,7 +104,7 @@ async def get_posts(request: Annotated[Request, "请求对象"],
                     ):
     # 构建查询（保持UTC时间比较）
     statement = select(Post).where(
-        or_(Post.right_status == Post.RightStatusEnum.PUBLIC, Post.account_id == request.state.account_id))
+        or_(Post.right_status == RightStatusEnum.PUBLIC, Post.account_id == request.state.account_id))
 
     if cursor:
         statement = statement.where(Post.post_id < cursor)
