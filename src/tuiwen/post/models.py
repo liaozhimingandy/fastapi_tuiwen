@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytz
 from pydantic import field_validator, BaseModel, field_serializer
-from sqlalchemy import DateTime, Enum as SaENUM, JSON, Column
+from sqlalchemy import DateTime, Enum as SaENUM, JSON, Column, BigInteger
 from sqlmodel import SQLModel, Field, Index, text
 
 from src.tuiwen.core import get_settings
@@ -88,7 +88,8 @@ class Post(PostCreate, table=True):
     __tablename__ = f"{TABLE_PREFIX}post"  # 表名
     __table_args__ = {'comment': '帖子'}  # 表备注
 
-    id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
+    id: int = Field(None, primary_key=True, description='表主键ID',
+                    sa_column_kwargs={'comment': '表主键ID'}, sa_type=BigInteger)
     status: int | None = Field(default=1, description='帖子状态', sa_column_kwargs={'comment': '帖子状态'})
     gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
@@ -122,7 +123,8 @@ class CommentInput(SQLModel):
             }
             return mapping[self.value]
 
-    id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
+    id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
+                    sa_type=BigInteger)
     comment_id: UUID = Field(default_factory=uuid.uuid7, index=True, description='评论ID',
                              sa_column_kwargs={'comment': '评论ID', "server_default": text("uuidv7()")},
                              unique=True)
@@ -169,7 +171,8 @@ class LikeInput(SQLModel):
         """评论对象类别"""
         POST = 1
 
-    id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
+    id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
+                    sa_type=BigInteger)
     obj_id: UUID = Field(index=True, description='赞对象ID', sa_column_kwargs={'comment': '赞对象ID'})
     obj_type: ObjTypeEnum = Field(default=ObjTypeEnum.POST, description="评论对象类别",
                                   sa_column_kwargs={'comment': '评论对象类别'},
@@ -211,7 +214,8 @@ class Image(ImageBase, table=True):
     __tablename__ = f"{TABLE_PREFIX}image"  # 表名
     __table_args__ = {'comment': '图片'}  # 表备注
 
-    id: int = Field(primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
+    id: int = Field(primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
+                    sa_type=BigInteger)
     image_name: str = Field(..., max_length=128, description='图片名称', sa_column_kwargs={'comment': '图片名称'})
     gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
@@ -225,7 +229,8 @@ class Follow(SQLModel, table=True):
     """
     __tablename__ = f"{TABLE_PREFIX}follow"  # 表名
 
-    id: int = Field(primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
+    id: int = Field(primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
+                    sa_type=BigInteger)
     follower_id: str = Field(..., index=True, max_length=32, description='关注者',
                              sa_column_kwargs={'comment': '关注者'})
     followee_id: str = Field(..., index=True, max_length=32, description='被关注者',

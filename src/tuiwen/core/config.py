@@ -19,7 +19,7 @@ def parse_cors(v: Any) -> list[str] | str:
 
 class Settings(BaseSettings):
     TABLE_PREFIX: str = Field("tw_", description="table prefix")
-    DEBUG: bool = Field(False, description="debug mode")
+    DEBUG: bool = Field(True, description="debug mode")
     ACCOUNT_ID_PREFIX: str = Field("twid_", description="account id prefix")
     # SECRET_KEY: str = secrets.token_urlsafe(16)
     SECRET_KEY: str = 'tw-insecure-5xlvJWvZ_TOiJzKvtpTuBMfllIJ1WE7gvODgA41dvnA'
@@ -85,6 +85,7 @@ class Tag(Enum):
     oauth = 'oauth'
     app = 'app'
     upload = 'upload'
+    notifications = 'notifications'
 
 
 @lru_cache

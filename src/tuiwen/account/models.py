@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone, date
 from enum import Enum
 
 from pydantic import EmailStr
-from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM, Column, JSON
+from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM, Column, JSON, BigInteger
 from sqlmodel import SQLModel, Field, text
 
 from src.tuiwen.core import get_settings
@@ -114,7 +114,8 @@ class Account(AccountBase, table=True):
     __tablename__ = f"{TABLE_PREFIX}account"  # 表名
     __table_args__ = {'comment': '账户信息'}  # 表备注
 
-    id: int = Field(..., primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
+    id: int = Field(..., primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
+                    sa_type=BigInteger)
     user_type: int = Field(default=1, sa_type=SMALLINT, description='账户类型',
                                   sa_column_kwargs={'comment': '账户类型'})
     password: str = Field(None, max_length=64, min_length=64, description='用户密码;经过MD5计算加密', sa_column_kwargs={'comment': '用户密码'})
@@ -159,7 +160,8 @@ class App(SQLModel, table=False):
     __tablename__ = f"{TABLE_PREFIX}app"  # 表名
     __table_args__ = {'comment': '应用'}  # 表备注
 
-    id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
+    id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
+                    sa_type=BigInteger)
     app_id: str = Field(default=app_id_default, index=True, max_length=7, unique=True,
                         description='appid', sa_column_kwargs={'comment': 'appid'})
     app_secret: str = Field(..., max_length=32, description='应用密钥', sa_column_kwargs={'comment': '应用密钥'})

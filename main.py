@@ -8,7 +8,6 @@ from fastapi.staticfiles import StaticFiles
 from src.tuiwen import (api_router, logger, custom_generate_unique_id,
                         get_version_from_txt, get_settings, dispose_engine, close_async_pool)
 
-
 __version__, description = get_version_from_txt("VERSION")
 
 # 标签描述配置
@@ -45,6 +44,14 @@ tags_metadata = [
         "name": "upload",
         "description": "和文件上传相关操作.",
     },
+    {
+        "name": "follow",
+        "description": "和关注操作相关.",
+    },
+    {
+        "name": "notices",
+        "description": "通知相关",
+    },
 ]
 
 # 服务地址
@@ -53,6 +60,7 @@ servers = [
     {"url": "https://api-test.tuiwen.alsoapp.com", "description": "测试环境地址"},
     {"url": "http://127.0.0.1:8000", "description": "本地开发环境"},
 ]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -144,8 +152,6 @@ async def redoc_html():
         title=app.title + " - ReDoc",
         redoc_js_url="/static/redoc.standalone.js",
     )
-
-
 
 # @app.exception_handler(HTTPException)
 # async def custom_http_exception_handler(request, exc):

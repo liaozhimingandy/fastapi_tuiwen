@@ -1,7 +1,6 @@
 import hashlib
 import uuid
 import os
-from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -35,6 +34,14 @@ async def create_post(post: Annotated[PostCreate, Body(..., description="帖子�
 
     return instance
 
+@router_post.get("/{post_id}/", summary="返回指定的帖子", response_model=Post)
+async def get_post(post_id: Annotated[UUID, "帖子唯一标识"],
+                   session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
+    # 构建查询
+    statement = select(Post).where(Post.post_id == post_id)
+    instance = (await session.exec(statement)).first()
+
+    return instance
 
 @router_post.get("/latest/", summary="返回最近十条帖子", response_model=PageResponse[Post],
                  response_model_include={'items', 'total'})

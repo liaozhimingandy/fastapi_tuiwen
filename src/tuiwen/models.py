@@ -27,9 +27,9 @@ class ResponsePublic(BaseModel, Generic[T]):
     data: Optional[T]  = Field(default=None, description="响应数据")
     details: Optional[T] = Field(default=None, description="错误详情")
 
+
 class PageResponse(BaseModel, Generic[T]):
     """通用列表分页响应模型"""
-
     items: List[T] = Field(..., description="列表数据")
     total: int = Field(0, description="总记录数")
     page: int = Field(0, description="总页数")

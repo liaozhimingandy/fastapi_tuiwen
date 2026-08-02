@@ -14,15 +14,20 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import BigInteger
 from sqlmodel import SQLModel, Field, Column, DateTime, text, SMALLINT, JSON
 
+from src.tuiwen import get_settings
+
+TABLE_PREFIX = get_settings().TABLE_PREFIX
 
 class Log(SQLModel, table=True):
 
-    __tablename__ = "log"
-    __table_args__ = {'comment': '日志记录信息表'}  # 表备注
+    __tablename__ = f"{TABLE_PREFIX}log"
+    __table_args__ = {'comment': '日志记录信息表'}
 
-    id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'})
+    id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
+                    sa_type=BigInteger)
     app_id: str = Field(..., description='应用ID,示例:com.alsoapp.esb.api', min_length=5, max_length=32, index=True,
                         sa_column_kwargs={'comment': '应用ID'})
     trace_id: uuid.UUID = Field(..., description='链路ID,用于全链路追踪', index=True, unique=True,
