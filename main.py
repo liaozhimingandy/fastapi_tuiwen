@@ -9,7 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 from src.tuiwen import (api_router, logger, custom_generate_unique_id,
                         get_version_from_txt, get_settings, dispose_engine, close_async_pool, init_mail_sender,
-                        init_redis, close_redis)
+                        init_redis, close_redis, init_postgres)
+
 
 __version__, description = get_version_from_txt("VERSION")
 
@@ -85,23 +86,31 @@ async def lifespan(app: FastAPI):
     print(f'version: {__version__} doc_url: http://localhost:8000/docs/')
     logger.info("✅ server started")
 
-    # 1. 初始化异步 Redis（最核心依赖）
+    import os, signal
     try:
         await init_redis()
         logger.info("✅ Redis 同步连接初始化成功")
     except Exception as e:
-        logger.error("\n【FATAL】Redis 核心组件连接失败，服务无法启动")
-        sys.exit(1)
+        logger.error("【FATAL】Redis 核心组件连接失败，服务无法启动")
+        os.kill(os.getpid(), signal.SIGTERM)
 
+    # 2. PostgreSQL 初始化
+    try:
+        await init_postgres()
+    except Exception as e:
+        logger.error("【FATAL】PostgreSQL 数据库初始化失败，服务无法启动: %s", e)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    # 邮件系统
     init_mail_sender(is_prod=False)
     logger.info("✅ 全局邮件服务初始化完成")
 
     yield
     # 停机：释放所有连接资源
-    await close_async_pool()
-    await dispose_engine()
     try:
-       await close_redis()
+        await close_async_pool()
+        await dispose_engine()
+        await close_redis()
     except:
         pass
 
@@ -137,6 +146,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 ##################################################### 中间件 ############################################################
 # 允许的来源（这里是 * 表示所有域名, 你也可以指定特定的域名）
 # 配置允许跨域的域名、请求方法等
+print(get_settings().BACKEND_CORS_ORIGINS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().BACKEND_CORS_ORIGINS,  # 允许跨域访问的来源

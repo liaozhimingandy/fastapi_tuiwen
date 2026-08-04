@@ -7,7 +7,7 @@ Dockerfile
 __pycache__/*
 .pdm-python
 .idea/*
-.env
+.env.develop
 ./docker-compose.yml
 ./static/medias/*
 logs/*

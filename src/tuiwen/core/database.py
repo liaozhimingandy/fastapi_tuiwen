@@ -11,6 +11,7 @@
 from typing import Annotated, TypeVar
 
 import asyncpg
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
@@ -126,6 +127,27 @@ async def dispose_engine() -> None:
     """销毁 SQLAlchemy 引擎，释放所有连接，应用停机时调用"""
     await engine.dispose()
     logger.info("❌ 数据库引擎已销毁,所有连接已释放")
+
+async def init_postgres():
+    """
+    Postgres 完整初始化函数，启动阶段执行
+    1. 验证 SQLAlchemy 引擎连通性
+    2. 初始化 asyncpg 原生连接池
+    3. 自动创建数据表
+    """
+    # 1. 测试 SQLAlchemy 引擎能否正常连接数据库
+    async with AsyncSessionLocal() as session:
+        # 执行一条简单SQL探测连通性
+        await session.execute(text("SELECT 1"))
+    logger.info("✅ SQLAlchemy 数据库引擎连通测试成功")
+
+    # 2. 初始化 asyncpg 原生连接池
+    await get_async_pool()
+
+    # 3. 创建不存在的数据表（不会覆盖已有数据）
+    # await init_db()
+
+    logger.info("✅ PostgreSQL 完整初始化完成")
 
 if __name__ == "__main__":
     import asyncio
