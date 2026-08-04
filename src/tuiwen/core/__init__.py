@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from .config import get_settings, Settings, Tag
 from .database import (AsyncSessionLocal, add_instance, get_async_pool, init_db,
-                       close_async_pool, dispose_engine)
+                       close_async_pool, dispose_engine, init_postgres)
 
 __all__ = [
     "database",
@@ -14,5 +14,6 @@ __all__ = [
     "get_async_pool",
     "init_db",
     "close_async_pool",
-    "dispose_engine"
+    "dispose_engine",
+    "init_postgres"
 ]

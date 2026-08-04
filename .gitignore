@@ -9,7 +9,7 @@
 **/.venv
 **/.classpath
 **/.dockerignore
-**/.env
+.env.develop
 **/.git
 **/.gitignore
 **/.project
@@ -39,3 +39,5 @@ static/*
 .pdm-python
 **/logs/*
 .idea/*
+
+.env.develop
