@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request,
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import RedirectResponse
 from pydantic_core import ValidationError
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -232,17 +233,18 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
         instance.username = instance.account_id
 
     # 判断数据库是否存在
-    exist_stmt = select(Account).where(or_(Account.email == instance.email, Account.username == instance.username))
+    exist_stmt = select(Account).where(or_(func.lower(Account.email) == func.lower(instance.email),
+                                           func.lower(Account.username) == func.lower(instance.username)))
     exist_user = (await session.exec(exist_stmt)).first()
 
     if exist_user:
         # 精准判断是哪个字段重复，返回对应提示，用户体验更好
-        if exist_user.email == instance.email:
+        if exist_user.email.lower() == instance.email.lower():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="该邮箱已被注册,如您是账号所有者,请直接登录"
             )
-        if exist_user.username == instance.username:
+        if exist_user.username.lower() == instance.username.lower():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="该账号ID已被占用，请更换后重试"

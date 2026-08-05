@@ -14,7 +14,6 @@ import hashlib
 import random
 import string
 import tomllib
-import uuid
 from datetime import datetime
 
 from pytz import timezone
@@ -127,3 +126,68 @@ def hash_password(front_md5: str, salt: str) -> str:
         """
     combine = (front_md5 + salt).encode('utf-8')
     return hashlib.sha256(combine).hexdigest()
+
+
+def create_default_users():
+    from logger import logger
+    import json
+    import urllib.request
+    from hashlib import md5
+    from urllib.error import HTTPError, URLError
+
+    md5_hash = md5()
+    REGISTER_URL = "http://127.0.0.1:8000/accounts/register/"  # 改成你的真实接口
+    md5_hash.update('admin'.encode('utf-8'))  # 足够长的密码
+    DEFAULT_PASSWORD = md5_hash.hexdigest()
+    # 统一默认信息（所有账号都一样）
+    DEFAULT_NICK_NAME = "系统用户"
+    DEFAULT_GMT_BIRTH = "2000-01-01"
+    DEFAULT_AREA_CODE = "CHN"
+    DEFAULT_SEX = 0
+    DEFAULT_AVATAR = "https://picsum.photos/200/200"
+    DEFAULT_BIO = "系统预设账号"
+
+    # 关键：用户名 + 邮箱 唯一
+    USER_LIST = [
+        'tuiwen', 'alsoapp', 'chat','system', 'certified', 'sponsor', 'login', 'abc123', 'admin2024', 'bot', 'web', 'cash', 'user', 'site', 'store', 'shit', 'cracker', 'news', 'demo', 'test', 'administrator', 'sales', 'it', 'contact', 'root', 'billing', 'support', 'daemon', 'account', 'manager', 'free', 'privacy', '88888888', 'sysadmin', 'world', 'terms', 'team', 'owner', 'abc', 'shop', 'god', 'webmaster', 'win', 'superuser', 'diamond', 'root1', 'finance', 'official', 'portal', 'sample', 'backup', 'vip', 'verified', 'help', '123', 'nft', 'blog', 'nobody', 'admin1', 'info', 'register', 'fake', 'users', 'marketing', 'payment', 'guest1', 'hack', 'lottery', 'app', 'admin', 'master', 'hr', 'devil', 'control', 'password', 'community', 'gold', 'crypto', 'hacker', 'hello', 'president', 'fuck', 'service', 'svip', 'qwerty', 'platinum', 'king', 'bitcoin', 'winner', 'queen', 'ass', 'legal', 'premium', 'staff', 'angel', 'mod', 'moderator', '111111', 'feedback', 'money', 'guest', 'ops', 'anonymous', '123456', 'marketplace', 'spam', 'crack', 'product', 'partner', 'elite', 'operator',
+    ]
+    logger.info("===== 系统预设用户批量注册 =====")
+    for username in USER_LIST:
+        data = {
+            "email": f"{username}@alsoapp.com",
+            "password": DEFAULT_PASSWORD,
+            "username": username,
+            "nick_name": DEFAULT_NICK_NAME,
+            "gmt_birth": DEFAULT_GMT_BIRTH,
+            "area_code": DEFAULT_AREA_CODE,
+            "sex": DEFAULT_SEX,
+            "avatar": DEFAULT_AVATAR,
+            "bio": DEFAULT_BIO
+        }
+
+        data_bytes = json.dumps(data).encode("utf-8")
+        r = urllib.request.Request(
+            REGISTER_URL,
+            data=data_bytes,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(r, timeout=10) as resp:
+                status = resp.getcode()
+                if 200 <= status < 300:
+                    print(f"✅ {username:<12} 注册成功")
+                else:
+                    print(f"❌ {username:<12} 失败，状态码：{status}")
+        except HTTPError as e:
+            print(f"❌ {username:<12} HTTP错误：{e.code}")
+        except URLError as e:
+            print(f"⚠️ {username:<12} 连接失败：{e.reason}")
+        except Exception as e:
+            print(f"⚠️ {username:<12} 异常：{str(e)}")
+
+    logger.info(f'执行完毕：成功; 共计{len(USER_LIST)}个')
+
+
+if __name__ == "__main__":
+    create_default_users()

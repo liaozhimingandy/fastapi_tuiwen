@@ -16,7 +16,6 @@ import random
 import unittest
 import uuid
 from hashlib import md5
-import time
 
 import pytz
 import pytest

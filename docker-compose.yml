@@ -1,6 +1,6 @@
 services:
   app:
-    image: fastapi_tuiwen:0.3.6
+    image: fastapi_tuiwen:26.8.5
     restart: unless-stopped
     container_name: dev-tw-common-api-01
     ports:
@@ -8,7 +8,7 @@ services:
     env_file:
       - .env.production
     extra_hosts:
-      - db.tuiwen.alsoapp.com:172.17.0.2
+      - db.tuiwen.alsoapp.com:host-gateway
     environment:
       - TZ=Asia/Shanghai
     volumes:
