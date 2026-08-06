@@ -244,7 +244,7 @@ async def upload_image(file: Annotated[UploadFile, "图片文件"],
 
     if not instance:
         # 保存到文件
-        upload_dir = "static/medias/images"
+        upload_dir = "/static/medias/images"
         # 判断文件夹是否存在,不存在则新建
         if not os.path.exists(upload_dir):
             os.makedirs(upload_dir)
@@ -257,7 +257,7 @@ async def upload_image(file: Annotated[UploadFile, "图片文件"],
         instance = TWImage(image_url=file_path, image_name=file.filename, image_md5=image_md5)
         instance = await add_instance(session, instance)
 
-    return ImageBase(image_url=f"{settings.STATIC_URL}/{instance.image_url}", image_md5=image_md5)
+    return ImageBase(image_url=instance.image_url, image_md5=image_md5)
 
 
 ########################################################################################################################

@@ -37,7 +37,7 @@ def allowed_file(file: UploadFile, file_type: list[str]) -> bool:
         # 在打开文件后，需要将文件指针重置回开头
         file.file.seek(0)
         # 获取文件格式
-        file_format = image.format
+        file_format = image.format.lower()
         # 检查文件格式是否在允许的格式中
         return file_format in file_type
     except Exception as _:
