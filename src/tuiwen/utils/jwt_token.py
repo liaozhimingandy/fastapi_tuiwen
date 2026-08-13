@@ -55,8 +55,12 @@ def verify_jwt_token(data: str, grant_type: str = "access_token") -> dict:
     :return:
     """
     try:
-        decode = jwt.decode(data, key=get_settings().SECRET_KEY, algorithms=['HS256'], audience='www.alsoapp.com')
+        decode = jwt.decode(data, key=get_settings().SECRET_KEY, algorithms=['HS256'], audience='www.alsoapp.com',
+                            options={"verify_exp": True})
         assert decode["grant_type"] == grant_type, f'{decode["grant_type"]} != {grant_type}'
+        # -------- 强制校验exp字段，所有pyjwt版本都生效 --------
+        if "exp" not in decode:
+            return {"message": "token缺少exp过期字段，非法令牌"}
     except jwt.ExpiredSignatureError as e:
         return {"message": str(e)}  # Signature has expired
     except jwt.InvalidAudienceError as e:

@@ -10,6 +10,7 @@
     @Desc: 
 =================================================
 """
+import re
 from datetime import timedelta, datetime
 from typing import Annotated, Any
 
@@ -32,6 +33,7 @@ from src.tuiwen.core import Tag
 from src.tuiwen.models import PageResponse
 from src.tuiwen.dependencies import get_current_user, get_session, oauth2_scheme
 from src.tuiwen.core.config import get_settings
+from ..utils.email_service import send_reset_pwd_email
 
 config = get_settings()
 
@@ -321,22 +323,51 @@ async def search(keyword: Annotated[str, "关键词"], *, session: AsyncSession 
 
     return PageResponse(items=dataset, total=len(dataset), page_size=limit)
 
+# 邮箱正则（通用标准正则，兼容绝大多数邮箱）
+EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 
 @router_public.post("/accounts/send/code/", summary="发送验证码", tags=[Tag.account])
 async def account_send_code(data: Annotated[CodeVerify, "验证码信息"],
-                            background_tasks: Annotated[BackgroundTasks, "后台任务"]):
+                            background_tasks: Annotated[BackgroundTasks, "后台任务"],
+                            session: AsyncSession = Depends(get_session),):
     import random
     # send_notification
     code = data.model_dump(exclude={'code'})
-    instance = CodeVerify(**code, code="".join(random.choices("0123456789", k=6)))
+    instance_code = CodeVerify(**code, code="".join(random.choices("0123456789", k=6)))
+
+    if not EMAIL_PATTERN.match(instance_code.account):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="邮箱格式不正确，请输入合法邮箱地址"
+        )
+
+    # 判断用户是否存在
+    stmt = select(Account).where(Account.email == instance_code.account)
+    instance = (await session.exec(stmt)).first()
+
+    if not instance:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="本系统没有这个邮箱的用户,请确认")
+
     data = {
-        'code': instance.code,
+        'code': instance_code.code,
         'expire': 30,
-        'to_email': instance.account,
+        'to_email': instance_code.account
     }
+
+    # ======================
+    # 1小时发送限流
+    # ======================
+    key = f"tw:dev:reset_pwd:account:{instance_code.account}"
+    if await redis_get(key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="验证码已发送，请30分钟后再次尝试"
+        )
+
     # 存到redis
-    await redis_set(f"tw:dev:reset_pwd:account:{instance.account}", instance.code, expire=config.REDIS_EXPIRE)
-    background_tasks.add_task(send_verify_email, **data)
+    await redis_set(key, instance_code.code, expire=config.REDIS_EXPIRE)
+    # 后台发送邮箱通知
+    background_tasks.add_task(send_reset_pwd_email, **data)
     return {"message": "验证码已经发送至你的邮箱,请查收!"}
 
 

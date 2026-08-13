@@ -66,8 +66,9 @@ class MailSender:
 
         # 优先发送HTML模板（美观），兼容所有邮箱客户端
         msg = MIMEText(html_content, "html", "utf-8")
-        msg["From"] = Header(self.from_name, "utf-8")
-        msg["To"] = Header(to_addr, "utf-8")
+        from_display = Header(self.from_name, "utf-8").encode()
+        msg["From"] = f"{from_display} <{self.from_addr}>"
+        msg["To"] = to_addr
         msg["Subject"] = Header(template.subject, "utf-8")
 
         try:
@@ -94,20 +95,20 @@ VERIFY_CODE_TEMPLATE = EmailTemplate(
     text_template="""
 您好！
 您的本次操作验证码为：{code}
-有效期：{expire}分钟
+有效期:{expire}分钟
 请勿将验证码告知他人，谨防诈骗。
     """.strip(),
     html_template="""
-尊敬的用户：您好！您本次的操作验证码为：{code}验证码有效期：{expire} 分钟，请尽快使用。如非本人操作，请忽略本邮件。系统自动发送，请勿回复
+尊敬的用户：您好！您本次的操作验证码为：{code}验证码有效期:{expire} 分钟，请尽快使用。如非本人操作，请忽略本邮件。系统自动发送，请勿回复
     """.strip()
 )
 
 # 可无限扩展其他模板（重置密码、通知公告等）
 RESET_PWD_TEMPLATE = EmailTemplate(
     subject="密码重置通知",
-    text_template="您的密码重置验证码：{code}，{expire}分钟内有效，请勿泄露。",
+    text_template="您的密码重置验证码:{code},{expire}分钟内有效,请勿泄露。",
     html_template="""
-尊敬的用户：您好！您的密码重置验证码为：{code}有效期：{expire} 分钟，请及时操作。如非本人操作，请尽快修改密码，保障账号安全。
+    尊敬的用户:您好！您的密码重置验证码为:{code},有效期:{expire}分钟,请及时操作。如非本人操作,请尽快修改密码,保障账号安全。
     """.strip()
 )
 
@@ -131,10 +132,10 @@ def init_mail_sender(is_prod: bool = False) -> None:
         global_mail_sender = MailSender(
             smtp_host="smtp.qq.com",
             smtp_port=465,
-            from_addr="你的QQ邮箱@qq.com",
-            from_name="项目系统",
-            smtp_user="你的QQ邮箱@qq.com",
-            smtp_password="你的QQ邮箱授权码",
+            from_addr="908532252@qq.com",
+            from_name="推文",
+            smtp_user="908532252@qq.com",
+            smtp_password="ebvyufzzodupbbgd",
             use_ssl=True
         )
     # 本地测试环境（MailDev）

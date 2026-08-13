@@ -45,7 +45,8 @@ async def check_authentication(request: Request, token: Annotated[str, Depends(o
     try:
         payload = verify_jwt_token(token, grant_type='access_token' if not request.url.path.startswith('/oauth/refresh-token/') else 'refresh_token')
         assert 'message' not in payload, payload["message"]
-    except AssertionError as _:
+    except AssertionError as e:
+        credentials_exception.detail = str(e)
         raise credentials_exception
 
     request.state.account_id = payload["account_id"]

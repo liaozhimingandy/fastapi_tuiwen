@@ -1,6 +1,6 @@
 services:
   app:
-    image: fastapi_tuiwen:26.8.6
+    image: fastapi_tuiwen:26.8.13
     restart: unless-stopped
     container_name: dev-tw-common-api-01
     ports:
@@ -15,6 +15,7 @@ services:
       - /d/Git/secrets/postgres_password.txt:/run/secrets/postgres_password.txt:ro
       - /d/Git/secrets/redis_password.txt:/run/secrets/redis_password.txt:ro
       - /d/Git/secrets/secret_key.txt:/run/secrets/secret_key.txt:ro
+      - prod-tw-common-api-data:/app/static/medias
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; response = httpx.get('http://localhost:8000/health-check/'); exit(1) if response.status_code != 200 else exit(0)"]
       interval: 30s
@@ -60,3 +61,4 @@ services:
 volumes:
   pg_data:
   redis_data:
+  prod-tw-common-api-data:

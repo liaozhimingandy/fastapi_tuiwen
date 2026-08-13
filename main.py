@@ -1,5 +1,3 @@
-import sys
-import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -102,9 +100,9 @@ async def lifespan(app: FastAPI):
         os.kill(os.getpid(), signal.SIGTERM)
 
     # 邮件系统
-    init_mail_sender(is_prod=False)
+    init_mail_sender(is_prod=not get_settings().DEBUG)
     logger.info("✅ 全局邮件服务初始化完成")
-
+    logger.info(f"✅ 系统启动成功,正在以[{ '测试' if get_settings().DEBUG else '生产' }]环境运行❗")
     yield
     # 停机：释放所有连接资源
     try:
