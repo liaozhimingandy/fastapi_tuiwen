@@ -244,7 +244,7 @@ async def upload_image(file: Annotated[UploadFile, "图片文件"],
 
     if not instance:
         # 保存到文件
-        upload_dir = "/static/medias/images"
+        upload_dir = f"{get_settings().STORAGE_LOCAL_ROOT}/images"
         # 判断文件夹是否存在,不存在则新建
         if not os.path.exists(upload_dir):
             os.makedirs(upload_dir)
@@ -253,8 +253,9 @@ async def upload_image(file: Annotated[UploadFile, "图片文件"],
         with open(file_path, "wb") as buffer:
             buffer.write(contents)
 
+        image_url = f"{get_settings().STORAGE_URL_PREFIX}/images/{str(uuid.uuid4())}{os.path.splitext(file.filename)[1]}"
         # 保存引用到数据库
-        instance = TWImage(image_url=file_path, image_name=file.filename, image_md5=image_md5)
+        instance = TWImage(image_url=image_url, image_name=file.filename, image_md5=image_md5)
         instance = await add_instance(session, instance)
 
     return ImageBase(image_url=instance.image_url, image_md5=image_md5)

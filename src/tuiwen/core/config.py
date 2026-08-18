@@ -27,9 +27,17 @@ class Settings(BaseSettings):
     SECRET_KEY: Optional[str] = Field(None, description="token密钥，优先级高于文件")
     SECRET_KEY_FILE: Optional[str] = Field(None, description="从文件读取token密钥")
 
+    # cloudflare
+    TURNSTILE_SECRET_KEY: Optional[str] = Field(None, description="TURNSTILE密钥，优先级高于文件")
+    TURNSTILE_SECRET_KEY_FILE: Optional[str] = Field(None, description="从文件读取密钥")
+
     # 静态资源
     STATIC_URL: str = Field("static/", description="static url")
     ALLOWED_IMAGE_FORMATS: str = Field("jpg,jpeg,png", description="allowed image formats")
+    # 静态文件磁盘根路径（容器内物理路径）
+    STORAGE_LOCAL_ROOT: str = "/app/static/medias"
+    # 对外URL前缀，对应mount的路由
+    STORAGE_URL_PREFIX: str = "/static/medias"
 
     # PostgreSQL
     POSTGRES_HOST: str = Field("postgresql", description="postgres server")
@@ -126,6 +134,16 @@ class Settings(BaseSettings):
             except Exception as e:
                 logger.error(f"加载 SECRET_KEY 文件失败: {e}")
                 raise RuntimeError("无法加载 SECRET_KEY") from e
+
+        # 4.TURNSTILE
+        if self.TURNSTILE_SECRET_KEY_FILE and not self.TURNSTILE_SECRET_KEY:
+            try:
+                with open(self.TURNSTILE_SECRET_KEY_FILE, "r", encoding="utf-8") as f:
+                    self.TURNSTILE_SECRET_KEY = f.read().strip()
+                logger.info("从文件加载 TURNSTILE_SECRET_KEY 成功")
+            except Exception as e:
+                logger.error(f"加载 TURNSTILE_SECRET_KEY 文件失败: {e}")
+                raise RuntimeError("无法加载 TURNSTILE_SECRET_KEY") from e
 
         # 强制必须有 SECRET_KEY
         if not self.DEBUG and not self.SECRET_KEY:

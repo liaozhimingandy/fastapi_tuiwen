@@ -14,6 +14,7 @@ import re
 from datetime import timedelta, datetime
 from typing import Annotated, Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Security, Request, status, Body, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import RedirectResponse
@@ -26,7 +27,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from ..utils import hash_password, send_verify_email, redis_set, redis_get, redis_delete
 from ..core.database import add_instance
 from .models import Account, AccountCreate, AccountPublic, AccountPublicCommon, AccountPasswordChange, \
-    AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken, CodeVerify
+    AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken, CodeVerify, \
+    TurnstileVerifyToken
 
 from src.tuiwen.utils import generate_jwt_token, verify_jwt_token, get_random_salt, convert_to_cst_time
 from src.tuiwen.core import Tag
@@ -435,3 +437,18 @@ async def password_change(request: Annotated[Request, "请求对象"],
     instance = await add_instance(session, instance)
 
     return instance
+
+
+# 人机检测
+@router_public.post('/auth/two_step_verification/', summary="人机检测校验接口", tags=[Tag.oauth],)
+async def two_step_verification(data: Annotated[TurnstileVerifyToken, Body(..., description="人机检测校验接口")]):
+    payload = {
+        "secret": get_settings().TURNSTILE_SECRET_KEY,
+        "response": data.cf_turnstile_token
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(
+            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            data=payload
+        )
+        return {"success": r.json()["success"]}

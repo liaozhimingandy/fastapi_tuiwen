@@ -218,3 +218,6 @@ class CodeVerify(SQLModel):
     account: str = Field(..., description="手机号或邮箱")
     scene: CodeScene = Field(..., description="场景")
     code: str | None = Field(None, min_length=4, max_length=6, description="验证码")
+
+class TurnstileVerifyToken(SQLModel):
+    cf_turnstile_token: str
