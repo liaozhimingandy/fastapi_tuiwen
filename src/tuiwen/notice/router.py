@@ -21,7 +21,7 @@ from src.tuiwen.dependencies import get_session
 from src.tuiwen.models import PageResponse
 from src.tuiwen.notice.models import Notice
 
-router_notice = APIRouter(prefix="/notices", tags=[Tag.notices])
+router_notice = APIRouter(prefix="/notices", tags=[Tag.more])
 
 # 获取系统通知
 @router_notice.get("/system/", summary="返回公告通知", response_model=PageResponse[Notice],

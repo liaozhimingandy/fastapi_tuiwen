@@ -148,7 +148,6 @@ class Settings(BaseSettings):
         # 强制必须有 SECRET_KEY
         if not self.DEBUG and not self.SECRET_KEY:
             raise ValueError("SECRET_KEY 未配置，必须通过环境变量或文件指定")
-
         return self
 
 class Tag(Enum):
@@ -161,6 +160,7 @@ class Tag(Enum):
     app = 'app'
     upload = 'upload'
     notices = 'notices'
+    more = 'more'
 
 
 @lru_cache
