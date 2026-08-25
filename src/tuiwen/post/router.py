@@ -249,11 +249,12 @@ async def upload_image(file: Annotated[UploadFile, "图片文件"],
         if not os.path.exists(upload_dir):
             os.makedirs(upload_dir)
 
-        file_path = f"{upload_dir}/{str(uuid.uuid4())}{os.path.splitext(file.filename)[1]}"
+        file_name = f'{str(uuid.uuid4())}{os.path.splitext(file.filename)[1]}'
+        file_path = f"{upload_dir}/{file_name}"
         with open(file_path, "wb") as buffer:
             buffer.write(contents)
 
-        image_url = f"{get_settings().STORAGE_URL_PREFIX}/images/{str(uuid.uuid4())}{os.path.splitext(file.filename)[1]}"
+        image_url = f"{get_settings().STORAGE_URL_PREFIX}/images/{file_name}"
         # 保存引用到数据库
         instance = TWImage(image_url=image_url, image_name=file.filename, image_md5=image_md5)
         instance = await add_instance(session, instance)
