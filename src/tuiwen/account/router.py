@@ -24,7 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from ..utils import hash_password, send_verify_email, redis_set, redis_get, redis_delete
+from ..utils import hash_password, redis_set, redis_get, redis_delete
 from ..core.database import add_instance
 from .models import Account, AccountCreate, AccountPublic, AccountPublicCommon, AccountPasswordChange, \
     AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken, CodeVerify, \
@@ -301,7 +301,7 @@ async def update_account(account_id: Annotated[str, "账户ID"],
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
     # 排除被更新字段
-    forbidden_fields = {"account_id", "id", "username", "email", "mobile", "password", "salt", "is_active",
+    forbidden_fields = {"account_id", "id", "password", "salt", "is_active",
                         "user_type", "im_id", "gmt_created", "gmt_modified"}
 
     account_data = account.model_dump(exclude_unset=True, exclude=forbidden_fields)
@@ -319,9 +319,6 @@ async def search(keyword: Annotated[str, "关键词"], *, session: AsyncSession 
     statement = select(Account).where(
         or_(Account.username.contains(keyword), Account.nick_name.contains(keyword))).offset(offset).limit(limit)
     dataset = (await session.exec(statement)).all()
-
-    if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
     return PageResponse(items=dataset, total=len(dataset), page_size=limit)
 
@@ -452,3 +449,11 @@ async def two_step_verification(data: Annotated[TurnstileVerifyToken, Body(..., 
             data=payload
         )
         return {"success": r.json()["success"]}
+
+
+@router_account.get('/check-username/{username}/', summary="检测用户名是否已经存在", tags=[Tag.account])
+async def check_username(username: Annotated[str, "检测用户名是否已经存在"], session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)) -> bool:
+    stmt =  select(Account).where(Account.username == username.strip()).limit(1)
+
+    exists = (await session.exec(stmt)).first()
+    return {"exists": bool(exists)}

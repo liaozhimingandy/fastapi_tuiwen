@@ -159,7 +159,6 @@ class Tag(Enum):
     oauth = 'oauth'
     app = 'app'
     upload = 'upload'
-    notices = 'notices'
     more = 'more'
 
 

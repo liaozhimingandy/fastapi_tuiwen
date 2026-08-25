@@ -7,7 +7,7 @@ from src.tuiwen.core import Tag, add_instance
 from src.tuiwen.dependencies import get_session
 from .models import Feedback, FeedbackStatus, FeedbackCreate, FeedbackResponse
 
-router_public = APIRouter(prefix="/feebacks", tags=[Tag.more])
+router_public = APIRouter(prefix="/feedbacks", tags=[Tag.more])
 
 @router_public.post("/", response_model=FeedbackResponse, description="提交用户反馈")
 async def submit_feedback(
