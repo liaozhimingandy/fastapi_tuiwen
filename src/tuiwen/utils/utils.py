@@ -12,6 +12,7 @@
 """
 import hashlib
 import random
+import re
 import string
 import tomllib
 from datetime import datetime
@@ -149,7 +150,7 @@ def create_default_users():
 
     # 关键：用户名 + 邮箱 唯一
     USER_LIST = [
-        'tuiwen', 'alsoapp', 'chat','system', 'certified', 'sponsor', 'login', 'abc123', 'admin2024', 'bot', 'web', 'cash', 'user', 'site', 'store', 'shit', 'cracker', 'news', 'demo', 'test', 'administrator', 'sales', 'it', 'contact', 'root', 'billing', 'support', 'daemon', 'account', 'manager', 'free', 'privacy', '88888888', 'sysadmin', 'world', 'terms', 'team', 'owner', 'abc', 'shop', 'god', 'webmaster', 'win', 'superuser', 'diamond', 'root1', 'finance', 'official', 'portal', 'sample', 'backup', 'vip', 'verified', 'help', '123', 'nft', 'blog', 'nobody', 'admin1', 'info', 'register', 'fake', 'users', 'marketing', 'payment', 'guest1', 'hack', 'lottery', 'app', 'admin', 'master', 'hr', 'devil', 'control', 'password', 'community', 'gold', 'crypto', 'hacker', 'hello', 'president', 'fuck', 'service', 'svip', 'qwerty', 'platinum', 'king', 'bitcoin', 'winner', 'queen', 'ass', 'legal', 'premium', 'staff', 'angel', 'mod', 'moderator', '111111', 'feedback', 'money', 'guest', 'ops', 'anonymous', '123456', 'marketplace', 'spam', 'crack', 'product', 'partner', 'elite', 'operator',
+        'fake', 'chat', 'nobody', 'root', 'sample', 'privacy', 'tuiwen', 'platinum', 'master', 'service', '123456', 'product', 'test', 'marketing', 'shop', 'terms', 'users', 'fuck', 'blog', 'verified', 'superuser', 'system', 'diamond', 'user', 'staff', 'bot', 'contact', 'community', 'site', 'demo', 'shit', 'free', 'team', 'control', 'manager', 'moderator', 'login', 'app', 'cash', 'king', 'gold', 'bitcoin', 'vip', 'winner', 'portal', 'store', 'help', 'svip', 'cracker', 'operator', 'register', 'payment', 'money', 'daemon', 'guest', 'lottery', 'hack', 'sysadmin', 'hr', 'mod', 'hacker', 'password', 'news', 'it', 'marketplace', 'billing', 'nft', 'qwerty', 'root1', 'premium', 'angel', 'administrator', '88888888', 'world', 'account', 'sales', 'alsoapp', 'robot', 'support', 'owner', 'anonymous', 'backup', 'hello', 'queen', 'sponsor', 'webmaster', 'finance', 'god', 'partner', 'official', 'president', 'info', 'admin', 'web', 'ops', 'feedback', 'certified'
     ]
     logger.info("===== 系统预设用户批量注册 =====")
     for username in USER_LIST:
@@ -188,6 +189,21 @@ def create_default_users():
 
     logger.info(f'执行完毕：成功; 共计{len(USER_LIST)}个')
 
+
+# 正则规则
+REGEX_RULES = [
+    # admin_123 root‑001 official88
+    re.compile(r"^(admin|root|bot|official|vip)[_\-\d]", re.IGNORECASE),
+    # 零宽隐藏字符绕过，命中直接拒绝
+    re.compile(r"[\u2000-\u200f\u2028-\u202f]"),
+]
+
+def validate_username(username: str) -> tuple:
+    # 1.正则校验
+    for item in REGEX_RULES:
+        if item.search(username):
+           return False, "用户名包含非法字符或违规变种"
+    return True, username
 
 if __name__ == "__main__":
     create_default_users()

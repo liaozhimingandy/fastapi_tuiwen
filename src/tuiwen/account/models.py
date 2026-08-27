@@ -13,8 +13,9 @@
 import os, uuid
 from datetime import datetime, timedelta, timezone, date
 from enum import Enum
+from typing import Literal, Optional
 
-from pydantic import EmailStr
+from pydantic import EmailStr, field_validator
 from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM, Column, JSON, BigInteger
 from sqlmodel import SQLModel, Field, text
 
@@ -81,6 +82,11 @@ class AccountPublicCommon(SQLModel):
     avatar: str = Field(None, max_length=200, description='头像链接', sa_column_kwargs={'comment': '头像链接'})
     bio: str | None = Field(None, max_length=256, description='用户自我简介', sa_column_kwargs={'comment': '用户自我简介'})
 
+    @field_validator("username", mode="before")
+    def username_to_lower(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return v.strip().lower()
 
 class AccountLogin(SQLModel):
     email: EmailStr | None = Field(None, index=True, max_length=64, description='电子邮箱',
@@ -107,6 +113,12 @@ class AccountBase(AccountPublicCommon):
                                     sa_column_kwargs={'comment': '是否允许提示音'})
     allow_vibration: bool | None  = Field(default=True, description='是否允许震动提示',
                                   sa_column_kwargs={'comment': '是否允许震动提示'})
+
+    @field_validator("email", mode="before")
+    def username_to_lower(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return v.strip().lower()
 
 
 class Account(AccountBase, table=True):
@@ -221,3 +233,35 @@ class CodeVerify(SQLModel):
 
 class TurnstileVerifyToken(SQLModel):
     cf_turnstile_token: str
+
+
+class UpdateCredential(SQLModel):
+    """
+    type: username / email / phone
+    new_value: 新值
+    password: 修改邮箱、手机号必填；修改用户名不需要传
+    code: 修改邮箱、手机号必填；用户名不需要
+    """
+    type: Literal["username", "email", "phone"]
+    new_value: str
+    password: Optional[str] = None
+    code: Optional[str] = None
+
+    @field_validator("password")
+    def check_password_required(cls, v, values):
+        t = values.data.get("type")
+        if t in ("email", "mobile"):
+            if not v or len(v.strip()) == 0:
+                raise ValueError("修改邮箱、手机号必须输入当前密码")
+        return v
+
+    @field_validator("code")
+    def check_code_required(cls, v, values):
+        t = values.data.get("type")
+        if t in ("email", "mobile"):
+            if not v or len(v.strip()) == 0:
+                raise ValueError("修改邮箱、手机号必须传入验证码code")
+        # 修改用户名时，即使前端传了code也清空
+        if t == "username":
+            return None
+        return v

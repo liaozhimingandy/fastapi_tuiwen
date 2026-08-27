@@ -28,7 +28,7 @@ from ..utils import hash_password, redis_set, redis_get, redis_delete
 from ..core.database import add_instance
 from .models import Account, AccountCreate, AccountPublic, AccountPublicCommon, AccountPasswordChange, \
     AccountPasswordReset, RefreshToken, AccessToken, App, AppAccessToken, AppRefreshToken, CodeVerify, \
-    TurnstileVerifyToken
+    TurnstileVerifyToken, UpdateCredential
 
 from src.tuiwen.utils import generate_jwt_token, verify_jwt_token, get_random_salt, convert_to_cst_time
 from src.tuiwen.core import Tag
@@ -36,6 +36,7 @@ from src.tuiwen.models import PageResponse
 from src.tuiwen.dependencies import get_current_user, get_session, oauth2_scheme
 from src.tuiwen.core.config import get_settings
 from ..utils.email_service import send_reset_pwd_email
+from ..utils.utils import validate_username
 
 config = get_settings()
 
@@ -237,8 +238,8 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
         instance.username = instance.account_id
 
     # 判断数据库是否存在
-    exist_stmt = select(Account).where(or_(func.lower(Account.email) == func.lower(instance.email),
-                                           func.lower(Account.username) == func.lower(instance.username)))
+    exist_stmt = select(Account).where(or_(Account.email == func.lower(instance.email),
+                                           Account.username == func.lower(instance.username)))
     exist_user = (await session.exec(exist_stmt)).first()
 
     if exist_user:
@@ -301,7 +302,7 @@ async def update_account(account_id: Annotated[str, "账户ID"],
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
     # 排除被更新字段
-    forbidden_fields = {"account_id", "id", "password", "salt", "is_active",
+    forbidden_fields = {"account_id", "username", "email", "mobile", "id", "password", "salt", "is_active",
                         "user_type", "im_id", "gmt_created", "gmt_modified"}
 
     account_data = account.model_dump(exclude_unset=True, exclude=forbidden_fields)
@@ -316,8 +317,9 @@ async def update_account(account_id: Annotated[str, "账户ID"],
 async def search(keyword: Annotated[str, "关键词"], *, session: AsyncSession = Depends(get_session),
                  offset: Annotated[int, "偏移量"] = 0,
                  limit: Annotated[int, Query(le=10)] = 10, ) -> PageResponse[AccountPublic]:
+    cleaned = keyword.strip().lower()
     statement = select(Account).where(
-        or_(Account.username.contains(keyword), Account.nick_name.contains(keyword))).offset(offset).limit(limit)
+        or_(Account.username.contains(cleaned), Account.nick_name.contains(cleaned))).offset(offset).limit(limit)
     dataset = (await session.exec(statement)).all()
 
     return PageResponse(items=dataset, total=len(dataset), page_size=limit)
@@ -452,8 +454,44 @@ async def two_step_verification(data: Annotated[TurnstileVerifyToken, Body(..., 
 
 
 @router_account.get('/check-username/{username}/', summary="检测用户名是否已经存在", tags=[Tag.account])
-async def check_username(username: Annotated[str, "检测用户名是否已经存在"], session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)) -> bool:
-    stmt =  select(Account).where(Account.username == username.strip()).limit(1)
+async def check_username(username: Annotated[str, "检测用户名是否已经存在"], session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)) -> dict:
+    print(username)
+    ok, detail = validate_username(username=username)
+    if not ok:
+        return {"exists": True, "detail": detail}
 
+    stmt =  select(Account).where(Account.username == username.strip().lower()).limit(1)
     exists = (await session.exec(stmt)).first()
     return {"exists": bool(exists)}
+
+
+@router_account.patch('/credential/', summary="更新用户认证信息",
+                      response_model=AccountPublic,tags=[Tag.account])
+async def credential(data: Annotated[UpdateCredential, "更新用户认证信息"],
+                    request: Annotated[Request, "请求对象"],
+                    session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
+    new_val = data.new_value.strip()
+    # ---------------------- 修改用户名（仅校验登录态，无需密码） ----------------------
+    if data.type == "username":
+        ok, desc = validate_username(new_val)
+
+        if not ok: raise HTTPException(status_code=400, detail=str(desc))
+
+        stmt = select(Account).where(Account.username == data.new_value.strip().lower()).limit(1)
+        exists = (await session.exec(stmt)).first()
+
+        if exists:
+            raise HTTPException(status_code=400, detail=str("该用户已被占用"))
+
+        stmt = select(Account).where(Account.account_id == request.state.account_id)
+        instance = (await session.exec(stmt)).first()
+
+        instance.username = new_val.strip().lower()
+        instance = await add_instance(session, instance)
+
+    return instance
+
+
+
+
+
