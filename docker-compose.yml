@@ -32,11 +32,18 @@ services:
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password.txt
       - POSTGRES_DB=tuiwen
       - TZ=UTC
+      - PGTZ=UTC
     ports:
       - "5432:5432"
     volumes:
       - /d/Git/secrets/postgres_password.txt:/run/secrets/postgres_password.txt:ro
       - pg_data:/var/lib/postgresql
+    command:
+      - postgres
+      - -c
+      - timezone=UTC
+      - -c
+      - log_timezone=Asia/Shanghai  # 生产环境: UTF 开发环境日志时间:Asia/Shanghai; 数据库工具连接时命令: SET TIME ZONE 'Asia/Shanghai';
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U postgres -d tuiwen" ]
       interval: 10s
