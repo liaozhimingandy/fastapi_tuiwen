@@ -142,8 +142,8 @@ class CommentInput(SQLModel):
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False))
 
-    @field_validator('gmt_created', mode="after")  # type: ignore[prop-decorator]
     @classmethod
+    @field_validator('gmt_created', mode="after")  # type: ignore[prop-decorator]
     def convert_to_cst(cls, value):
         if value is None:
             return None

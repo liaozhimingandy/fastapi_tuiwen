@@ -90,9 +90,8 @@ async def get_account_posts(account_id: Annotated[str, Path(..., description="�
     statement = statement.order_by(-Post.id).limit(limit)
 
     dataset = (await session.exec(statement)).all()
-    total = len(dataset)  # 实际返回数量（分页场景建议用count查询，此处简化）
 
-    return PageResponse(items=dataset, total=total)
+    return PageResponse(items=dataset, total=len(dataset))
 
 
 @router_post.get("/", summary="返回帖子", response_model=PageResponse[Post],

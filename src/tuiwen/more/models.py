@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import IntEnum, Enum
 from typing import Optional, List
 
-from sqlalchemy import BigInteger, JSON, Enum as SaENUM
+from sqlalchemy import BigInteger, JSON, Enum as SaENUM, SMALLINT
 from sqlmodel import SQLModel, Field, Column, DateTime, text
 
 from src.tuiwen.core import get_settings
@@ -155,16 +155,18 @@ class EmotionTagEnum(IntEnum):
 
 
 class LateNightPost(SQLModel, table=True):
-    __tablename__ = f"{TABLE_PREFIX}_night"
+    __tablename__ = f"{TABLE_PREFIX}night"
     __table_args__ = {"comment": "天亮即焚表"}
 
     id: int = Field(..., primary_key=True, description='表主键ID',
                     sa_column_kwargs={'comment': '表主键ID'}, sa_type=BigInteger)
-    content: str = Field(..., max_length=512, sa_column_kwargs={'comment': '内容'})
-    emotion_tag: int | None = Field(default=None, sa_column_kwargs={'comment': '情绪标签'}, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
-    topic: int | None = Field(default=None, description="话题编号", sa_column_kwargs={'comment': '话题编号'})
+    content: dict | None = Field(default={}, description='json内容', max_length=1024,
+                                 sa_column_kwargs={'comment': '内容'}, sa_type=JSON)
+    emotion: int | None = Field(default=0, sa_type=SMALLINT, ge=0, le=255,
+                            sa_column_kwargs={'comment': '情绪标签'}, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
+    topic: str | None = Field(default=None, max_length=64, description="话题编号", sa_column_kwargs={'comment': '话题编号'})
     alias_name: str = Field(..., max_length=32, description="当晚临时代号", sa_column_kwargs={'comment': '当晚临时代号'})
-    like_count: int = Field(default=0, description="点赞数量", sa_column_kwargs={'comment': '点赞数量'})
+    like: int = Field(default=0, description="点赞数量", sa_column_kwargs={'comment': '点赞数量'})
     from_ip: str | None = Field(None, description='来源ip', max_length=32, sa_column_kwargs={'comment': '来源ip'})
     is_top: bool = Field(default=False, description="是否置顶", sa_column_kwargs={'comment': '是否置顶'})
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',

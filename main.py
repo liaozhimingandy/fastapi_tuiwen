@@ -51,8 +51,8 @@ tags_metadata = [
         "description": "和关注操作相关.",
     },
     {
-        "name": "notices",
-        "description": "通知相关",
+        "name": "more",
+        "description": "其它",
     },
 ]
 
@@ -144,7 +144,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 ##################################################### 中间件 ############################################################
 # 允许的来源（这里是 * 表示所有域名, 你也可以指定特定的域名）
 # 配置允许跨域的域名、请求方法等
-print(get_settings().BACKEND_CORS_ORIGINS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().BACKEND_CORS_ORIGINS,  # 允许跨域访问的来源

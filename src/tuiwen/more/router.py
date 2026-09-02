@@ -4,15 +4,15 @@ from fastapi import APIRouter, Request, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from models import PageResponse
+from src.tuiwen.models import PageResponse
 from src.tuiwen.core import Tag, add_instance
 from src.tuiwen.dependencies import get_session
 from .models import Feedback, FeedbackStatus, FeedbackCreate, FeedbackResponse, LateNightLeaveCreate, LateNightPost
 
-router_public = APIRouter(prefix="/", tags=[Tag.more])
+router_public = APIRouter(tags=[Tag.more])
 
 
-@router_public.post("/feedbacks/", response_model=FeedbackResponse, description="提交用户反馈")
+@router_public.post("/feedbacks/", response_model=FeedbackResponse, status_code=201, summary="提交用户反馈")
 async def submit_feedback(
         payload: Annotated[FeedbackCreate, "反馈内容"],
         request: Annotated[Request, "请求对象"],
@@ -31,7 +31,7 @@ async def submit_feedback(
     return instance
 
 
-@router_public.post("/night/", response_model=LateNightPost, description="天亮即焚提交")
+@router_public.post("/nights/", response_model=LateNightPost, status_code=201, summary="天亮即焚提交")
 async def creat_night(
         payload: Annotated[LateNightLeaveCreate, "内容"],
         request: Annotated[Request, "请求对象"],
@@ -53,12 +53,10 @@ async def creat_night(
     return instance
 
 
-@router_public.get("/nights/latest/", response_model=LateNightPost, description="获取最新的十条数据")
-async def get_night_latest(
-        session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session),
-):
-    statement = select(LateNightPost).order_by(-LateNightPost.id).limit(10)
-    dataset = (await session.exec(statement)).all()
+@router_public.get("/nights/latest/", response_model=PageResponse[LateNightPost], summary="获取最新的十条数据")
+async def get_night_latest(session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
+    stmt = select(LateNightPost).order_by(-LateNightPost.id).limit(10)
+    dataset = (await session.exec(stmt)).all()
 
     return PageResponse(items=dataset, total=len(dataset))
 
@@ -66,7 +64,7 @@ async def get_night_latest(
 @router_public.get("/nights/", summary="返回帖子", response_model=PageResponse[LateNightPost],
                  response_model_include={'items', 'total'})
 async def get_nights(limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
-                    cursor: Annotated[int | None, "数据最旧的那个id"] = Query(None),
+                    cursor: Annotated[int | None, "数据最旧的那个id"] = Query(1, gt=0),
                     session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)
                     ):
     # 构建查询（保持UTC时间比较）
@@ -76,18 +74,17 @@ async def get_nights(limit: Annotated[int, "返回多少条记录"] = Query(10, 
     statement = statement.order_by(-LateNightPost.id).limit(limit)
 
     dataset = (await session.exec(statement)).all()
-    total = len(dataset)
 
-    return PageResponse(items=dataset, total=total)
+    return PageResponse(items=dataset, total=len(dataset))
 
 
-@router_public.post("/nights/{id}/like/", summary="帖子点赞")
+@router_public.get("/nights/{id}/like/", summary="帖子点赞")
 async def night_like(id:Annotated[int, '帖子id'], session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
-    stmt = select(LateNightPost).where(LateNightPost.id == id)
+    instance = await session.get(LateNightPost, id)
 
-    instance = (await add_instance(session, stmt)).first()
-    instance.like_count += 1
+    instance.like +=1
 
-    instance = await add_instance(session, instance)
+    await session.commit()
+    await session.refresh(instance)
 
-    return {"success": True,"like_count": instance.like_count}
+    return {"success": True,"like": instance.like}
