@@ -17,6 +17,7 @@ import string
 import tomllib
 from datetime import datetime
 
+import pytz
 from pytz import timezone
 from PIL import Image
 from fastapi import UploadFile
@@ -90,6 +91,17 @@ def custom_generate_unique_id(route: APIRoute) -> str:
     """
     return f"{route.tags[0]}-{route.name.replace('_', '-')}"
 
+
+def convert_to_timezone(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+
+    return value.astimezone(
+        pytz.timezone(get_settings().TIME_ZONE)
+    )
 
 def convert_to_cst_time(dt: datetime) -> datetime | None:
     """

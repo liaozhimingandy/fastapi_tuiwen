@@ -10,12 +10,14 @@
     @Desc: 
 =================================================
 """
+from pydantic import field_serializer
 from sqlalchemy import Column, DateTime, text, JSON, BigInteger, SmallInteger
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from typing import Optional
 
 from src.tuiwen import get_settings
+from src.tuiwen.utils.utils import convert_to_timezone
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -56,7 +58,7 @@ class Notice(SQLModel, table=True):
     # 扩展字段（存头像、昵称、预览文本，避免联表查询）
     extra: Optional[dict] = Field(default=None, sa_type=JSON, nullable=True,
                                   sa_column_kwargs={'comment': '冗余扩展信息：头像、昵称、预览图'})
-    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                   comment="创建日期时间", nullable=False,
                                                   server_default=text("NOW()")))
@@ -65,7 +67,11 @@ class Notice(SQLModel, table=True):
         sa_column_kwargs={'comment': '是否已删除 0否 1是'}
     )
     # 更新时间
-    updated_at: datetime = Field(..., default_factory=datetime.now, description='最后修改时间',
+    update_at: datetime = Field(..., default_factory=datetime.now, description='最后修改时间',
                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                   onupdate=datetime.now, comment='最后修改时间')
                                  )
+
+    @field_serializer('create_at', 'update_at')
+    def serialize_datetime(self, value):
+        return convert_to_timezone(value)

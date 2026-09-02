@@ -9,7 +9,7 @@ from sqlalchemy import DateTime, Enum as SaENUM, JSON, Column, BigInteger
 from sqlmodel import SQLModel, Field, Index, text
 
 from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import convert_to_cst_time
+from src.tuiwen.utils.utils import convert_to_cst_time, convert_to_timezone
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -91,16 +91,16 @@ class Post(PostCreate, table=True):
     id: int = Field(None, primary_key=True, description='表主键ID',
                     sa_column_kwargs={'comment': '表主键ID'}, sa_type=BigInteger)
     status: int | None = Field(default=1, description='帖子状态', sa_column_kwargs={'comment': '帖子状态'})
-    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False,
                                                    server_default=text("NOW()")))
-    gmt_modified: datetime = Field(..., default_factory=datetime.now, description='最后修改时间',
+    update_at: datetime = Field(..., default_factory=datetime.now, description='最后修改时间',
                                    sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                     onupdate=datetime.now, comment='最后修改时间')
                                    )
 
-    @field_serializer("gmt_created", "gmt_modified")
+    @field_serializer("create_at", "update_at")
     def serialize_gmt_created(self, value: datetime):
         return convert_to_cst_time(value)
 
@@ -138,23 +138,13 @@ class CommentInput(SQLModel):
     obj_type: ObjTypeEnum = Field(default=ObjTypeEnum.POST, description="评论对象类别",
                                   sa_column_kwargs={'comment': '评论对象类别'},
                                   sa_type=SaENUM(ObjTypeEnum, values_callable=lambda x: [str(e.value) for e in x]))
-    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False))
 
-    @classmethod
-    @field_validator('gmt_created', mode="after")  # type: ignore[prop-decorator]
-    def convert_to_cst(cls, value):
-        if value is None:
-            return None
-
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(pytz.timezone(get_settings().TIME_ZONE))
-
-    @field_serializer("gmt_created")
-    def serialize_gmt_created(self, value: datetime):
-        return convert_to_cst_time(value)
+    @field_serializer('create_at')
+    def serialize_datetime(self, value):
+        return convert_to_timezone(value)
 
 
 class Comment(CommentInput, table=True):
@@ -179,14 +169,14 @@ class LikeInput(SQLModel):
                                   sa_type=SaENUM(ObjTypeEnum, values_callable=lambda x: [str(e.value) for e in x]))
     account_id: str = Field(..., index=True, max_length=32, description='点赞的用户',
                             sa_column_kwargs={'comment': '点赞的用户'})
-    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False,
                                                    server_default=text("NOW()")))
 
-    @field_serializer("gmt_created")
-    def serialize_gmt_created(self, value: datetime):
-        return convert_to_cst_time(value)
+    @field_serializer('create_at')
+    def serialize_datetime(self, value):
+        return convert_to_timezone(value)
 
 
 class Like(LikeInput, table=True):
@@ -217,10 +207,14 @@ class Image(ImageBase, table=True):
     id: int = Field(primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
                     sa_type=BigInteger)
     image_name: str = Field(..., max_length=128, description='图片名称', sa_column_kwargs={'comment': '图片名称'})
-    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False,
                                                    server_default=text("NOW()")))
+
+    @field_serializer('create_at')
+    def serialize_datetime(self, value):
+        return convert_to_timezone(value)
 
 
 class Follow(SQLModel, table=True):
@@ -235,7 +229,7 @@ class Follow(SQLModel, table=True):
                              sa_column_kwargs={'comment': '关注者'})
     followee_id: str = Field(..., index=True, max_length=32, description='被关注者',
                              sa_column_kwargs={'comment': '被关注者'})
-    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False,
                                                    server_default=text("NOW()")))
@@ -245,6 +239,10 @@ class Follow(SQLModel, table=True):
         Index('idx_follower_followee_unique', 'follower_id', 'followee_id', unique=True),
         {'comment': '关注'},
     )
+
+    @field_serializer('create_at')
+    def serialize_datetime(self, value):
+        return convert_to_timezone(value)
 
 
 class FollowCountModel(BaseModel):

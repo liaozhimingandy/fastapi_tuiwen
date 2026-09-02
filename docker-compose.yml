@@ -1,6 +1,6 @@
 services:
   app:
-    image: fastapi_tuiwen:26.9.2
+    image: fastapi_tuiwen:26.9.2.3
     restart: unless-stopped
     container_name: dev-tw-common-api-01
     ports:
@@ -31,7 +31,7 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password.txt
       - POSTGRES_DB=tuiwen
-      - TZ=Asia/Shanghai
+      - TZ=UTC
     ports:
       - "5432:5432"
     volumes:

@@ -2,10 +2,13 @@ from datetime import datetime, timezone
 from enum import IntEnum, Enum
 from typing import Optional, List
 
+
 from sqlalchemy import BigInteger, JSON, Enum as SaENUM, SMALLINT
 from sqlmodel import SQLModel, Field, Column, DateTime, text
+from pydantic import field_serializer
 
 from src.tuiwen.core import get_settings
+from src.tuiwen.utils.utils import convert_to_timezone
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -102,6 +105,10 @@ class Feedback(FeedbackCreate, table=True):
                                                     onupdate=datetime.now, comment='最后修改时间')
                                    )
 
+    @field_serializer('create_at', 'update_at')
+    def serialize_datetime(self, value):
+        return convert_to_timezone(value)
+
 # ------------------------------ 返回前端响应模型 ------------------------------
 class FeedbackResponse(SQLModel):
     id: int
@@ -174,11 +181,15 @@ class LateNightPost(SQLModel, table=True):
                                                  comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                 )
 
+    @field_serializer('create_at')
+    def serialize_datetime(self, value):
+        return convert_to_timezone(value)
+
 
 class LateNightLeaveCreate(SQLModel):
-    content: str = Field(..., max_length=512, description='内容')
-    emotion_tag: int | None = Field(default=None, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
-    topic: int | None = Field(default=None, description="话题编号")
+    content: dict = Field(..., max_length=512, description='内容')
+    emotion: int | None = Field(default=None, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
+    topic: str | None = Field(default=None, description="话题编号")
     alias_name: str = Field(..., max_length=32, description="当晚临时代号")
 
 

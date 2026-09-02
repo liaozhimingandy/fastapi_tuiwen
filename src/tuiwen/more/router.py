@@ -82,7 +82,7 @@ async def get_nights(limit: Annotated[int, "返回多少条记录"] = Query(10, 
 async def night_like(id:Annotated[int, '帖子id'], session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     instance = await session.get(LateNightPost, id)
 
-    instance.like +=1
+    instance.like += 1
 
     await session.commit()
     await session.refresh(instance)

@@ -15,11 +15,12 @@ from datetime import datetime, timedelta, timezone, date
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import EmailStr, field_validator
+from pydantic import EmailStr, field_validator, field_serializer
 from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM, Column, JSON, BigInteger
 from sqlmodel import SQLModel, Field, text
 
 from src.tuiwen.core import get_settings
+from src.tuiwen.utils.utils import convert_to_timezone
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -139,13 +140,17 @@ class Account(AccountBase, table=True):
     extra: dict | None = Field(default={}, description='个性化配置信息', max_length=1024,
                                sa_column_kwargs={'comment': '存储用户自定义配置信息'},
                                sa_type=JSON)
-    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                   )
-    gmt_modified: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
+    update_at: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
                                    sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now, comment='最后修改时间')
                                    )
+
+    @field_serializer('create_at', 'update_at')
+    def serialize_datetime(self, value):
+        return convert_to_timezone(value)
 
 
 class AccountPublic(AccountBase):
@@ -183,13 +188,17 @@ class App(SQLModel, table=False):
     app_en_name: str | None = Field(None, max_length=64, description='应用英文名称',
                                     sa_column_kwargs={'comment': '应用英文名称'})
     is_active: bool = Field(default=True, description='激活状态', sa_column_kwargs={'comment': '激活状态'})
-    gmt_created: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                   )
-    gmt_modified: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
+    update_at: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
                                    sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now, comment='最后修改时间')
                                    )
+
+    @field_serializer('create_at', 'update_at')
+    def serialize_datetime(self, value):
+        return convert_to_timezone(value)
 
 ########################################################################################################################
 # token
