@@ -54,8 +54,7 @@ class TestMain:
             "nick_name": "test",
             "gmt_birth": datetime.now(pytz.timezone('Asia/Shanghai')).strftime('%Y-%m-%d'),
             "area_code": "CHN",
-            "sex": 0,
-            "avatar": "https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png"
+            "sex": 0
         }
 
         # with httpx.Client() as client:
@@ -327,6 +326,37 @@ class TestMain:
         assert r.status_code == 200
         assert r.json().get('total') > 0, '没有数据了'
 
+    def test_submit_feedback(self, test_register_and_login):
+        "测试提交反馈信息"
+        client = test_register_and_login.get('client')
+        payload = {
+            'content': "测试内容",
+            'contact': "test@alsoapp.com"
+        }
+        r = client.post(f'/feedbacks/', data=payload)
+        assert r.status_code == status.HTTP_201_CREATED
+
+    def test_creat_night(self, test_register_and_login):
+        "测试发布天亮即焚"
+        client = test_register_and_login.get('client')
+        payload = {
+            'content': "测试内容",
+            'contact': "test@alsoapp.com"
+        }
+        r = client.post('/nights/', data=payload)
+        assert r.status_code == status.HTTP_201_CREATED
+
+    def test_get_night_latest(self, test_register_and_login):
+        "获取最新的十条"
+        client = test_register_and_login.get('client')
+        r = client.get('/nights/latest/')
+        assert r.status_code == status.HTTP_201_CREATED
+
+    def test_get_nights(self, test_register_and_login):
+        "获取帖子数据"
+        client = test_register_and_login.get('client')
+        r = client.get('/nights/', params={'limit': 10, 'cusror': 1})
+        assert r.status_code == status.HTTP_201_CREATED
 
     # @pytest.mark.skip(reason="测试完成后删除测试用户")
     # def test_delete_test_user(self, session: Session) -> None:

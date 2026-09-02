@@ -60,7 +60,7 @@ async def get_s_post(post_id: Annotated[UUID, "帖子唯一标识"],
 async def get_posts_latest(request: Annotated[Request, "请求对象"],
                            session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     statement = select(Post).where(
-        or_(Post.right_status == RightStatusEnum.PUBLIC, Post.account_id == request.state.account_id))
+        or_(Post.right_status == RightStatusEnum.PUBLIC, Post.account_id == request.state.account_id)).limit(10)
     dataset = (await session.exec(statement)).all()
 
     return PageResponse(items=dataset, total=len(dataset))

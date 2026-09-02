@@ -131,3 +131,52 @@ class FeedbackAdminUpdate(SQLModel):
     """管理员处理反馈"""
     status: Optional[FeedbackStatus] = Field(None, description="处理状态 1待处理 2处理中 3已完成 4已关闭")
     admin_reply: Optional[str] = Field(None, description="管理员回复内容", max_length=2000)
+
+
+# ------------------------------ 天亮即焚模型 ------------------------------
+class EmotionTagEnum(IntEnum):
+    NONE = 0        # 未选择情绪
+    INSOMNIA = 1    # 失眠
+    WRONGED = 2     # 委屈
+    HEARTBEAT = 3   # 心动
+    RELAX = 4       # 放空
+    COMPLAIN = 5    # 吐槽
+    HAPPY = 6       # 开心
+
+    SAD = 7         # 难过
+    LONELY = 8      # 孤独
+    ANXIOUS = 9     # 焦虑
+    CONFUSED = 10   # 迷茫
+    ANGRY = 11      # 生气
+    TIRED = 12      # 疲惫
+    TOUCHED = 13    # 感动
+    GUILTY = 14     # 愧疚
+    HOPEFUL = 15    # 抱有期待
+
+
+class LateNightPost(SQLModel, table=True):
+    __tablename__ = f"{TABLE_PREFIX}_night"
+    __table_args__ = {"comment": "天亮即焚表"}
+
+    id: int = Field(..., primary_key=True, description='表主键ID',
+                    sa_column_kwargs={'comment': '表主键ID'}, sa_type=BigInteger)
+    content: str = Field(..., max_length=512, sa_column_kwargs={'comment': '内容'})
+    emotion_tag: int | None = Field(default=None, sa_column_kwargs={'comment': '情绪标签'}, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
+    topic: int | None = Field(default=None, description="话题编号", sa_column_kwargs={'comment': '话题编号'})
+    alias_name: str = Field(..., max_length=32, description="当晚临时代号", sa_column_kwargs={'comment': '当晚临时代号'})
+    like_count: int = Field(default=0, description="点赞数量", sa_column_kwargs={'comment': '点赞数量'})
+    from_ip: str | None = Field(None, description='来源ip', max_length=32, sa_column_kwargs={'comment': '来源ip'})
+    is_top: bool = Field(default=False, description="是否置顶", sa_column_kwargs={'comment': '是否置顶'})
+    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+                                sa_column=Column(DateTime(timezone=True), default=datetime.now,
+                                                 comment='创建日期时间', nullable=False, server_default=text("NOW()"))
+                                )
+
+
+class LateNightLeaveCreate(SQLModel):
+    content: str = Field(..., max_length=512, description='内容')
+    emotion_tag: int | None = Field(default=None, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
+    topic: int | None = Field(default=None, description="话题编号")
+    alias_name: str = Field(..., max_length=32, description="当晚临时代号")
+
+
