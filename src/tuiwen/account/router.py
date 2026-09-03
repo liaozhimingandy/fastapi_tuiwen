@@ -35,7 +35,8 @@ from src.tuiwen.core import Tag
 from src.tuiwen.models import PageResponse
 from src.tuiwen.dependencies import get_current_user, get_session, oauth2_scheme
 from src.tuiwen.core.config import get_settings
-from ..utils.email_service import send_reset_pwd_email
+from ..utils.mail_service import send_reset_pwd_mail
+from ..utils.redis_util import RedisKey
 from ..utils.utils import validate_username
 
 config = get_settings()
@@ -67,7 +68,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 
     try:
         statement = select(Account).where(
-            or_(Account.email == form_data.username, Account.username == form_data.username),
+            or_(Account.mail == form_data.username, Account.username == form_data.username),
             Account.is_active == True)
         instance = (await session.exec(statement)).first()
         assert instance is not None and instance.password == hash_password(form_data.password,
@@ -238,13 +239,13 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
         instance.username = instance.account_id
 
     # 判断数据库是否存在
-    exist_stmt = select(Account).where(or_(Account.email == func.lower(instance.email),
+    exist_stmt = select(Account).where(or_(Account.mail == func.lower(instance.mail),
                                            Account.username == func.lower(instance.username)))
     exist_user = (await session.exec(exist_stmt)).first()
 
     if exist_user:
         # 精准判断是哪个字段重复，返回对应提示，用户体验更好
-        if exist_user.email.lower() == instance.email.lower():
+        if exist_user.mail.lower() == instance.mail.lower():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="该邮箱已被注册,如您是账号所有者,请直接登录"
@@ -302,7 +303,7 @@ async def update_account(account_id: Annotated[str, "账户ID"],
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
     # 排除被更新字段
-    forbidden_fields = {"account_id", "username", "email", "mobile", "id", "password", "salt", "is_active",
+    forbidden_fields = {"account_id", "username", "mail", "mobile", "id", "password", "salt", "is_active",
                         "user_type", "im_id", "gmt_created", "gmt_modified"}
 
     account_data = account.model_dump(exclude_unset=True, exclude=forbidden_fields)
@@ -325,7 +326,7 @@ async def search(keyword: Annotated[str, "关键词"], *, session: AsyncSession 
     return PageResponse(items=dataset, total=len(dataset), page_size=limit)
 
 # 邮箱正则（通用标准正则，兼容绝大多数邮箱）
-EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+MAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 
 @router_public.post("/accounts/send/code/", summary="发送验证码", tags=[Tag.account])
 async def account_send_code(data: Annotated[CodeVerify, "验证码信息"],
@@ -336,14 +337,14 @@ async def account_send_code(data: Annotated[CodeVerify, "验证码信息"],
     code = data.model_dump(exclude={'code'})
     instance_code = CodeVerify(**code, code="".join(random.choices("0123456789", k=6)))
 
-    if not EMAIL_PATTERN.match(instance_code.account):
+    if not MAIL_PATTERN.match(instance_code.account):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="邮箱格式不正确，请输入合法邮箱地址"
         )
 
     # 判断用户是否存在
-    stmt = select(Account).where(Account.email == instance_code.account)
+    stmt = select(Account).where(Account.mail == instance_code.account)
     instance = (await session.exec(stmt)).first()
 
     if not instance:
@@ -352,13 +353,13 @@ async def account_send_code(data: Annotated[CodeVerify, "验证码信息"],
     data = {
         'code': instance_code.code,
         'expire': 30,
-        'to_email': instance_code.account
+        'to_mail': instance_code.account
     }
 
     # ======================
     # 1小时发送限流
     # ======================
-    key = f"tw:dev:reset_pwd:account:{instance_code.account}"
+    key = RedisKey.reset_pwd_code(instance_code.account)
     if await redis_get(key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -368,22 +369,22 @@ async def account_send_code(data: Annotated[CodeVerify, "验证码信息"],
     # 存到redis
     await redis_set(key, instance_code.code, expire=config.REDIS_EXPIRE)
     # 后台发送邮箱通知
-    background_tasks.add_task(send_reset_pwd_email, **data)
+    background_tasks.add_task(send_reset_pwd_mail, **data)
     return {"message": "验证码已经发送至你的邮箱,请查收!"}
 
 
 @router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=[Tag.account],
                    response_model=AccountPublic)
-async def password_reset(account: Annotated[AccountPasswordReset, Body(..., description="密码充值的必要信息")],
+async def password_reset(account: Annotated[AccountPasswordReset, Body(..., description="密码重置的必要信息")],
                          session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     statement = select(Account).where(or_(Account.username == account.username,
-                                          Account.email == account.username))
+                                          Account.mail == account.username))
     instance = (await session.exec(statement)).first()
     if not instance:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such account")
 
     # 按业界规范构造 key
-    redis_key = f"tw:dev:reset_pwd:account:{account.username}"
+    redis_key = RedisKey.reset_pwd_code(account.username)
 
     # 从 Redis 获取验证码
     correct_code = await redis_get(redis_key)

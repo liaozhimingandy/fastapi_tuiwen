@@ -3,7 +3,7 @@
 """
 =================================================
     @Project: fastapi_tuiwen
-    @File： email_service.py
+    @File： mail_service.py
     @Author：liaozhimingandy
     @Email: liaozhimingandy@gmail.com
     @Date：2026/8/2 18:43
@@ -152,7 +152,7 @@ def init_mail_sender(is_prod: bool = False) -> None:
 # ==============================
 # 5. 全局通用快捷发送方法
 # ==============================
-def send_verify_email(to_email: str, code: str, expire: int = 5) -> bool:
+def send_verify_mail(to_email: str, code: str, expire: int = 5) -> bool:
     """全局发送验证码邮件"""
     if not global_mail_sender:
         raise RuntimeError("邮件服务未初始化，请在FastAPI启动事件中执行 init_mail_sender()")
@@ -164,12 +164,12 @@ def send_verify_email(to_email: str, code: str, expire: int = 5) -> bool:
     )
 
 
-def send_reset_pwd_email(to_email: str, code: str, expire: int = 10) -> bool:
+def send_reset_pwd_mail(to_mail: str, code: str, expire: int = 10) -> bool:
     """全局发送密码重置邮件"""
     if not global_mail_sender:
         raise RuntimeError("邮件服务未初始化，请在FastAPI启动事件中执行 init_mail_sender()")
     return global_mail_sender.send(
-        to_addr=to_email,
+        to_addr=to_mail,
         template=RESET_PWD_TEMPLATE,
         code=code,
         expire=expire
@@ -178,9 +178,9 @@ def send_reset_pwd_email(to_email: str, code: str, expire: int = 10) -> bool:
 
 if __name__ == "__main__":
     import random
-    email = "dev@tw.com"
+    mail = "dev@tw.com"
     init_mail_sender(is_prod=False)
     # 生成6位验证码
     code = "".join(random.choices("0123456789", k=6))
     # 直接调用全局邮件方法
-    res = send_verify_email(email, code, expire=5)
+    res = send_verify_mail(mail, code, expire=5)

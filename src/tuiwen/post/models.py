@@ -1,23 +1,26 @@
 from decimal import Decimal
-from enum import Enum
+from enum import IntEnum
 import uuid
+from ipaddress import IPv4Address, IPv6Address
+from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
 from pydantic import BaseModel, field_serializer
 from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Numeric
+from sqlalchemy.dialects.postgresql import INET
 from sqlmodel import SQLModel, Field, Index, text
 
 from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import convert_to_cst_time, convert_to_timezone
+from src.tuiwen.utils.utils import convert_to_timezone
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
-class PostType(Enum):
+class PostType(IntEnum):
     POST = 1         # 普通动态/帖子
     BLOG = 2         # 博客
 
-class RightStatusEnum(Enum):
+class RightStatusEnum(IntEnum):
     """帖子权限"""
     PRIVATE = 0
     PUBLIC = 1
@@ -45,7 +48,7 @@ class PostRightStatusUpdate(SQLModel):
 
 
 class PostCreate(PostRightStatusUpdate):
-    class FromDeviceEnum(Enum):
+    class FromDeviceEnum(IntEnum):
         """设备来源类型"""
 
         WEB = 1
@@ -65,16 +68,17 @@ class PostCreate(PostRightStatusUpdate):
             }
             return mapping[self.value]
 
-    content: dict | None = Field(default={}, description='json内容', max_length=1024,
+    content: dict = Field(default={}, description='json内容', max_length=1024,
                                  sa_column_kwargs={'comment': '内容'},
                                  sa_type=JSON)
     post_type: PostType = Field(PostType.POST.value, index=True, description="类型",sa_column_kwargs={'comment': '内容类型'},
                                 sa_type=SMALLINT, nullable=False, ge=0)
-    from_ip: str | None = Field(None, description='来源ip', max_length=32, sa_column_kwargs={'comment': '来源ip'})
+    from_ip: Optional[IPv4Address | IPv6Address] = Field(None, description='来源ip', sa_type=INET(),
+                                                         sa_column_kwargs={'comment': '来源ip'})
     from_device: FromDeviceEnum = Field(FromDeviceEnum.UNKNOWN, description='来源设备类型', sa_column_kwargs={'comment': '来源设备类型'},
                                         sa_type=SMALLINT, ge=0)
     location: str | None = Field(None, max_length=64, description='位置', sa_column_kwargs={'comment': '位置'})
-    is_top: bool | None = Field(False, description='是否置顶', sa_column_kwargs={'comment': '是否置顶'})
+    is_top: bool = Field(default=False, description='是否置顶', sa_column_kwargs={'comment': '是否置顶'})
     latitude: Decimal | None = Field(None, sa_type=Numeric(10, 7), description='经度', sa_column_kwargs={'comment': '经度'})
     longitude: Decimal | None = Field(None, sa_type=Numeric(10, 7), description='纬度', sa_column_kwargs={'comment': '纬度'})
 
@@ -89,7 +93,7 @@ class Post(PostCreate, table=True):
 
     id: int = Field(None, primary_key=True, description='表主键ID',
                     sa_column_kwargs={'comment': '表主键ID'}, sa_type=BigInteger)
-    status: int | None = Field(default=1, description='帖子状态', ge=0, sa_column_kwargs={'comment': '帖子状态'})
+    status: int | None = Field(default=1, description='帖子状态', ge=0,sa_type=SMALLINT, sa_column_kwargs={'comment': '帖子状态'})
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False,
@@ -99,9 +103,9 @@ class Post(PostCreate, table=True):
                                                     onupdate=datetime.now, comment='最后修改时间')
                                    )
 
-    @field_serializer("create_at", "update_at")
-    def serialize_gmt_created(self, value: datetime):
-        return convert_to_cst_time(value)
+    @field_serializer('create_at', 'update_at')
+    def serialize_datetime(self, value):
+        return convert_to_timezone(value)
 
 
 class CommentInput(SQLModel):
@@ -109,7 +113,7 @@ class CommentInput(SQLModel):
     评论模型
     """
 
-    class ObjTypeEnum(Enum):
+    class ObjTypeEnum(IntEnum):
         """评论对象类别"""
         POST = 1
         Other = 9
@@ -156,13 +160,13 @@ class LikeInput(SQLModel):
     赞模型
     """
 
-    class ObjTypeEnum(Enum):
+    class ObjTypeEnum(IntEnum):
         """评论对象类别"""
         POST = 1
 
     id: int = Field(None, primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
                     sa_type=BigInteger)
-    obj_id: UUID = Field(index=True, description='赞对象ID', sa_column_kwargs={'comment': '赞对象ID'})
+    obj_id: str = Field(index=True, max_length=36, description='赞对象ID', sa_column_kwargs={'comment': '赞对象ID'})
     obj_type: ObjTypeEnum = Field(default=ObjTypeEnum.POST, description="评论对象类别",
                                   sa_column_kwargs={'comment': '评论对象类别'}, sa_type=SMALLINT, ge=0)
     account_id: str = Field(..., index=True, max_length=32, description='点赞的用户',

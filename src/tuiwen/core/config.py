@@ -66,7 +66,13 @@ class Settings(BaseSettings):
         description="Redis 密码文件路径"
     )
     REDIS_SOCKET_TIMEOUT: int = Field(2, description="redis socket timeout")
-    REDIS_EXPIRE: int = Field(30, description="redis expire")
+    REDIS_EXPIRE: int = Field(30*60, description="redis expire")
+
+    @computed_field
+    @property
+    def REDIS_KEY_PREFIX(self) -> str:
+        return f"tw:{'dev' if self.DEBUG else 'prod'}"
+
     # ====================================================================
 
     BACKEND_CORS_ORIGINS: Annotated[

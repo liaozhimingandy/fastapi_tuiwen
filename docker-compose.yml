@@ -1,6 +1,6 @@
 services:
   app:
-    image: fastapi_tuiwen:26.9.2.3
+    image: fastapi_tuiwen:26.9.3
     restart: unless-stopped
     container_name: dev-tw-common-api-01
     ports:

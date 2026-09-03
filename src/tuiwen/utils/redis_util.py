@@ -75,6 +75,15 @@ async def redis_delete(key: str) -> None:
     """
     await redis_client.delete(key)
 
+# ====================== Redis‑Key 公共生成器 ======================
+class RedisKey:
+    """所有Redis键统一在这里维护"""
+    _prefix: str = get_settings().REDIS_KEY_PREFIX
+
+    @classmethod
+    def reset_pwd_code(cls, account: str) -> str:
+        """密码重置验证码"""
+        return f"{cls._prefix}:reset_pwd:account:{account}"
 
 def main(*args, **kwargs) -> None:
     pass

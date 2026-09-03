@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, delete, update, exists, or_
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, Request, Query, Path, Body, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, Request, Query, Path, Body, status, Response
 
 from src.tuiwen.core import get_settings, Settings, Tag, add_instance
 from src.tuiwen.dependencies import get_session
@@ -127,6 +127,8 @@ async def update_post_right(post_id: Annotated[UUID, "帖子ID"],
     await session.exec(statement)
     await session.commit()
 
+    return Response(status_code=status.HTTP_205_RESET_CONTENT)
+
 
 @router_post.delete("/{post_id}/", summary="删除指定的帖子", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_post(request: Annotated[Request, "请求对象"],
@@ -145,7 +147,7 @@ router_comment = APIRouter(prefix="/comments", tags=[Tag.comment])
 @router_comment.post('/', summary="新增评论", response_model=Comment, status_code=status.HTTP_201_CREATED)
 async def create_comment(comment: Annotated[CommentInput, Body(..., description="评论信息")],
                          session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
-    comment_data = comment.model_dump(exclude={"id", "gmt_created", "comment_id"})
+    comment_data = comment.model_dump(exclude={"id", "create_at", "comment_id"})
     instance = Comment(**comment_data, comment_id=str(uuid.uuid7()))
 
     instance = await add_instance(session, instance)
@@ -172,7 +174,7 @@ async def get_comments(
         session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     statement = select(Comment).where(Comment.obj_id == obj_id, Comment.obj_type == Comment.ObjTypeEnum(obj_type))
     if cursor:
-        statement = statement.where(Comment.comment_id < cursor)
+        statement = statement.where(Comment.comment_id > cursor)
 
     statement = statement.order_by(-Comment.id).limit(limit)
     dataset = (await (session.exec(statement))).all()
@@ -187,7 +189,7 @@ router_like = APIRouter(prefix="/likes", tags=[Tag.like])
 @router_like.post('/', summary="点赞", response_model=Like, status_code=status.HTTP_201_CREATED)
 async def create_like(like: Annotated[LikeInput, "赞的输入对象"],
                       session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
-    like_data = like.model_dump(exclude={"id", "gmt_created"})
+    like_data = like.model_dump(exclude={"id", "create_at"})
     instance = Like(**like_data)
 
     instance = await add_instance(session, instance)
@@ -196,7 +198,7 @@ async def create_like(like: Annotated[LikeInput, "赞的输入对象"],
 
 
 @router_like.delete('/{obj_id}/', summary='取消赞', status_code=status.HTTP_204_NO_CONTENT)
-async def delete_like(obj_id: Annotated[uuid.UUID, "对象ID"], request: Annotated[Request, "请求对象"],
+async def delete_like(obj_id: Annotated[str, "对象ID"], request: Annotated[Request, "请求对象"],
                       session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
     statement = delete(Like).where(Like.obj_id == obj_id, Like.account_id == request.state.account_id,
                                    Like.obj_type == Like.ObjTypeEnum.POST)
@@ -270,7 +272,7 @@ router_follow = APIRouter(prefix="/follows", tags=["follow"])
 @router_follow.post('/', summary="关注", response_model=Follow, status_code=status.HTTP_201_CREATED)
 async def follow(follow: Annotated[Follow, Body(..., description="关注信息")],
                  session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)) -> Follow:
-    follow_data = follow.model_dump(exclude={"id", "gmt_created"})
+    follow_data = follow.model_dump(exclude={"id", "create_at"})
     instance = Follow(**follow_data)
 
     instance = await add_instance(session, instance)

@@ -5,14 +5,14 @@
     @Project: FastAPIDemo
     @File： models.py
     @Author：liaozhimingandy
-    @Email: liaozhimingandy@gmail.com
+    @mail: liaozhimingandy@gmail.com
     @Date：2025/1/19 09:19
     @Desc: 
 =================================================
 """
 import os, uuid
 from datetime import datetime, timedelta, timezone, date
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Literal, Optional
 
 from pydantic import EmailStr, field_validator, field_serializer
@@ -46,7 +46,7 @@ def app_id_default():
 
 class AccountPublicCommon(SQLModel):
 
-    class SexEnum(Enum):
+    class SexEnum(IntEnum):
         UnKnown = 0
         Male = 1
         Female = 2
@@ -78,7 +78,7 @@ class AccountPublicCommon(SQLModel):
         return v.strip().lower()
 
 class AccountLogin(SQLModel):
-    email: EmailStr | None = Field(None, index=True, max_length=64, description='电子邮箱',
+    mail: EmailStr | None = Field(None, index=True, max_length=64, description='电子邮箱',
                               sa_column_kwargs={'comment': '电子邮箱'}, unique=True)
     password: str  = Field(..., max_length=32, min_length=32, description='用户密码', sa_column_kwargs={'comment': '用户密码'})
 
@@ -93,7 +93,7 @@ class AccountBase(AccountPublicCommon):
     """
     account_id: str = Field(..., default_factory=userid_default, index=True, max_length=32,
                             description='用户ID', sa_column_kwargs={'comment': '用户ID'}, unique=True)
-    email: EmailStr | None = Field(None, index=True, max_length=64, description='电子邮箱',
+    mail: EmailStr | None = Field(None, index=True, max_length=64, description='电子邮箱',
                               sa_column_kwargs={'comment': '电子邮箱'}, unique=True)
     mobile: str | None = Field(None, index=True, max_length=32, description='电话号码',
                                sa_column_kwargs={'comment': '电话号码'}, unique=True)
@@ -103,7 +103,7 @@ class AccountBase(AccountPublicCommon):
     allow_vibration: bool | None  = Field(default=True, description='是否允许震动提示',
                                   sa_column_kwargs={'comment': '是否允许震动提示'})
 
-    @field_validator("email", mode="before")
+    @field_validator("mail", mode="before")
     def username_to_lower(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return None
@@ -213,7 +213,7 @@ class AppRefreshToken(AppAccessToken):
 ########################################################################################################################
 class CodeChannel(str, Enum):
     SMS = "sms"
-    EMAIL = "email"
+    MAIL = "mail"
 
 
 class CodeScene(str, Enum):
@@ -234,12 +234,12 @@ class TurnstileVerifyToken(SQLModel):
 
 class UpdateCredential(SQLModel):
     """
-    type: username / email / phone
+    type: username / mail / phone
     new_value: 新值
     password: 修改邮箱、手机号必填；修改用户名不需要传
     code: 修改邮箱、手机号必填；用户名不需要
     """
-    type: Literal["username", "email", "phone"]
+    type: Literal["username", "mail", "phone"]
     new_value: str
     password: Optional[str] = None
     code: Optional[str] = None
@@ -247,7 +247,7 @@ class UpdateCredential(SQLModel):
     @field_validator("password")
     def check_password_required(cls, v, values):
         t = values.data.get("type")
-        if t in ("email", "mobile"):
+        if t in ("mail", "mobile"):
             if not v or len(v.strip()) == 0:
                 raise ValueError("修改邮箱、手机号必须输入当前密码")
         return v
@@ -255,7 +255,7 @@ class UpdateCredential(SQLModel):
     @field_validator("code")
     def check_code_required(cls, v, values):
         t = values.data.get("type")
-        if t in ("email", "mobile"):
+        if t in ("mail", "mobile"):
             if not v or len(v.strip()) == 0:
                 raise ValueError("修改邮箱、手机号必须传入验证码code")
         # 修改用户名时，即使前端传了code也清空

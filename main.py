@@ -71,9 +71,9 @@ async def lifespan(app: FastAPI):
     # app.state.pool = await get_async_pool()
 
     # 初始化数据库
-    # from src.tuiwen.core import init_db
-    # await init_db()
-    # logger.info("init database success")
+    from src.tuiwen.core import init_db
+    await init_db()
+    logger.info("init database success")
 
     from pyfiglet import Figlet
     ft = Figlet(font="ansi_shadow")
