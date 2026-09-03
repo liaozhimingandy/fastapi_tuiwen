@@ -161,8 +161,8 @@ class EmotionTagEnum(IntEnum):
     HOPEFUL = 15    # 抱有期待
 
 
-class LateNightPost(SQLModel, table=True):
-    __tablename__ = f"{TABLE_PREFIX}night"
+class Snap(SQLModel, table=True):
+    __tablename__ = f"{TABLE_PREFIX}snap"
     __table_args__ = {"comment": "天亮即焚表"}
 
     id: int = Field(..., primary_key=True, description='表主键ID',
@@ -186,7 +186,7 @@ class LateNightPost(SQLModel, table=True):
         return convert_to_timezone(value)
 
 
-class LateNightLeaveCreate(SQLModel):
+class SnapCreate(SQLModel):
     content: dict = Field(..., max_length=512, description='内容')
     emotion: int | None = Field(default=None, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
     topic: str | None = Field(default=None, description="话题编号")
