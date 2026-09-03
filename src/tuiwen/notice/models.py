@@ -10,6 +10,8 @@
     @Desc: 
 =================================================
 """
+from enum import IntEnum
+
 from pydantic import field_serializer
 from sqlalchemy import Column, DateTime, text, JSON, BigInteger, SmallInteger
 from sqlmodel import SQLModel, Field
@@ -20,6 +22,26 @@ from src.tuiwen import get_settings
 from src.tuiwen.utils.utils import convert_to_timezone
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
+
+class NoticeType(IntEnum):
+    """通知类型"""
+    SYSTEM = 0      # 系统通知
+    LIKE = 1        # 点赞
+    COMMENT = 2     # 评论
+    FOLLOW = 3      # 关注
+    MENTION = 4     # @提及
+
+class NoticeTargetType(IntEnum):
+    """通知‑关联资源类型"""
+    POST = 1        # 帖子
+    COMMENT = 2     # 评论
+    USER = 3        # 用户
+
+class NoticeTargetScope(IntEnum):
+    """通知‑推送范围"""
+    ALL = 1         # 全部用户
+    NEW_USER = 2    # 新用户
+    VIP = 3         # 付费VIP用户
 
 
 class Notice(SQLModel, table=True):
@@ -36,13 +58,13 @@ class Notice(SQLModel, table=True):
     # 触发者（点赞/评论/关注的人，系统通知为 None）
     trigger_account_id: Optional[str] = Field(nullable=True, default=1, index=True, max_length=32,
                                            sa_column_kwargs={'comment': '触发者用户ID，系统通知为1'})
-    type: int | None = Field(default=1, nullable=False, ge=0, sa_type=SmallInteger,
+    type: NoticeType | None = Field(default=NoticeType.SYSTEM, nullable=False, ge=0, sa_type=SmallInteger,
                              index=True, sa_column_kwargs={
             'comment': '通知类型 system系统/like点赞/comment评论/follow关注/mention@'})
     # 关联内容：帖子 / 评论 / 用户 / 其他
-    target_type: Optional[int] = Field(default=None, index=True, sa_type=SmallInteger,
+    target_type: Optional[NoticeTargetType] = Field(default=None, index=True, sa_type=SmallInteger,
                                        sa_column_kwargs={'comment': '关联资源类型 post帖子/comment评论/user用户'})
-    target_scope: Optional[int] = Field(
+    target_scope: NoticeTargetScope = Field(
         default=1,
         sa_type=SmallInteger,
         gt=0,

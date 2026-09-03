@@ -48,8 +48,8 @@ class AccountPublicCommon(SQLModel):
 
     class SexEnum(Enum):
         UnKnown = 0
-        Female = 1
-        Male = 2
+        Male = 1
+        Female = 2
         Other = 9
 
         @property
@@ -62,21 +62,11 @@ class AccountPublicCommon(SQLModel):
             }
             return mapping[self.value]
 
-    class AreaCodeEnum(Enum):
-        CHINA = 'CHN'
-
-        @property
-        def label(self):
-            mapping = {
-                'CHN': "中国"
-            }
-            return mapping[self.value]
-
     username: str | None = Field(None, index=True, max_length=32, description='用户名',
                                  sa_column_kwargs={'comment': '用户名'}, unique=True)
     nick_name: str | None = Field(None, max_length=30, description='昵称', sa_column_kwargs={'comment': '昵称'})
     gmt_birth: date | None = Field(None, description='出生日期', sa_column_kwargs={'comment': '出生日期'})
-    area_code: str = Field(default=AreaCodeEnum.CHINA, max_length=3, description='区域代码', sa_column_kwargs={'comment': '区域代码'})
+    area_code: str = Field(default='CHN', max_length=3, description='区域代码', sa_column_kwargs={'comment': '区域代码'})
     sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SMALLINT, ge=0, description='性别',sa_column_kwargs={'comment': '性别'})
     avatar: str | None = Field(None, max_length=200, description='头像链接', sa_column_kwargs={'comment': '头像链接'})
     bio: str | None = Field(None, max_length=256, description='用户自我简介', sa_column_kwargs={'comment': '用户自我简介'})

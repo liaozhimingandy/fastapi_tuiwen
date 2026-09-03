@@ -27,6 +27,31 @@ router_notice = APIRouter(prefix="/notices", tags=[Tag.more])
 @router_notice.get("/system/", summary="返回公告通知", response_model=PageResponse[Notice],
                    response_model_include={'items', 'total'})
 async def get_system_notices(session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
+    """
+    ### 通知类型 NoticeType
+    | 枚举常量 | 值 | 中文说明 |
+    |---|---|---|
+    | SYSTEM | 0 | 系统通知 |
+    | LIKE | 1 | 点赞 |
+    | COMMENT | 2 | 评论 |
+    | FOLLOW | 3 | 关注 |
+    | MENTION | 4 | @提及 |
+
+    ### 关联资源类型 NoticeTargetType
+    | 枚举常量 | 值 | 中文说明 |
+    |---|---|---|
+    | POST | 1 | 帖子 |
+    | COMMENT | 2 | 评论 |
+    | USER | 3 | 用户 |
+
+    ### 推送范围 NoticeTargetScope
+    | 枚举常量 | 值 | 中文说明 |
+    |---|---|---|
+    | ALL | 1 | 全部用户 |
+    | NEW_USER | 2 | 新用户 |
+    | VIP | 3 | 付费VIP用户 |
+    """
+
     stmt = select(Notice).where(Notice.type == 1)
     dataset = (await session.exec(stmt)).all()
 
