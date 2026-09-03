@@ -47,7 +47,7 @@ async def submit_feedback(
         **payload.model_dump(),
         account_id=request.state.account_id if request.state else None,
         user_agent=request.headers.get("user-agent"),
-        client_ip=request.client.host if request.client else None,
+        from_ip=request.client.host if request.client else None,
         status=FeedbackStatus.PENDING
     )
 
