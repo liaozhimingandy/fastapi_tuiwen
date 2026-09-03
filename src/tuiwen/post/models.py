@@ -1,10 +1,11 @@
+from decimal import Decimal
 from enum import Enum
 import uuid
 from uuid import UUID
 from datetime import datetime
 
 from pydantic import BaseModel, field_serializer
-from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT
+from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Numeric
 from sqlmodel import SQLModel, Field, Index, text
 
 from src.tuiwen.core import get_settings
@@ -40,7 +41,7 @@ class PostRightStatusUpdate(SQLModel):
                             sa_column_kwargs={'comment': '用户ID'})
     right_status: RightStatusEnum = Field(default=RightStatusEnum.PUBLIC, description='权限状态',
                                           sa_column_kwargs={'comment': '权限状态'},
-                                          sa_type=SMALLINT)
+                                          sa_type=SMALLINT, ge=0)
 
 
 class PostCreate(PostRightStatusUpdate):
@@ -68,14 +69,14 @@ class PostCreate(PostRightStatusUpdate):
                                  sa_column_kwargs={'comment': '内容'},
                                  sa_type=JSON)
     post_type: PostType = Field(PostType.POST.value, index=True, description="类型",sa_column_kwargs={'comment': '内容类型'},
-                                sa_type=SMALLINT, nullable=False)
+                                sa_type=SMALLINT, nullable=False, ge=0)
     from_ip: str | None = Field(None, description='来源ip', max_length=32, sa_column_kwargs={'comment': '来源ip'})
-    from_device: FromDeviceEnum = Field(FromDeviceEnum.UNKNOWN, description='来源设备名称', sa_column_kwargs={'comment': '来源设备名称'},
-                                        sa_type=SMALLINT)
+    from_device: FromDeviceEnum = Field(FromDeviceEnum.UNKNOWN, description='来源设备类型', sa_column_kwargs={'comment': '来源设备类型'},
+                                        sa_type=SMALLINT, ge=0)
     location: str | None = Field(None, max_length=64, description='位置', sa_column_kwargs={'comment': '位置'})
     is_top: bool | None = Field(False, description='是否置顶', sa_column_kwargs={'comment': '是否置顶'})
-    latitude: str | None = Field(None, description='经度', sa_column_kwargs={'comment': '经度'})
-    longitude: str | None = Field(None, description='纬度', sa_column_kwargs={'comment': '纬度'})
+    latitude: Decimal | None = Field(None, sa_type=Numeric(10, 7), description='经度', sa_column_kwargs={'comment': '经度'})
+    longitude: Decimal | None = Field(None, sa_type=Numeric(10, 7), description='纬度', sa_column_kwargs={'comment': '纬度'})
 
 
 class Post(PostCreate, table=True):
@@ -88,7 +89,7 @@ class Post(PostCreate, table=True):
 
     id: int = Field(None, primary_key=True, description='表主键ID',
                     sa_column_kwargs={'comment': '表主键ID'}, sa_type=BigInteger)
-    status: int | None = Field(default=1, description='帖子状态', sa_column_kwargs={'comment': '帖子状态'})
+    status: int | None = Field(default=1, description='帖子状态', ge=0, sa_column_kwargs={'comment': '帖子状态'})
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False,
@@ -135,7 +136,7 @@ class CommentInput(SQLModel):
                         sa_column_kwargs={'comment': '评论对象ID'})
     obj_type: ObjTypeEnum = Field(default=ObjTypeEnum.POST, description="评论对象类别",
                                   sa_column_kwargs={'comment': '评论对象类别'},
-                                  sa_type=SMALLINT)
+                                  sa_type=SMALLINT, ge=0)
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False))
@@ -163,7 +164,7 @@ class LikeInput(SQLModel):
                     sa_type=BigInteger)
     obj_id: UUID = Field(index=True, description='赞对象ID', sa_column_kwargs={'comment': '赞对象ID'})
     obj_type: ObjTypeEnum = Field(default=ObjTypeEnum.POST, description="评论对象类别",
-                                  sa_column_kwargs={'comment': '评论对象类别'}, sa_type=SMALLINT)
+                                  sa_column_kwargs={'comment': '评论对象类别'}, sa_type=SMALLINT, ge=0)
     account_id: str = Field(..., index=True, max_length=32, description='点赞的用户',
                             sa_column_kwargs={'comment': '点赞的用户'})
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',

@@ -77,7 +77,7 @@ class AccountPublicCommon(SQLModel):
     nick_name: str | None = Field(None, max_length=30, description='昵称', sa_column_kwargs={'comment': '昵称'})
     gmt_birth: date | None = Field(None, description='出生日期', sa_column_kwargs={'comment': '出生日期'})
     area_code: str = Field(default=AreaCodeEnum.CHINA, max_length=3, description='区域代码', sa_column_kwargs={'comment': '区域代码'})
-    sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SMALLINT, description='性别',sa_column_kwargs={'comment': '性别'})
+    sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SMALLINT, ge=0, description='性别',sa_column_kwargs={'comment': '性别'})
     avatar: str | None = Field(None, max_length=200, description='头像链接', sa_column_kwargs={'comment': '头像链接'})
     bio: str | None = Field(None, max_length=256, description='用户自我简介', sa_column_kwargs={'comment': '用户自我简介'})
 
@@ -127,7 +127,7 @@ class Account(AccountBase, table=True):
 
     id: int = Field(..., primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
                     sa_type=BigInteger)
-    user_type: int = Field(default=1, sa_type=SMALLINT, description='账户类型',
+    user_type: int = Field(default=1, sa_type=SMALLINT, ge=1, description='账户类型',
                                   sa_column_kwargs={'comment': '账户类型'})
     password: str = Field(None, max_length=64, min_length=64, description='用户密码;经过MD5计算加密', sa_column_kwargs={'comment': '用户密码'})
     salt: str = Field(default=None, max_length=8, description='盐', sa_column_kwargs={'comment': '盐'})

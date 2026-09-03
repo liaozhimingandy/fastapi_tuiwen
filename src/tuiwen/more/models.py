@@ -48,7 +48,7 @@ class FeedbackStatus(Enum):
     PENDING = 1      # 待处理
     PROCESSING = 2   # 处理中
     DONE = 3         # 已处理完成
-    CLOSED = 4       # 已关闭
+    CLOSED = 0       # 已关闭
 
     @property
     def label(self):
@@ -167,7 +167,7 @@ class Snap(SQLModel, table=True):
     content: dict | None = Field(default={}, description='json内容', max_length=1024,
                                  sa_column_kwargs={'comment': '内容'}, sa_type=JSON)
     emotion: int | None = Field(default=0, sa_type=SMALLINT, ge=0, le=255,
-                            sa_column_kwargs={'comment': '情绪标签'}, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
+                            sa_column_kwargs={'comment': '情绪标签'}, description="情绪标签编号 1失眠...")
     topic: str | None = Field(default=None, max_length=64, description="话题编号", sa_column_kwargs={'comment': '话题编号'})
     alias_name: str = Field(..., max_length=32, description="当晚临时代号", sa_column_kwargs={'comment': '当晚临时代号'})
     like: int = Field(default=0, description="点赞数量", sa_column_kwargs={'comment': '点赞数量'})

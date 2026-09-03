@@ -34,17 +34,18 @@ class Notice(SQLModel, table=True):
                             sa_column_kwargs={'comment': '单用户接收人ID，系统公告为空'})
 
     # 触发者（点赞/评论/关注的人，系统通知为 None）
-    trigger_account_id: Optional[int] = Field(nullable=True, default=1, index=True,
+    trigger_account_id: Optional[str] = Field(nullable=True, default=1, index=True, max_length=32,
                                            sa_column_kwargs={'comment': '触发者用户ID，系统通知为1'})
-    type: int | None = Field(default=1, nullable=False, sa_type=SmallInteger,
+    type: int | None = Field(default=1, nullable=False, ge=0, sa_type=SmallInteger,
                              index=True, sa_column_kwargs={
             'comment': '通知类型 system系统/like点赞/comment评论/follow关注/mention@'})
     # 关联内容：帖子 / 评论 / 用户 / 其他
-    target_type: Optional[str] = Field(default=None, max_length=32, index=True, sa_type=SmallInteger,
+    target_type: Optional[int] = Field(default=None, index=True, sa_type=SmallInteger,
                                        sa_column_kwargs={'comment': '关联资源类型 post帖子/comment评论/user用户'})
     target_scope: Optional[int] = Field(
         default=1,
         sa_type=SmallInteger,
+        gt=0,
         index=True,
         sa_column_kwargs={'comment': '推送范围 all全部/new新用户/vip付费用户'}
     )
