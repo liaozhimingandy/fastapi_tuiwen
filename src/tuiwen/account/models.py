@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Literal, Optional
 
 from pydantic import EmailStr, field_validator, field_serializer
-from sqlalchemy import DateTime, SMALLINT, Enum as SaENUM, Column, JSON, BigInteger
+from sqlalchemy import DateTime, SMALLINT, Column, JSON, BigInteger
 from sqlmodel import SQLModel, Field, text
 
 from src.tuiwen.core import get_settings
@@ -76,10 +76,8 @@ class AccountPublicCommon(SQLModel):
                                  sa_column_kwargs={'comment': '用户名'}, unique=True)
     nick_name: str | None = Field(None, max_length=30, description='昵称', sa_column_kwargs={'comment': '昵称'})
     gmt_birth: date | None = Field(None, description='出生日期', sa_column_kwargs={'comment': '出生日期'})
-    area_code: AreaCodeEnum = Field(default=AreaCodeEnum.CHINA, description='区域代码',
-                                    sa_column_kwargs={'comment': '区域代码'}, sa_type=SaENUM(AreaCodeEnum, values_callable=lambda x: [e.value for e in x]))
-    sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SaENUM(SexEnum, values_callable=lambda x: [str(e.value) for e in x]),
-                         description='性别',sa_column_kwargs={'comment': '性别'})
+    area_code: str = Field(default=AreaCodeEnum.CHINA, max_length=3, description='区域代码', sa_column_kwargs={'comment': '区域代码'})
+    sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SMALLINT, description='性别',sa_column_kwargs={'comment': '性别'})
     avatar: str | None = Field(None, max_length=200, description='头像链接', sa_column_kwargs={'comment': '头像链接'})
     bio: str | None = Field(None, max_length=256, description='用户自我简介', sa_column_kwargs={'comment': '用户自我简介'})
 
