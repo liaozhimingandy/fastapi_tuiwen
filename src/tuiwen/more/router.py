@@ -116,7 +116,7 @@ async def get_snaps(limit: Annotated[int, "返回多少条记录"] = Query(10, g
                     session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)
                     ):
     # 构建查询（保持UTC时间比较）
-    statement = select(Snap).where(Snap.id > cursor)
+    statement = select(Snap).where(Snap.id < cursor)
 
     # 按创建时间倒序 + 限制数量
     statement = statement.order_by(-Snap.id).limit(limit)
