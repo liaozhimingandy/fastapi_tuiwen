@@ -115,6 +115,15 @@ async def get_async_pool()->asyncpg.Pool:
     return _asyncpg_pool
 
 
+async def get_write_session():
+    async with AsyncSession(engine) as session:
+        yield session
+
+async def get_read_session():
+    async with AsyncSession(engine) as session:
+        yield session
+
+
 async def close_async_pool() -> None:
     """关闭 asyncpg 连接池，应用停机时调用"""
     global _asyncpg_pool

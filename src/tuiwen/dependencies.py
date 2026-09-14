@@ -1,8 +1,10 @@
 from typing import Annotated, AsyncGenerator, Any
-
+from sqlmodel.ext.asyncio.session import AsyncSession
 from fastapi import Depends, HTTPException, Security, Request, FastAPI, status
 from fastapi.security import SecurityScopes, OAuth2PasswordBearer
 
+from dal.feedback import FeedbackDAO
+from dal.notice import NoticeDAO
 from src.tuiwen.core import AsyncSessionLocal
 from src.tuiwen.utils import verify_jwt_token
 from src.tuiwen.account import Account
@@ -138,3 +140,30 @@ async def get_conn(app: FastAPI) -> AsyncGenerator[Any, Any]:
     """返回数据库会话;适合手动管理连接"""
     async with app.state.pool.acquire() as conn:
         yield conn
+
+
+from core.database import (
+    get_write_session,
+    get_read_session,
+)
+
+
+async def get_notice_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+
+    return NoticeDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
+
+async def get_feedback_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+
+    return FeedbackDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
