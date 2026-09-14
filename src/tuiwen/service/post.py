@@ -38,7 +38,9 @@ class PostService:
         return await self.dao.get_account_posts(post_id, account_id, limit)
 
     async def get_post(self, post_id: uuid.UUID):
-        pass
+        # :todo 考虑后续如果是非本人的非公开帖子数据
+        return self.dao.get_by_unique_field("post_id", post_id)
 
     async def get_s_post(self, post_id: uuid.UUID):
-        pass
+        return self.get_s_post(post_id)
+

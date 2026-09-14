@@ -42,19 +42,14 @@ async def create_post(post: Annotated[PostCreate, Body(..., description="帖子�
 @router_post.get("/{post_id}/", summary="返回指定的帖子", response_model=Post)
 async def get_post(post_id: Annotated[uuid.UUID, "帖子唯一标识"],
                    svc: PostService = Depends(get_post_service)):
-    # 构建查询
-    statement = select(Post).where(Post.post_id == post_id)
-    instance = (await session.exec(statement)).first()
-
+    instance = await svc.get_post(post_id)
     return instance
 
 @router_public.get("/s/{post_id}/", summary="返回公开的指定的帖子", response_model=Post)
 async def get_s_post(post_id: Annotated[uuid.UUID, "帖子唯一标识"],
                      svc: PostService = Depends(get_post_service)):
     # 构建查询
-    statement = select(Post).where(Post.post_id == post_id, Post.right_status == RightStatusEnum.PUBLIC)
-    instance = (await session.exec(statement)).first()
-
+    instance = await svc.get_s_post(post_id)
     return instance
 
 

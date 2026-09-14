@@ -71,3 +71,8 @@ class PostDAO(BaseDAO[Post]):
 
         with self.read_db() as session:
             return (await session.exec(statement)).all()
+
+    async def get_s_posts(self, post_id: uuid.UUID):
+        statement = select(Post).where(Post.post_id == post_id, Post.right_status == RightStatusEnum.PUBLIC)
+        with self.read_db() as session:
+            return (await session.exec(statement)).first()
