@@ -13,7 +13,7 @@
 from enum import IntEnum
 
 from pydantic import field_serializer
-from sqlalchemy import Column, DateTime, text, JSON, BigInteger, SmallInteger
+from sqlalchemy import Column, DateTime, text, JSON, BigInteger, SmallInteger, Identity
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from typing import Optional
@@ -48,9 +48,8 @@ class Notice(SQLModel, table=True):
     __tablename__ = f"{TABLE_PREFIX}notice"
     __table_args__ = {'comment': '通知'}
 
-    id: int = Field(..., primary_key=True, description='表主键ID',
-                              sa_column_kwargs={'comment': '表主键ID'}, sa_type=BigInteger)
-
+    id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
+                    sa_column_args=[Identity(always=False)])
     # 接收通知的用户
     account_id: str = Field(nullable=True, max_length=32, index=True,
                             sa_column_kwargs={'comment': '单用户接收人ID，系统公告为空'})

@@ -3,11 +3,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from fastapi import Depends, HTTPException, Security, Request, FastAPI, status
 from fastapi.security import SecurityScopes, OAuth2PasswordBearer
 
-from dal.feedback import FeedbackDAO
-from dal.notice import NoticeDAO
 from src.tuiwen.core import AsyncSessionLocal
 from src.tuiwen.utils import verify_jwt_token
 from src.tuiwen.account import Account
+
+from src.tuiwen.core.database import (
+    get_write_session,
+    get_read_session,
+)
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/oauth/authorize/password/", scopes={
@@ -142,17 +145,11 @@ async def get_conn(app: FastAPI) -> AsyncGenerator[Any, Any]:
         yield conn
 
 
-from core.database import (
-    get_write_session,
-    get_read_session,
-)
-
-
 async def get_notice_dao(
     write_db: AsyncSession = Depends(get_write_session),
     read_db: AsyncSession = Depends(get_read_session),
 ):
-
+    from src.tuiwen.dal.notice import NoticeDAO
     return NoticeDAO(
         write_db=write_db,
         read_db=read_db,
@@ -162,8 +159,54 @@ async def get_feedback_dao(
     write_db: AsyncSession = Depends(get_write_session),
     read_db: AsyncSession = Depends(get_read_session),
 ):
-
+    from src.tuiwen.dal.feedback import FeedbackDAO
     return FeedbackDAO(
         write_db=write_db,
         read_db=read_db,
     )
+
+async def get_snap_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+    from src.tuiwen.dal.snap import SnapDAO
+    return SnapDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
+
+async def get_like_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+    from src.tuiwen.dal.like import LikeDAO
+    return LikeDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
+
+async def get_post_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+    from src.tuiwen.dal.post import PostDAO
+    return PostDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
+
+def get_notice_service(dao = Depends(get_notice_dao)):
+    from src.tuiwen.service.notice import NoticeService
+    return NoticeService(dao=dao)
+
+def get_snap_service(dao = Depends(get_snap_dao)):
+    from src.tuiwen.service.snap import SnapService
+    return SnapService(dao=dao)
+
+def get_like_service(dao = Depends(get_like_dao)):
+    from src.tuiwen.service.like import LikeService
+    return LikeService(dao=dao)
+
+def get_post_service(dao = Depends(get_post_dao)):
+    from src.tuiwen.service.post import PostService
+    return PostService(dao=dao)

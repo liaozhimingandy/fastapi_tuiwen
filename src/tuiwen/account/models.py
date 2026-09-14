@@ -16,7 +16,7 @@ from enum import Enum, IntEnum
 from typing import Literal, Optional
 
 from pydantic import EmailStr, field_validator, field_serializer
-from sqlalchemy import DateTime, SMALLINT, Column, JSON, BigInteger
+from sqlalchemy import DateTime, SMALLINT, Column, JSON, BigInteger, Identity
 from sqlmodel import SQLModel, Field, text
 
 from src.tuiwen.core import get_settings
@@ -115,8 +115,8 @@ class Account(AccountBase, table=True):
     __tablename__ = f"{TABLE_PREFIX}account"  # 表名
     __table_args__ = {'comment': '账户信息'}  # 表备注
 
-    id: int = Field(..., primary_key=True, description='表主键ID', sa_column_kwargs={'comment': '表主键ID'},
-                    sa_type=BigInteger)
+    id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
+                    sa_column_args=[Identity(always=False)])
     user_type: int = Field(default=1, sa_type=SMALLINT, ge=1, description='账户类型',
                                   sa_column_kwargs={'comment': '账户类型'})
     password: str = Field(None, max_length=64, min_length=64, description='用户密码;经过MD5计算加密', sa_column_kwargs={'comment': '用户密码'})

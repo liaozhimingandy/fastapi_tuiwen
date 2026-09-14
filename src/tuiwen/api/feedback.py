@@ -2,10 +2,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends
 
-from core import Tag
-from dependencies import get_feedback_dao
-from more.models import FeedbackResponse, FeedbackCreate, Feedback, FeedbackStatus
-from service.feedback import FeedbackService
+from src.tuiwen.core import Tag
+from src.tuiwen.dependencies import get_feedback_dao
+from src.tuiwen.more.models import FeedbackResponse, FeedbackCreate, Feedback, FeedbackStatus
+from src.tuiwen.service.feedback import FeedbackService
 
 router_public = APIRouter(tags=[Tag.more])
 

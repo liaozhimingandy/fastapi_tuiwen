@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from dal.feedback import FeedbackDAO
-from more.models import Feedback
+from src.tuiwen.dal.feedback import FeedbackDAO
+from src.tuiwen.more.models import Feedback
 
 
 @dataclass

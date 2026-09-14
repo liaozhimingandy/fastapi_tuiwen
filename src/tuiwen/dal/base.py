@@ -144,6 +144,31 @@ class BaseDAO(Generic[T]):
         result = await self._execute(self._get_read_session(), stmt, "get_by_id")
         return result.first()
 
+    async def get_by_unique_field(self, field_name: str, value: Any):
+        """
+        根据【单个唯一索引字段】查询单条记录，走读库
+        :param field_name: 模型字段名，如 "post_id", "comment_id"
+        :param value: 字段值
+        :return: model实例 / None
+        """
+        col = getattr(self.model, field_name)
+        stmt = select(self.model).where(col == value)
+        result = await self.read_db.exec(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_fields(self, **kwargs: Any):
+        """
+        多字段等值联合查询，用于【联合唯一索引】，最多返回一条，走读库
+        example: get_by_fields(obj_id="xxx", account_id=123, obj_type=1)
+        return: model实例 / None
+        """
+        stmt = select(self.model)
+        for field_name, val in kwargs.items():
+            col = getattr(self.model, field_name)
+            stmt = stmt.where(col == val)
+        result = await self.read_db.exec(stmt)
+        return result.scalar_one_or_none()
+
     async def get_one(self, **filters: Any) -> T | None:
         """按条件查询单条，示例 await dao.get_one(user_id=100, status=1)"""
         self._validate_fields(filters)
@@ -173,7 +198,8 @@ class BaseDAO(Generic[T]):
         for field, value in filters.items():
             stmt = stmt.where(getattr(self.model, field) == value)
         result = await self._execute(self._get_read_session(), stmt, "count")
-        return int(result.one()[0])
+        val = result.one()
+        return int(val)
 
     async def page(self, *, limit: int = 20, offset: int = 0, order_by: Any = None, **filters: Any) -> PageResult[T]:
         """分页查询返回PageResult对象"""
@@ -212,6 +238,33 @@ class BaseDAO(Generic[T]):
     async def delete_by_id(self, pk: Any) -> bool:
         """按主键删除，返回是否删除成功，不commit"""
         stmt = delete(self.model).where(self.model.id == pk)
+        result = await self.write_db.exec(stmt)
+        return bool(result.rowcount)
+
+    async def delete_by_unique_field(self, field_name: str, value: Any) -> bool:
+        """
+        根据【业务唯一字段】删除一条记录（业务唯一键，不是主键id）
+        :param field_name: 模型字段名，例如 "post_id" / "comment_id"
+        :param value: 字段对应值
+        :return: True 有记录被删除；False 没有匹配记录
+        注意：本函数不commit，上层需要自己调用 await self.write_db.commit()
+        """
+        # 获取模型字段对象
+        field_col = getattr(self.model, field_name)
+        stmt = delete(self.model).where(field_col == value)
+        result = await self.write_db.exec(stmt)
+        return bool(result.rowcount)
+
+    async def delete_by_fields(self, **kwargs: Any) -> bool:
+        """
+        多字段等值条件删除，适合联合唯一键，不commit
+        example: await dao.delete_by_fields(obj_id="xxx", account_id=123, obj_type=1)
+        return 是否删除到行
+        """
+        stmt = delete(self.model)
+        for field_name, val in kwargs.items():
+            col = getattr(self.model, field_name)
+            stmt = stmt.where(col == val)
         result = await self.write_db.exec(stmt)
         return bool(result.rowcount)
 

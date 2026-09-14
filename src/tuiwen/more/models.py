@@ -3,7 +3,7 @@ from enum import IntEnum
 from ipaddress import IPv4Address, IPv6Address
 from typing import Optional, List
 
-from sqlalchemy import BigInteger, JSON, SMALLINT
+from sqlalchemy import BigInteger, JSON, SMALLINT, Identity
 from sqlmodel import SQLModel, Field, Column, DateTime, text
 from sqlalchemy.dialects.postgresql import INET
 from pydantic import field_serializer
@@ -82,8 +82,8 @@ class Feedback(FeedbackCreate, table=True):
     __tablename__ = f"{TABLE_PREFIX}feedback"
     __table_args__ = {"comment": "用户反馈表"}
 
-    id: int = Field(..., primary_key=True, description='表主键ID',
-                    sa_column_kwargs={'comment': '表主键ID'}, sa_type=BigInteger)
+    id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
+                    sa_column_args=[Identity(always=False)])
     account_id: Optional[str] = Field(None, index=True, description="提交用户ID，匿名则为空", sa_column_kwargs={'comment': '用户ID'})
 
     # 后端从Request获取，前端不传
@@ -123,7 +123,6 @@ class FeedbackResponse(SQLModel):
     admin_reply: Optional[str]
     handle_user_id: Optional[int]
     user_agent: Optional[str]
-    from_ip: Optional[str]
     create_at: datetime
     update_at: datetime
 
@@ -162,8 +161,8 @@ class Snap(SQLModel, table=True):
     __tablename__ = f"{TABLE_PREFIX}snap"
     __table_args__ = {"comment": "天亮即焚表"}
 
-    id: int = Field(..., primary_key=True, description='表主键ID',
-                    sa_column_kwargs={'comment': '表主键ID'}, sa_type=BigInteger)
+    id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
+                    sa_column_args=[Identity(always=False)])
     content: dict | None = Field(default={}, description='json内容', max_length=1024,
                                  sa_column_kwargs={'comment': '内容'}, sa_type=JSON)
     emotion: int | None = Field(default=0, sa_type=SMALLINT, ge=0, le=255,

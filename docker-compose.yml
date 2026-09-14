@@ -1,6 +1,6 @@
 services:
   app:
-    image: fastapi_tuiwen:26.9.3
+    image: fastapi_tuiwen:26.9.4
     restart: unless-stopped
     container_name: dev-tw-common-api-01
     ports:
@@ -37,13 +37,13 @@ services:
       - "5432:5432"
     volumes:
       - /d/Git/secrets/postgres_password.txt:/run/secrets/postgres_password.txt:ro
-      - pg_data:/var/lib/postgresql
+      - prod-tw-common-postgres-data:/var/lib/postgresql
     command:
       - postgres
       - -c
       - timezone=UTC
       - -c
-      - log_timezone=Asia/Shanghai  # 生产环境: UTF 开发环境日志时间:Asia/Shanghai; 数据库工具连接时命令: SET TIME ZONE 'Asia/Shanghai';
+      - log_timezone=Asia/Shanghai # 生产环境: UTF 开发环境日志时间:Asia/Shanghai; 数据库工具连接时命令: SET TIME ZONE 'Asia/Shanghai';
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U postgres -d tuiwen" ]
       interval: 10s
@@ -59,7 +59,7 @@ services:
       - "6379:6379"
     volumes:
       - /d/Git/secrets/redis_password.txt:/run/secrets/redis_password.txt:ro
-      - redis_data:/data
+      - prod-tw-common-redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -67,6 +67,6 @@ services:
       retries: 5
 
 volumes:
-  pg_data:
-  redis_data:
   prod-tw-common-api-data:
+  prod-tw-common-postgres-data:
+  prod-tw-common-redis-data:

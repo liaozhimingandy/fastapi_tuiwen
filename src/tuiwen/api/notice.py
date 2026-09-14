@@ -13,12 +13,10 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
-from service.notice import NoticeService
+from src.tuiwen.service.notice import NoticeService
 from src.tuiwen.core import Tag
-from src.tuiwen.dependencies import get_session, get_notice_dao
+from src.tuiwen.dependencies import get_notice_dao, get_notice_service
 from src.tuiwen.models import PageResponse
 from src.tuiwen.notice.models import Notice
 
@@ -29,7 +27,7 @@ router_notice = APIRouter(prefix="/v2/notices", tags=[Tag.more])
 # 获取系统通知
 @router_notice.get("/system/", summary="返回公告通知", response_model=PageResponse[Notice],
                    response_model_include={'items', 'total'})
-async def get_system_notices(svc: NoticeService = Depends(get_notice_dao),
+async def get_system_notices(svc: NoticeService = Depends(get_notice_service),
                              page: int = Query(default=1,ge=1),
                              size: int = Query(default=10,ge=1,le=20),):
     """
@@ -57,15 +55,16 @@ async def get_system_notices(svc: NoticeService = Depends(get_notice_dao),
     | VIP | 3 | 付费VIP用户 |
     """
 
-    items = await svc.get_system_notices(limit=size, offset=(page-1)*size)
-    return PageResponse(items=items, total=len(items))
+    result = await svc.get_system_notices(limit=size, offset=(page-1)*size)
+    return PageResponse(items=result.items, total=result.total)
 
 @router_notice.get("/accounts/{account_id}/", summary="返回指定用户的通知", response_model=PageResponse[Notice],
                    response_model_include={'items', 'total'})
-async def get_account_notices(account_id: Annotated[str, "用户id"], svc: NoticeService = Depends(get_notice_dao),
+async def get_account_notices(account_id: Annotated[str, "用户id"], svc: NoticeService = Depends(get_notice_service),
                               page: int = Query(default=1,ge=1), size: int = Query(default=20,ge=1,le=100),):
-    items = await svc.get_user_notices(account_id, limit=size, offset=(page-1)*size)
-    return PageResponse(items=items, total=len(items))
+    result = await svc.get_user_notices(account_id, limit=size, offset=(page-1)*size)
+    return PageResponse(items=result.items, total=len(result.items))
+
 
 if __name__ == "__main__":
     pass
