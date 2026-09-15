@@ -195,6 +195,47 @@ async def get_post_dao(
         read_db=read_db,
     )
 
+async def get_comment_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+    from src.tuiwen.dal.comment import CommentDAO
+    return CommentDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
+
+async def get_upload_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+    from src.tuiwen.dal.upload import UploadDAO
+    return UploadDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
+
+async def get_follow_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+    from src.tuiwen.dal.follow import FollowDAO
+    return FollowDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
+
+async def get_account_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+    from src.tuiwen.dal.account import AccountDAO
+    return AccountDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
+
+
 def get_notice_service(dao = Depends(get_notice_dao)):
     from src.tuiwen.service.notice import NoticeService
     return NoticeService(dao=dao)
@@ -210,3 +251,20 @@ def get_like_service(dao = Depends(get_like_dao)):
 def get_post_service(dao = Depends(get_post_dao)):
     from src.tuiwen.service.post import PostService
     return PostService(dao=dao)
+
+def get_comment_service(dao = Depends(get_comment_dao)):
+    from src.tuiwen.service.comment import CommentService
+    return CommentService(dao=dao)
+
+
+def get_upload_service(dao = Depends(get_upload_dao)):
+    from src.tuiwen.service.upload import UploadService
+    return UploadService(dao=dao)
+
+def get_follow_service(dao = Depends(get_follow_dao)):
+    from src.tuiwen.service.follow import FollowService
+    return FollowService(dao=dao)
+
+def get_account_service(dao = Depends(get_account_dao)):
+    from src.tuiwen.service.account import AccountService
+    return AccountService(dao=dao)

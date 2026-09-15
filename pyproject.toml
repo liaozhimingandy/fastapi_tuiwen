@@ -7,6 +7,7 @@ requires-python = ">=3.14.2"
 
 dependencies = [
     "asyncpg>=0.31.0",
+    "depends",
     "fastapi[all]>=0.141.1",
     "loguru>=0.7.3",
     "pillow>=12.3.0",
@@ -18,5 +19,6 @@ dependencies = [
     "redis>=8.1.0",
     "setuptools>=83.0.0",
     "sqlmodel>=0.0.39",
+    "uuid",
     "uvicorn>=0.52.0",
 ]

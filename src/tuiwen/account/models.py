@@ -62,7 +62,7 @@ class AccountPublicCommon(SQLModel):
             }
             return mapping[self.value]
 
-    username: str | None = Field(None, index=True, max_length=32, description='用户名',
+    username: str = Field(None, index=True, max_length=32, description='用户名',
                                  sa_column_kwargs={'comment': '用户名'}, unique=True)
     nick_name: str | None = Field(None, max_length=30, description='昵称', sa_column_kwargs={'comment': '昵称'})
     gmt_birth: date | None = Field(None, description='出生日期', sa_column_kwargs={'comment': '出生日期'})

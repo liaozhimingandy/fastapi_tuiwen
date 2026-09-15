@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from typing import Any, Generic, Sequence, TypeVar, cast
 
 from sqlalchemy.inspection import inspect
-from sqlmodel import delete, func, select, update
+from sqlmodel import delete, func, select, update, exists
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 T = TypeVar("T")
@@ -206,6 +206,11 @@ class BaseDAO(Generic[T]):
         items = await self.get_list(limit=limit, offset=offset, order_by=order_by, **filters)
         total = await self.count(**filters)
         return PageResult(items=items, total=total)
+
+    async def exists(self, **filters) -> bool:
+        self._validate_fields(filters)
+        stmt = select(exists(select(self.model.id).filter_by(**filters)))
+        return await self._execute_scalar(stmt) or False
 
     # =========================================================
     # 写操作，全部不commit，事务交给Service层
