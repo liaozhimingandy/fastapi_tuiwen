@@ -13,12 +13,12 @@
 """
 from typing import Annotated
 
-from fastapi import APIRouter, status, UploadFile, HTTPException, Depends
+from fastapi import APIRouter, status, UploadFile, HTTPException, Depends, Request
 
 from src.tuiwen.dependencies import get_upload_service
-from src.tuiwen.service.upload import UploadService
+from src.tuiwen.service.file import FileService
 from src.tuiwen.core import Settings
-from src.tuiwen.post.models import ImageBase
+from src.tuiwen.post.models import FileBase
 from src.tuiwen.core import Tag
 from src.tuiwen.utils import allowed_file
 from src.tuiwen.core import get_settings
@@ -27,10 +27,11 @@ from src.tuiwen.core import get_settings
 router_upload = APIRouter(prefix="/upload", tags=[Tag.upload])
 
 
-@router_upload.post('/image/', summary="图片上传", response_model=ImageBase, status_code=status.HTTP_201_CREATED)
+@router_upload.post('/image/', summary="图片上传", response_model=FileBase, status_code=status.HTTP_201_CREATED)
 async def upload_image(file: Annotated[UploadFile, "图片文件"],
+                       request: Request,
                        settings: Annotated[Settings, "全局的设置对象"] = Depends(get_settings),
-                       svc: UploadService = Depends(get_upload_service)):
+                       svc: FileService = Depends(get_upload_service)):
     """
     上传单张图片
 
@@ -40,16 +41,16 @@ async def upload_image(file: Annotated[UploadFile, "图片文件"],
         svc: 上传业务服务
 
     Returns:
-        ImageBase: image_url(可访问地址) + image_md5(内容指纹, 用于前端去重/秒传判断)
+        FileBase: image_url(可访问地址) + image_md5(内容指纹, 用于前端去重/秒传判断)
+        :param svc:
+        :param settings:
+        :param file:
+        :param request:
     """
     # 检查文件类型
     if not allowed_file(file, file_type=settings.ALLOWED_IMAGE_FORMATS.split(",")):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail=f"invalid file type. Only {settings.ALLOWED_IMAGE_FORMATS} images are allowed.")
 
-    instance = await svc.upload(file)
-    # 事务出口: 新图片引用由 DAO 写入但不提交, 这里统一提交;
-    # 命中 MD5 秒传时没有写操作, commit 为空操作, 无副作用
-    await svc.dao.commit()
+    return await svc.upload(file, uploader_account_id=request.state.account_id)
 
-    return ImageBase(image_url=instance.image_url, image_md5=instance.image_md5)

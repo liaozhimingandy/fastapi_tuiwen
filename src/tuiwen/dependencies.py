@@ -209,8 +209,8 @@ async def get_upload_dao(
     write_db: AsyncSession = Depends(get_write_session),
     read_db: AsyncSession = Depends(get_read_session),
 ):
-    from src.tuiwen.dal.upload import UploadDAO
-    return UploadDAO(
+    from src.tuiwen.dal.file import FileDAO
+    return FileDAO(
         write_db=write_db,
         read_db=read_db,
     )
@@ -258,8 +258,8 @@ def get_comment_service(dao = Depends(get_comment_dao)):
 
 
 def get_upload_service(dao = Depends(get_upload_dao)):
-    from src.tuiwen.service.upload import UploadService
-    return UploadService(dao=dao)
+    from src.tuiwen.service.file import FileService
+    return FileService(dao=dao)
 
 def get_follow_service(dao = Depends(get_follow_dao)):
     from src.tuiwen.service.follow import FollowService

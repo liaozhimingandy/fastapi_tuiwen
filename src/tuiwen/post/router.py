@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, Request, Quer
 
 from src.tuiwen.core import get_settings, Settings, Tag, add_instance
 from src.tuiwen.dependencies import get_session
-from src.tuiwen.post.models import Post, PostCreate, Comment, Like, Image as TWImage, ImageBase, PostRightStatusUpdate, \
+from src.tuiwen.post.models import Post, PostCreate, Comment, Like, File as TWImage, FileBase, PostRightStatusUpdate, \
     CommentInput, LikeInput, Follow, FollowCountModel, LikeCountModel, RightStatusEnum
 from src.tuiwen.models import PageResponse
 from src.tuiwen.utils import allowed_file
@@ -223,7 +223,7 @@ async def get_like_count(obj_id: Annotated[str, "对象id"], request: Annotated[
 router_upload = APIRouter(prefix="/upload", tags=[Tag.upload])
 
 
-@router_upload.post('/image/', summary="图片上传", response_model=ImageBase, status_code=status.HTTP_201_CREATED)
+@router_upload.post('/image/', summary="图片上传", response_model=FileBase, status_code=status.HTTP_201_CREATED)
 async def upload_image(file: Annotated[UploadFile, "图片文件"],
                        session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session),
                        settings: Annotated[Settings, "全局的设置对象"] = Depends(get_settings)):
@@ -260,7 +260,7 @@ async def upload_image(file: Annotated[UploadFile, "图片文件"],
         instance = TWImage(image_url=image_url, image_name=file.filename, image_md5=image_md5)
         instance = await add_instance(session, instance)
 
-    return ImageBase(image_url=instance.image_url, image_md5=image_md5)
+    return FileBase(image_url=instance.image_url, image_md5=image_md5)
 
 
 ########################################################################################################################

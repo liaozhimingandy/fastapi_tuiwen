@@ -22,7 +22,7 @@ from src.tuiwen.api.notice import router_notice
 from src.tuiwen.api.like import router_like
 from src.tuiwen.api.post import router_post, router_public as post_router_public
 from src.tuiwen.api.snap import router_public as snap_router_public
-from src.tuiwen.api.upload import router_upload
+from src.tuiwen.api.file import router_upload
 
 # 全部业务接口的统一前缀, 最终对外路径形如 /api/v2/posts/
 api_router = APIRouter(prefix="/api/v2")

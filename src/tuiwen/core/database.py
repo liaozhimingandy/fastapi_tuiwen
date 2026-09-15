@@ -55,7 +55,7 @@ def _import_all_models() -> None:
     单独抽成函数，避免循环导入，同时保证建表前所有模型已加载
     """
     from src.tuiwen.account.models import Account
-    from src.tuiwen.post.models import Post, Comment, Like, Image, Follow
+    from src.tuiwen.post.models import Post, Comment, Like, File, Follow
     from src.tuiwen.log.models import Log
 
 async def init_db():

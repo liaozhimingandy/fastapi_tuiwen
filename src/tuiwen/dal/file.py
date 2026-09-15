@@ -9,9 +9,9 @@
     UploadService → UploadDAO → PostgreSQL
 """
 from src.tuiwen.dal.base import BaseDAO
-from src.tuiwen.post.models import Image
+from src.tuiwen.post.models import File
 
 
-class UploadDAO(BaseDAO[Image]):
+class FileDAO(BaseDAO[File]):
     # 绑定 DAO 对应的 ORM 模型, BaseDAO 依赖该属性获取表名与字段元信息
-    model = Image
+    model = File
