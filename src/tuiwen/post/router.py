@@ -87,7 +87,7 @@ async def get_account_posts(account_id: Annotated[str, Path(..., description="�
         statement = statement.where(Post.post_id < cursor)
 
     # 按创建时间倒序 + 限制数量
-    statement = statement.order_by(-Post.id).limit(limit)
+    statement = statement.order_by(Post.id.desc()).limit(limit)
 
     dataset = (await session.exec(statement)).all()
 
@@ -109,7 +109,7 @@ async def get_posts(request: Annotated[Request, "请求对象"],
         statement = statement.where(Post.post_id < cursor)
 
     # 按创建时间倒序 + 限制数量
-    statement = statement.order_by(-Post.id).limit(limit)
+    statement = statement.order_by(Post.id.desc()).limit(limit)
 
     dataset = (await session.exec(statement)).all()
     total = len(dataset)  # 实际返回数量（分页场景建议用count查询，此处简化）
@@ -176,7 +176,7 @@ async def get_comments(
     if cursor:
         statement = statement.where(Comment.comment_id > cursor)
 
-    statement = statement.order_by(-Comment.id).limit(limit)
+    statement = statement.order_by(Comment.id.desc()).limit(limit)
     dataset = (await (session.exec(statement))).all()
 
     return PageResponse(items=dataset, total=len(dataset))

@@ -7,22 +7,20 @@
     @Author：liaozhimingandy
     @Email: liaozhimingandy@gmail.com
     @Date：2026/9/14 20:04
-    @Desc: 
+    @Desc: 「天亮即焚」快照 API 路由层(公开接口) —— 发布 / 列表 / 点赞
 =================================================
 """
 from typing import Annotated
 
-from PIL.ImageChops import offset
 from fastapi import APIRouter, Request, Depends, Query
 
 from src.tuiwen.core import Tag
-from src.tuiwen.dependencies import get_notice_service, get_snap_service
+from src.tuiwen.dependencies import get_snap_service
 from src.tuiwen.models import PageResponse
 from src.tuiwen.more.models import Snap, SnapCreate
-from src.tuiwen.service.notice import NoticeService
 from src.tuiwen.service.snap import SnapService
 
-router_public = APIRouter(prefix="/v2", tags=[Tag.more])
+router_public = APIRouter(tags=[Tag.more])
 
 
 @router_public.post("/snaps/", response_model=Snap, status_code=201, summary="天亮即焚提交")
@@ -32,6 +30,16 @@ async def creat_snaps(
         svc: SnapService = Depends(get_snap_service),
 ):
     """
+    发布一条「天亮即焚」内容
+
+    Args:
+        payload: 内容入参(正文 + 情绪标识)
+        request: 请求对象, 用于提取来源 IP
+        svc: 快照业务服务
+
+    Returns:
+        Snap: 落库后的快照实体
+
     # 情绪枚举值
     | 枚举常量 | 值 | 中文说明 |
     |---|---|---|
@@ -53,6 +61,7 @@ async def creat_snaps(
     | HOPEFUL | 15 | 抱有期待 |
     """
 
+    # 排除服务端生成的字段(主键/来源IP), 避免客户端伪造
     instance = Snap(
         **payload.model_dump(exclude={"from_ip", "id"})
     )
@@ -63,13 +72,24 @@ async def creat_snaps(
         client_ip = request.client.host
 
     instance.from_ip = client_ip
-    item = svc.create_snap(instance)
+    item = await svc.create_snap(instance)
+    # 事务出口: DAO 只 flush, 由 API 层统一提交(与 register 一致)
+    await svc.dao.commit()
 
     return item
 
 
 @router_public.get("/snaps/latest/", response_model=PageResponse[Snap], summary="获取最新的十条数据")
 async def get_snaps_latest(svc: SnapService = Depends(get_snap_service)):
+    """
+    获取最新的 10 条快照(首页信息流)
+
+    Args:
+        svc: 快照业务服务
+
+    Returns:
+        PageResponse[Snap]: 快照列表与总数
+    """
     result = await svc.get_snaps_latest()
     return PageResponse(items=result.items, total=result.total)
 
@@ -80,11 +100,35 @@ async def get_snaps(limit: Annotated[int, "返回多少条记录"] = Query(10, g
                     offset: Annotated[int | None, "数据最旧的那个id"] = Query(1, ge=0),
                     svc: SnapService = Depends(get_snap_service)
                     ):
+    """
+    分页获取快照列表
+
+    Args:
+        limit: 每页数量, 1~100
+        offset: 偏移量, 从 0 开始
+        svc: 快照业务服务
+
+    Returns:
+        PageResponse[Snap]: 快照列表与总数
+    """
     result = await svc.get_snaps(limit=limit, offset=offset)
     return PageResponse(items=result.items, total=result.total)
 
 
 @router_public.get("/snaps/{pk}/like/", summary="帖子点赞")
 async def snaps_like(pk: Annotated[int, '帖子id'], svc: SnapService = Depends(get_snap_service)):
-    _count = svc.inc_snaps_like(pk)
+    """
+    给指定快照点赞(次数 +1)
+
+    Args:
+        pk: 快照主键 id
+        svc: 快照业务服务
+
+    Returns:
+        dict: success=是否成功, like=最新点赞数
+    """
+    # 缺少 await 时 _count 是协程对象, 且 UPDATE 实际不会执行
+    _count = await svc.inc_snaps_like(pk)
+    # 事务出口: 由 API 层统一提交
+    await svc.dao.commit()
     return {"success": True, "like": _count}

@@ -141,7 +141,8 @@ def hash_password(front_md5: str, salt: str) -> str:
 
 
 def create_default_users():
-    from logger import logger
+    # 局部导入避免 utils 与 logger 在包初始化阶段相互引用; 路径必须写完整的包路径
+    from src.tuiwen.utils.logger import logger
     import json
     import urllib.request
     from hashlib import md5

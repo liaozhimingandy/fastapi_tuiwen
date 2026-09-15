@@ -103,7 +103,7 @@ async def creat_snaps(
 
 @router_public.get("/snaps/latest/", response_model=PageResponse[Snap], summary="获取最新的十条数据")
 async def get_snaps_latest(session: Annotated[AsyncSession, "会话依赖"] = Depends(get_session)):
-    stmt = select(Snap).order_by(-Snap.id).limit(10)
+    stmt = select(Snap).order_by(Snap.id.desc()).limit(10)
     dataset = (await session.exec(stmt)).all()
 
     return PageResponse(items=dataset, total=len(dataset))
@@ -119,7 +119,7 @@ async def get_snaps(limit: Annotated[int, "返回多少条记录"] = Query(10, g
     statement = select(Snap).where(Snap.id < cursor)
 
     # 按创建时间倒序 + 限制数量
-    statement = statement.order_by(-Snap.id).limit(limit)
+    statement = statement.order_by(Snap.id.desc()).limit(limit)
 
     dataset = (await session.exec(statement)).all()
 

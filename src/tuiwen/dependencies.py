@@ -268,3 +268,7 @@ def get_follow_service(dao = Depends(get_follow_dao)):
 def get_account_service(dao = Depends(get_account_dao)):
     from src.tuiwen.service.account import AccountService
     return AccountService(dao=dao)
+
+def get_feedback_service(dao = Depends(get_feedback_dao)):
+    from src.tuiwen.service.feedback import FeedbackService
+    return FeedbackService(dao=dao)
