@@ -6,9 +6,9 @@
     2. 不写业务逻辑, 不直接操作数据库
 
 接口清单:
-    POST   /api/v2/v2/comments/                      新增评论
-    DELETE /api/v2/v2/comments/{comment_id}/         删除评论(仅本人)
-    GET    /api/v2/v2/comments/{obj_type}/{obj_id}/  分页查询某对象的评论
+    POST   /api/v2/comments/                      新增评论
+    DELETE /api/v2/comments/{comment_id}/         删除评论(仅本人)
+    GET    /api/v2/comments/{obj_type}/{obj_id}/  分页查询某对象的评论
 
 分层位置:
     API → CommentService → CommentDAO → PostgreSQL
@@ -26,7 +26,7 @@ from src.tuiwen.post.models import Comment, CommentInput
 
 # NOTE: 本路由自身已带 /v2 前缀, 又挂在 /api/v2 之下, 最终对外路径为 /api/v2/v2/comments/...
 #       与 post 模块的 /api/v2/posts/... 风格不一致, 新增接口时需留意
-router_comment = APIRouter(prefix="/v2/comments", tags=[Tag.comment])
+router_comment = APIRouter(prefix="/comments", tags=[Tag.comment])
 
 
 @router_comment.post('/', summary="新增评论", response_model=Comment, status_code=status.HTTP_201_CREATED)

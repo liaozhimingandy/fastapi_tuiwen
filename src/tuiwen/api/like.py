@@ -19,7 +19,7 @@ from src.tuiwen.dependencies import get_like_service
 from src.tuiwen.post.models import LikeInput, Like, LikeCountModel
 from src.tuiwen.service.like import LikeService
 
-router_like = APIRouter(prefix="/v2/likes", tags=[Tag.like])
+router_like = APIRouter(prefix="/likes", tags=[Tag.like])
 
 
 @router_like.post('/', summary="点赞", response_model=Like, status_code=status.HTTP_201_CREATED)
@@ -38,9 +38,7 @@ async def create_like(payload: Annotated[LikeInput, "赞的输入对象"],
     instance = Like(
         **payload.model_dump(exclude={})
     )
-    # 走 Service 层, 保证「DAO 只 flush、事务由 API 层提交」的分层约定
     result = await svc.create(instance)
-    await svc.dao.commit()
     return result
 
 

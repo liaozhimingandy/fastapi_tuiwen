@@ -564,7 +564,7 @@ class BaseDAO(ABC, Generic[T]):
         Returns:
             T: 更新后的同一实例
         """
-        self.write_db.add(obj)
+        obj = await self.write_db.merge(obj)
         await self.write_db.flush()
         await self.write_db.refresh(obj)
         return obj

@@ -34,9 +34,9 @@ from src.tuiwen.account.models import AccountCreate, Account, AccountPublicCommo
     UpdateCredential, AccountPasswordChange, AccountPasswordReset, RefreshToken, AccessToken
 from src.tuiwen.core import get_settings
 from src.tuiwen.dal.account import AccountDAO
-from src.tuiwen.utils import get_random_salt, hash_password, generate_jwt_token, verify_jwt_token
+from src.tuiwen.utils.jwt_token import generate_jwt_token, verify_jwt_token
 from src.tuiwen.utils.redis_util import RedisKey, redis_get, redis_set, redis_delete
-from src.tuiwen.utils.utils import validate_username
+from src.tuiwen.utils.utils import validate_username, get_random_salt, hash_password
 
 # 邮箱正则（通用标准正则，兼容绝大多数邮箱）
 MAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
@@ -80,7 +80,7 @@ class AccountService:
 
         # 查重
         exist_user = await self.dao.get_account_by_email_or_username(
-            email=instance.mail,
+            mail=instance.mail,
             username=instance.username
         )
 
@@ -105,6 +105,8 @@ class AccountService:
         # 新增数据库记录
         # 注意：按照你的DAO规范，service层不做commit，commit交给上层/路由外层事务
         await self.dao.create(instance)
+        await self.dao.write_db.commit()
+        await self.dao.write_db.refresh(instance)
         return instance
 
     # ---------------------------------------------------------
@@ -326,7 +328,7 @@ class AccountService:
             BizError: 令牌非法/过期/跨账户(401)
         """
         try:
-            payload = verify_jwt_token(refresh_token, grant_type='refresh_token')
+            payload = verify_jwt_token(data=refresh_token, grant_type='refresh_token')
             assert account_id == payload.get('account_id'), '请检查token是否为该账户的token同时为刷新令牌,请不要跨账户操作'
         except AssertionError as e:
             raise BizError(code=401, message=str(e))

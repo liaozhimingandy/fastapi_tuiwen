@@ -32,12 +32,12 @@ from src.tuiwen.account.models import RefreshToken, AccountPublic, AccountCreate
 from src.tuiwen.core import Tag
 from src.tuiwen.models import PageResponse
 from src.tuiwen.utils.mail_service import send_reset_pwd_mail
-from src.tuiwen.utils.utils import validate_username, convert_to_cst_time
+from src.tuiwen.utils.utils import convert_to_cst_time
 
-router_oauth = APIRouter(prefix="/oauth", tags=[Tag.oauth])
+router_account = APIRouter(tags=[Tag.oauth])
 # 免登录路由: 各接口自己带了完整路径(如 /accounts/register/), 因此这里不能给 prefix='/'
 # —— FastAPI 会断言「prefix 不能以 / 结尾」, 直接 import 就报错
-router_public = APIRouter()
+router_public = APIRouter(tags=[Tag.account, ])
 
 # =========================================================
 # 认证 / 令牌
@@ -66,8 +66,8 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router_oauth.get("/refresh-token/{account_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
-                  tags=[Tag.oauth], response_model=AccessToken)
+@router_public.get("/oauth/refresh-token/{account_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
+                    tags=[Tag.oauth], response_model=AccessToken)
 async def refresh_token(account_id: Annotated[str, "账户ID"],
                         token: Annotated[str, "刷新令牌"] = Depends(oauth2_scheme),
                         svc: AccountService = Depends(get_account_service)):
@@ -85,18 +85,18 @@ async def refresh_token(account_id: Annotated[str, "账户ID"],
     """
     # token 从 Authorization 头解析; 服务内部会校验其 grant_type 必须为 refresh_token
     try:
-        return await svc.refresh_token(account_id, token)
+        return await svc.refresh_token(account_id=account_id, refresh_token=token)
     except BizError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router_oauth.get("/test-oauth/", summary="测试接口(基础权限)")
+@router_account.get("/oauth/test-oauth/", summary="测试接口(基础权限)")
 async def test_oauth(user: Annotated[Account, "账户信息"] = Depends(get_current_user)) -> Any:
     """连通性自测: 需要有效的 access_token(basic 权限)。"""
     return {"message": f"hello word, 欢迎您,{user.account_id}"}
 
 
-@router_oauth.get("/test-oauth-admin/", summary="测试接口(需要更高权限)")
+@router_account.get("/oauth/test-oauth-admin/", summary="测试接口(需要更高权限)")
 async def test_oauth_admin(
         user: Annotated[Account, "认证的用户信息"] = Security(get_current_user, scopes=['admin'])) -> Any:
     """权限自测: 令牌中必须包含 admin scope, 否则返回 401。"""
@@ -122,11 +122,6 @@ async def root(request: Annotated[Request, "请求对象"]) -> RedirectResponse:
 
 ########################################################################################################################
 
-# NOTE: router_account 定义了账号资料类接口, 但未被 api/router.py 引入装配,
-#       因此其下所有接口(更新账户/搜索/改密/用户名查重/更新认证信息)当前不会注册到应用
-router_account = APIRouter(prefix="/accounts", tags=[Tag.account, ])
-
-
 # =========================================================
 # 注册 / 查询
 # =========================================================
@@ -145,16 +140,10 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
         AccountPublic: 对外可暴露的账号信息(不含密码与盐值)
     """
     try:
-        instance = await svc.register(account)
-        # 事务出口统一走 DAO 的 commit(): DAO 内部只 flush, 提交时机由上层控制。
-        # 这里不再需要额外 refresh —— BaseDAO.create() 已 flush + refresh,
-        # 且会话配置 expire_on_commit=False, commit 后实例属性不会失效。
-        await svc.dao.commit()
-        return instance
-
+        return await svc.register(account)
     except BizError as e:
         # 业务异常回滚, 保证邮箱/用户名唯一性校验不会留下脏数据
-        await svc.dao.rollback()
+        await svc.dao.write_db.rollback()
         # API层统一转HTTP异常
         raise HTTPException(
             status_code=e.code,
@@ -187,7 +176,7 @@ async def get_account(account_id: Annotated[str, "账户ID"],
     return instance
 
 
-@router_account.put("/{account_id}/", summary="更新账户基本信息", response_model=AccountPublic)
+@router_account.put("/accounts/{account_id}/", summary="更新账户基本信息", response_model=AccountPublic, tags=[Tag.account])
 async def update_account(account_id: Annotated[str, "账户ID"],
                          account: Annotated[AccountPublicCommon, Body(..., description="更新的账户信息")],
                          svc: AccountService = Depends(get_account_service),
@@ -217,7 +206,8 @@ async def update_account(account_id: Annotated[str, "账户ID"],
         raise HTTPException(status_code=e.code, detail=e.message)
 
 
-@router_account.get("/search/{keyword}/", summary="通过关键词搜索账户", response_model=PageResponse[AccountPublic])
+@router_account.get("/accounts/search/{keyword}/", summary="通过关键词搜索账户", response_model=PageResponse[AccountPublic],
+                    tags=[Tag.account])
 async def search(keyword: Annotated[str, "关键词"], *, svc: AccountService = Depends(get_account_service),
                  offset: Annotated[int, "偏移量"] = 0,
                  limit: Annotated[int, Query(le=10)] = 10, ) -> PageResponse[AccountPublic]:
@@ -286,8 +276,8 @@ async def password_reset(account: Annotated[AccountPasswordReset, Body(..., desc
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router_account.put("/password/change/", summary="账号密码修改", response_model=AccountPublic,
-                    status_code=status.HTTP_200_OK)
+@router_account.put("/accounts/password/change/", summary="账号密码修改", response_model=AccountPublic,
+                    status_code=status.HTTP_200_OK, tags=[Tag.account])
 async def password_change(request: Annotated[Request, "请求对象"],
                           account: Annotated[AccountPasswordChange, Body(..., description="修改密码的必要入参")],
                           svc: AccountService = Depends(get_account_service)):
@@ -305,7 +295,7 @@ async def password_change(request: Annotated[Request, "请求对象"],
         AccountPublic: 更新后的账号信息
     """
     try:
-        return await svc.change_password(request.state.account_id, request.state.salt, account)
+        return await svc.change_password(account_id=request.state.account_id, salt=request.state.salt, account=account)
     except BizError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -330,7 +320,7 @@ async def two_step_verification(data: Annotated[TurnstileVerifyToken, Body(..., 
     return await svc.two_step_verification(data)
 
 
-@router_account.get('/check-username/{username}/', summary="检测用户名是否已经存在", tags=[Tag.account])
+@router_account.get('/accounts/check-username/{username}/', summary="检测用户名是否已经存在", tags=[Tag.account])
 async def check_username(username: Annotated[str, "检测用户名是否已经存在"],
                          svc: AccountService = Depends(get_account_service)) -> dict:
     """
@@ -353,7 +343,7 @@ async def check_username(username: Annotated[str, "检测用户名是否已经�
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router_account.patch('/credential/', summary="更新用户认证信息",
+@router_account.patch('/accounts/credential/', summary="更新用户认证信息",
                       response_model=AccountPublic, tags=[Tag.account])
 async def credential(data: Annotated[UpdateCredential, "更新用户认证信息"],
                      request: Annotated[Request, "请求对象"],

@@ -20,10 +20,10 @@ from src.tuiwen.models import PageResponse
 from src.tuiwen.more.models import Snap, SnapCreate
 from src.tuiwen.service.snap import SnapService
 
-router_public = APIRouter(tags=[Tag.more])
+router_public = APIRouter(prefix='/snaps', tags=[Tag.more])
 
 
-@router_public.post("/snaps/", response_model=Snap, status_code=201, summary="天亮即焚提交")
+@router_public.post("/", response_model=Snap, status_code=201, summary="天亮即焚提交")
 async def creat_snaps(
         payload: Annotated[SnapCreate, "内容"],
         request: Annotated[Request, "请求对象"],
@@ -72,14 +72,11 @@ async def creat_snaps(
         client_ip = request.client.host
 
     instance.from_ip = client_ip
-    item = await svc.create_snap(instance)
-    # 事务出口: DAO 只 flush, 由 API 层统一提交(与 register 一致)
-    await svc.dao.commit()
 
-    return item
+    return await svc.create_snap(instance)
 
 
-@router_public.get("/snaps/latest/", response_model=PageResponse[Snap], summary="获取最新的十条数据")
+@router_public.get("/latest/", response_model=PageResponse[Snap], summary="获取最新的十条数据")
 async def get_snaps_latest(svc: SnapService = Depends(get_snap_service)):
     """
     获取最新的 10 条快照(首页信息流)
@@ -94,7 +91,7 @@ async def get_snaps_latest(svc: SnapService = Depends(get_snap_service)):
     return PageResponse(items=result.items, total=result.total)
 
 
-@router_public.get("/snaps/", summary="返回帖子", response_model=PageResponse[Snap],
+@router_public.get("/", summary="返回帖子", response_model=PageResponse[Snap],
                    response_model_include={'items', 'total'})
 async def get_snaps(limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
                     offset: Annotated[int | None, "数据最旧的那个id"] = Query(1, ge=0),
@@ -115,7 +112,7 @@ async def get_snaps(limit: Annotated[int, "返回多少条记录"] = Query(10, g
     return PageResponse(items=result.items, total=result.total)
 
 
-@router_public.get("/snaps/{pk}/like/", summary="帖子点赞")
+@router_public.get("/{pk}/like/", summary="帖子点赞")
 async def snaps_like(pk: Annotated[int, '帖子id'], svc: SnapService = Depends(get_snap_service)):
     """
     给指定快照点赞(次数 +1)
@@ -127,8 +124,5 @@ async def snaps_like(pk: Annotated[int, '帖子id'], svc: SnapService = Depends(
     Returns:
         dict: success=是否成功, like=最新点赞数
     """
-    # 缺少 await 时 _count 是协程对象, 且 UPDATE 实际不会执行
     _count = await svc.inc_snaps_like(pk)
-    # 事务出口: 由 API 层统一提交
-    await svc.dao.commit()
     return {"success": True, "like": _count}

@@ -21,9 +21,9 @@ from src.tuiwen.models import PageResponse
 from src.tuiwen.notice.models import Notice
 
 
-# NOTE: 本路由自带 /v2 前缀, 挂在 /api/v2 之下后实际路径为 /api/v2/v2/notices/...
+# NOTE: 本路由自带 /v2 前缀, 挂在 /api/v2 之下后实际路径为 /api/v2/notices/...
 #       与 post 等模块的 /api/v2/xxx 不一致
-router_notice = APIRouter(prefix="/v2/notices", tags=[Tag.more])
+router_notice = APIRouter(prefix="/notices", tags=[Tag.more])
 
 
 # 获取系统通知

@@ -7,9 +7,8 @@ from src.tuiwen.post.router import (router_post, router_like, router_upload, rou
 from src.tuiwen.notice.router import router_notice
 from src.tuiwen.more.router import router_public as router_public_more
 
-from src.tuiwen.api.feedback import router_public as router_public_feedback
-from src.tuiwen.api.notice import router_notice as router_public_notice
-from src.tuiwen.api.snap import router_public as router_public_snap
+from src.tuiwen.api.router import api_router as router_public_api
+
 api_router = APIRouter()
 router_public = APIRouter(dependencies=[])
 router_auth = APIRouter(dependencies=[Depends(check_authentication)])
@@ -29,9 +28,11 @@ router_auth.include_router(router_notice)
 router_public.include_router(router_public_account)
 router_public.include_router(router_public_post)
 router_public.include_router(router_public_more)
-router_public.include_router(router_public_feedback)
-router_public.include_router(router_public_notice)
-router_public.include_router(router_public_snap)
+
+
+router_public.include_router(router_public_api)
+
+
 
 ################################################################################
 api_router.include_router(router_auth)

@@ -52,8 +52,6 @@ async def create_post(post: Annotated[PostCreate, Body(..., description="帖子�
         client_ip = request.client.host
     instance = Post(**post_data, from_ip=client_ip, post_id=str(uuid.uuid7()))
     result = await svc.create(instance)
-    # 事务出口: DAO 只 flush, 由 API 层统一提交
-    await svc.dao.commit()
     return result
 
 

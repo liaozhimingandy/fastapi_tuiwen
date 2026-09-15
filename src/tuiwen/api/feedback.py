@@ -10,7 +10,7 @@
 """
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_feedback_service
@@ -18,10 +18,10 @@ from src.tuiwen.more.models import FeedbackResponse, FeedbackCreate, Feedback, F
 from src.tuiwen.service.feedback import FeedbackService
 
 # 反馈接口不要求登录: 未登录用户同样可以提交
-router_public = APIRouter(tags=[Tag.more])
+router_public = APIRouter(prefix='/feedbacks', tags=[Tag.more])
 
 
-@router_public.post("/feedbacks/", response_model=FeedbackResponse, status_code=201, summary="提交用户反馈")
+@router_public.post("/", response_model=FeedbackResponse, status_code=201, summary="提交用户反馈")
 async def submit_feedback(
         payload: Annotated[FeedbackCreate, "反馈内容"],
         request: Annotated[Request, "请求对象"],
@@ -67,7 +67,7 @@ async def submit_feedback(
         from_ip=request.client.host if request.client else None,
         status=FeedbackStatus.PENDING
     )
-    item = await svc.create_feedback(instance)
-    # 事务出口: DAO 只 flush, 由 API 层统一提交
-    await svc.dao.commit()
-    return item
+    try:
+        return await svc.create_feedback(instance)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

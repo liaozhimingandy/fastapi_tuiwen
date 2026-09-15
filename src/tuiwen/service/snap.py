@@ -31,7 +31,10 @@ class SnapService:
         Returns:
             Snap: 落库后的快照实体(未 commit)
         """
-        return await self.dao.create(snap)
+        instance = await self.dao.create(snap)
+        await self.dao.write_db.commit()
+        await self.dao.write_db.refresh(instance)
+        return instance
 
     async def get_snaps_latest(self):
         """
@@ -65,4 +68,6 @@ class SnapService:
         Returns:
             int | None: 自增后的点赞数; 快照不存在时返回 None
         """
-        return await self.dao.inc_snap_like_count(pk)
+        _count = await self.dao.inc_snap_like_count(pk)
+        await self.dao.write_db.commit()
+        return _count

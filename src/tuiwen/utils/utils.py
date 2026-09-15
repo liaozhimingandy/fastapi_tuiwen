@@ -96,7 +96,7 @@ def convert_to_timezone(value: datetime | None) -> datetime | None:
         return None
 
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=pytz.timezone(get_settings().TIME_ZONE))
 
     return value.astimezone(
         pytz.timezone(get_settings().TIME_ZONE)

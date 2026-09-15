@@ -16,8 +16,9 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Body, status, Depends, Request, Path, Query
+from fastapi import APIRouter, Body, status, Depends, Request, Path, Query, HTTPException
 
+from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dependencies import get_follow_service
 from src.tuiwen.service.follow import FollowService
 from src.tuiwen.post.models import Follow, FollowCountModel
@@ -41,11 +42,10 @@ async def follow(follow: Annotated[Follow, Body(..., description="关注信息")
     # 主键 id 与创建时间由数据库/模型负责生成, 不接受客户端传入
     follow_data = follow.model_dump(exclude={"id", "create_at"})
     instance = Follow(**follow_data)
-
-    result = await svc.create(instance)
-    # 事务出口: DAO 只 flush, 由 API 层统一提交
-    await svc.dao.commit()
-    return result
+    try:
+        return await svc.create(instance)
+    except BizError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router_follow.delete('/{follower_id}/{followee_id}/', summary="取消关注", status_code=status.HTTP_204_NO_CONTENT)

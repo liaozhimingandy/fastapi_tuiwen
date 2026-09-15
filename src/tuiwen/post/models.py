@@ -171,9 +171,8 @@ class LikeInput(SQLModel):
     account_id: str = Field(..., index=True, max_length=32, description='点赞的用户',
                             sa_column_kwargs={'comment': '点赞的用户'})
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                   comment="创建日期时间", nullable=False,
-                                                   server_default=text("NOW()")))
+                                sa_column=Column(DateTime(timezone=True), default=datetime.now,
+                                                 comment="创建日期时间", nullable=False))
 
     @field_serializer('create_at')
     def serialize_datetime(self, value):

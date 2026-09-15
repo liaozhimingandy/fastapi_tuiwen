@@ -11,6 +11,7 @@
 
 from dataclasses import dataclass
 
+from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dal.follow import FollowDAO
 
 
@@ -34,7 +35,12 @@ class FollowService:
         Returns:
             Follow: 落库后的实体(未 commit)
         """
-        return await self.dao.create(obj)
+        try:
+            instance = await self.dao.create(obj)
+            await self.dao.write_db.commit()
+            return instance
+        except Exception as e:
+            raise BizError(code=400, message=str(e))
 
     async def delete(self, follower_id, followee_id, ):
         """

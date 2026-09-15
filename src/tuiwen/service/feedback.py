@@ -29,4 +29,7 @@ class FeedbackService:
         Returns:
             Feedback: 落库后的反馈实体(未 commit)
         """
-        return await self.dao.create(feedback)
+        instance =  await self.dao.create(feedback)
+        await self.dao.write_db.commit()
+        await self.dao.write_db.refresh(instance)
+        return instance

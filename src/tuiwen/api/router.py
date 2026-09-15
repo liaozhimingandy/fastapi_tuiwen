@@ -14,7 +14,7 @@ API 路由总装配入口
 from fastapi import APIRouter, Depends
 
 from src.tuiwen.dependencies import check_authentication
-from src.tuiwen.api.account import router_oauth, router_public as account_router_public
+from src.tuiwen.api.account import router_account, router_public as account_router_public
 from src.tuiwen.api.comment import router_comment
 from src.tuiwen.api.feedback import router_public as feedback_router_public
 from src.tuiwen.api.follow import router_follow
@@ -32,7 +32,7 @@ router_public = APIRouter(dependencies=[])
 router_auth = APIRouter(dependencies=[Depends(check_authentication)])
 
 # -------------------- 需登录认证的模块 --------------------
-router_auth.include_router(router_oauth)    # 令牌刷新、鉴权自测
+router_auth.include_router(router_account)    # 令牌刷新、鉴权自测
 router_auth.include_router(router_comment)  # 评论
 router_auth.include_router(router_post)     # 帖子
 router_auth.include_router(router_follow)   # 关注

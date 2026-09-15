@@ -10,7 +10,6 @@
     @Desc: 测试用例
 =================================================
 """
-import asyncio
 from collections.abc import Generator
 from datetime import datetime
 import random
@@ -36,7 +35,7 @@ from src.tuiwen.utils.redis_util import RedisKey
 
 @pytest.fixture(scope="module")
 def client() -> Generator[TestClient, None, None]:
-    with TestClient(app, client=('127.0.0.1', 9000)) as c:
+    with TestClient(app, client=('127.0.0.1', 9000), base_url='http://127.0.0.1:8000/api/v2') as c:
         yield c
 
 
@@ -71,11 +70,12 @@ def redis_sync_get(key: str):
 
 class TestMain:
     """测试类"""
-    BASE_URL = "http://127.0.0.1:8000"
+    BASE_URL = "http://127.0.0.1:8000/api/v2"
     account_id = ''
     post_id = ''
     comment_id = ''
     md5_hash = md5()
+    snap_id = ""
 
     @pytest.fixture(scope="class", autouse=True)
     def test_register_and_login(self, client: TestClient):
@@ -107,6 +107,7 @@ class TestMain:
             "username": username,
             "password": TestMain.md5_hash.hexdigest(),
         }
+
         r = client.post(f"/oauth/authorize/password/", data=form_data,
                         headers={"Content-Type": "application/x-www-form-urlencoded"})
         assert r.status_code == 200, f"登录失败: {r.text}"
@@ -126,11 +127,10 @@ class TestMain:
 
     def test_refresh_token(self, test_register_and_login) -> None:
         """测试刷新token"""
-
         r = test_register_and_login.get('client').get(f'/oauth/refresh-token/{TestMain.account_id}/refresh_token/',
                                                       headers={"Content-Type": "application/json",
                                                                "Authorization": f"Bearer {test_register_and_login.get('refresh_token')}"})
-        assert r.status_code == 200
+        assert r.status_code == 200, r.json()
         access_token = r.json().get('access_token')
         test_register_and_login.get('client').headers.update({"Authorization": f"Bearer {access_token}"})
 
@@ -209,7 +209,6 @@ class TestMain:
         }
         client = test_register_and_login.get('client')
         r = client.put(f'/accounts/password/reset/', json=data)
-        print(r.json())
         assert r.status_code == status.HTTP_200_OK, r.json().get('detail')
         # 测试验证码不对的情况
         data['code'] = "666777"
@@ -232,6 +231,7 @@ class TestMain:
         assert r.status_code == status.HTTP_201_CREATED
         TestMain.post_id = r.json().get('post_id')
 
+
     def test_get_posts_latest(self, test_register_and_login) -> None:
         """获取最新帖子"""
         client = test_register_and_login.get('client')
@@ -240,6 +240,7 @@ class TestMain:
 
     def test_get_account_posts(self, test_register_and_login) -> None:
         client = test_register_and_login.get('client')
+
         r = client.get(f'/posts/accounts/{TestMain.account_id}/', params={'limit': 10, 'cursor': TestMain.post_id})
         assert r.status_code == 200
         assert r.json()['total'] == 0, "帖子数量为0"
@@ -259,7 +260,6 @@ class TestMain:
         """删除帖子"""
         client = test_register_and_login.get('client')
         r = client.delete(f"/posts/{TestMain.post_id}/")
-        print(f"id=>>{TestMain.post_id}")
         assert r.status_code == status.HTTP_204_NO_CONTENT
 
     def test_create_comment(self, test_register_and_login) -> None:
@@ -282,7 +282,6 @@ class TestMain:
         r = client.get(f'/comments/1/{self.post_id}/', params={'limit': 10, 'cursor': TestMain.comment_id})
         assert r.status_code == 200 and r.json().get('total') == 0, '不应该有数据'
         r = client.get(f'/comments/1/{self.post_id}/', params={'limit': 10})
-        print(r.json())
         assert r.status_code == 200 and r.json().get('total') == 0, '可能有数据'
 
     def test_delete_comment(self, test_register_and_login) -> None:
@@ -335,7 +334,6 @@ class TestMain:
         client = test_register_and_login.get('client')
         r = client.post(f'/follows/', json=data)
         assert r.status_code == status.HTTP_201_CREATED
-
         # 400
         r = client.post(f'/follows/', json=data)
         assert r.status_code == status.HTTP_400_BAD_REQUEST
@@ -365,8 +363,9 @@ class TestMain:
         "测试提交反馈信息"
         client = test_register_and_login.get('client')
         payload = {
-            'content': "测试内容",
-            'contact': "test@alsoapp.com"
+            "content": "测试内容",
+            "contact": "test@alsoapp.com",
+            "feedback_type": 1
         }
         r = client.post('/feedbacks/', json=payload)
         assert r.status_code == status.HTTP_201_CREATED
@@ -381,6 +380,7 @@ class TestMain:
         }
         r = client.post('/snaps/', json=payload)
         assert r.status_code == status.HTTP_201_CREATED
+        TestMain.snap_id = r.json().get('id')
 
     def test_get_snaps_latest(self, test_register_and_login):
         "获取最新的十条"
@@ -397,7 +397,7 @@ class TestMain:
     def test_snaps_like(self, test_register_and_login):
         "获取帖子数据"
         client = test_register_and_login.get('client')
-        r = client.get('/snaps/1/like/')
+        r = client.get(f'/snaps/{TestMain.snap_id}/like/')
         assert r.status_code == status.HTTP_200_OK
 
     # @pytest.mark.skip(reason="测试完成后删除测试用户")
