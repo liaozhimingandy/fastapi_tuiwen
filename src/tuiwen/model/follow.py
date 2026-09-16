@@ -4,7 +4,7 @@ follower_id(关注者) + followee_id(被关注者) 有联合唯一索引, 保证
 """
 from datetime import datetime
 
-from pydantic import BaseModel, field_serializer
+from pydantic import field_serializer
 from sqlalchemy import DateTime, Column, BigInteger,Identity
 from sqlmodel import SQLModel, Field, Index, text
 
@@ -41,8 +41,12 @@ class Follow(SQLModel, table=True):
         return convert_to_timezone(value)
 
 
-class FollowCountModel(BaseModel):
-    """关注主页统计响应: 粉丝数/关注数/是否已关注/获赞数。"""
+class FollowCountModel(SQLModel):
+    """关注主页统计响应: 粉丝数/关注数/是否已关注/获赞数。
+
+    NOTE: 用的是 pydantic 的 BaseModel(非表模型, 只做响应载体), 能用;
+          但项目里其它响应模型统一走 SQLModel, 建议对齐
+    """
     follower_count: int = Field(0, description='粉丝数')
     followee_count: int = Field(0, description='关注的数量')
     is_following: bool = Field(False, description='是否正在关注')

@@ -16,14 +16,14 @@ from fastapi import APIRouter, status, Request, Depends
 
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_like_service
-from src.tuiwen.model.like import LikeInput, Like, LikeCountModel
+from src.tuiwen.model.like import Like, Like, LikeCountModel
 from src.tuiwen.service.like import LikeService
 
 router_like = APIRouter(prefix="/likes", tags=[Tag.like])
 
 
 @router_like.post('/', summary="点赞", response_model=Like, status_code=status.HTTP_201_CREATED)
-async def create_like(payload: Annotated[LikeInput, "赞的输入对象"],
+async def create_like(payload: Annotated[Like, "赞的输入对象"],
                       svc: LikeService = Depends(get_like_service)):
     """
     对目标对象(目前仅帖子)点赞

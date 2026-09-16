@@ -18,7 +18,7 @@ from fastapi import APIRouter, status, UploadFile, HTTPException, Depends, Reque
 from src.tuiwen.dependencies import get_upload_service
 from src.tuiwen.service.file import FileService
 from src.tuiwen.core import Settings
-from src.tuiwen.model.file import FileBase
+from src.tuiwen.model.file import File
 from src.tuiwen.core import Tag
 from src.tuiwen.utils import allowed_file
 from src.tuiwen.core import get_settings
@@ -27,7 +27,7 @@ from src.tuiwen.core import get_settings
 router_upload = APIRouter(prefix="/upload", tags=[Tag.upload])
 
 
-@router_upload.post('/image/', summary="图片上传", response_model=FileBase, status_code=status.HTTP_201_CREATED)
+@router_upload.post('/image/', summary="图片上传", response_model=File, status_code=status.HTTP_201_CREATED)
 async def upload_image(file: Annotated[UploadFile, "图片文件"],
                        request: Request,
                        settings: Annotated[Settings, "全局的设置对象"] = Depends(get_settings),

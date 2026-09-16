@@ -28,7 +28,8 @@ from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dependencies import get_account_service, get_current_user, oauth2_scheme
 from src.tuiwen.service.account import AccountService
 from src.tuiwen.model.oauth import RefreshToken, AccessToken, CodeVerify, TurnstileVerifyToken, UpdateCredential
-from src.tuiwen.model.account import AccountPublic, AccountCreate, Account, AccountPublicCommon, AccountPasswordChange, AccountPasswordReset
+from src.tuiwen.model.account import AccountInfo, AccountCreate, Account, AccountPublicCommon, AccountPasswordChange, \
+    AccountPasswordReset, AccountPublic
 from src.tuiwen.core import Tag
 from src.tuiwen.models import PageResponse
 from src.tuiwen.utils.mail_service import send_reset_pwd_mail
@@ -126,7 +127,7 @@ async def root(request: Annotated[Request, "请求对象"]) -> RedirectResponse:
 # 注册 / 查询
 # =========================================================
 @router_public.post("/accounts/register/", summary="用户注册", tags=[Tag.account],
-                    response_model=AccountPublic, status_code=status.HTTP_201_CREATED)
+                    response_model=AccountInfo, status_code=status.HTTP_201_CREATED)
 async def register(account: Annotated[AccountCreate, Body(..., description="用户信息")],
                    svc: AccountService = Depends(get_account_service)):
     """
@@ -137,7 +138,7 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
         svc: 账号业务服务
 
     Returns:
-        AccountPublic: 对外可暴露的账号信息(不含密码与盐值)
+        AccountInfo: 对外可暴露的账号信息(不含密码与盐值)
     """
     try:
         return await svc.register(account)
@@ -152,14 +153,14 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
 
 
 @router_public.get("/accounts/{account_id}/", summary="查询账户信息",
-                   response_model=AccountPublic,
+                   response_model=AccountInfo,
                    name="get_account_public",
                    tags=[Tag.account, ],
                    responses={
                        404: {"description": "no such account"}
                    })
 async def get_account(account_id: Annotated[str, "账户ID"],
-                      svc: AccountService = Depends(get_account_service)):
+                      svc: AccountService = Depends(get_account_service)) -> AccountPublic:
     """
     按账户ID查询公开的账号信息(免登录)
 
@@ -176,7 +177,7 @@ async def get_account(account_id: Annotated[str, "账户ID"],
     return instance
 
 
-@router_account.put("/accounts/{account_id}/", summary="更新账户基本信息", response_model=AccountPublic, tags=[Tag.account])
+@router_account.put("/accounts/{account_id}/", summary="更新账户基本信息", response_model=AccountInfo, tags=[Tag.account])
 async def update_account(account_id: Annotated[str, "账户ID"],
                          account: Annotated[AccountPublicCommon, Body(..., description="更新的账户信息")],
                          svc: AccountService = Depends(get_account_service),
@@ -194,7 +195,7 @@ async def update_account(account_id: Annotated[str, "账户ID"],
         user: 当前登录用户, 用于越权校验
 
     Returns:
-        AccountPublic: 更新后的账号信息
+        AccountInfo: 更新后的账号信息
     """
     try:
         # 越权保护: 只允许修改自己的账户
@@ -210,7 +211,7 @@ async def update_account(account_id: Annotated[str, "账户ID"],
                     tags=[Tag.account])
 async def search(keyword: Annotated[str, "关键词"], *, svc: AccountService = Depends(get_account_service),
                  offset: Annotated[int, "偏移量"] = 0,
-                 limit: Annotated[int, Query(le=10)] = 10, ) -> PageResponse[AccountPublic]:
+                 limit: Annotated[int, Query(le=10)] = 10, ) -> PageResponse[AccountInfo]:
     """
     按关键词模糊搜索账户(昵称或账号ID包含关键词)
 
@@ -221,7 +222,7 @@ async def search(keyword: Annotated[str, "关键词"], *, svc: AccountService = 
         limit: 每页数量, 最大 10
 
     Returns:
-        PageResponse[AccountPublic]: 匹配到的账户列表与总数
+        PageResponse[AccountInfo]: 匹配到的账户列表与总数
     """
     dataset = await svc.search(keyword, offset, limit)
     return PageResponse(items=dataset, total=len(dataset), page_size=limit)
@@ -255,7 +256,7 @@ async def account_send_code(data: Annotated[CodeVerify, "验证码信息"],
 
 
 @router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=[Tag.account],
-                   response_model=AccountPublic)
+                   response_model=AccountInfo)
 async def password_reset(account: Annotated[AccountPasswordReset, Body(..., description="密码重置的必要信息")],
                          svc: AccountService = Depends(get_account_service)):
     """
@@ -268,7 +269,7 @@ async def password_reset(account: Annotated[AccountPasswordReset, Body(..., desc
         svc: 账号业务服务
 
     Returns:
-        AccountPublic: 重置后的账号信息
+        AccountInfo: 重置后的账号信息
     """
     try:
         return await svc.reset_password(account)
@@ -276,7 +277,7 @@ async def password_reset(account: Annotated[AccountPasswordReset, Body(..., desc
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router_account.put("/accounts/password/change/", summary="账号密码修改", response_model=AccountPublic,
+@router_account.put("/accounts/password/change/", summary="账号密码修改", response_model=AccountInfo,
                     status_code=status.HTTP_200_OK, tags=[Tag.account])
 async def password_change(request: Annotated[Request, "请求对象"],
                           account: Annotated[AccountPasswordChange, Body(..., description="修改密码的必要入参")],
@@ -292,7 +293,7 @@ async def password_change(request: Annotated[Request, "请求对象"],
         svc: 账号业务服务
 
     Returns:
-        AccountPublic: 更新后的账号信息
+        AccountInfo: 更新后的账号信息
     """
     try:
         return await svc.change_password(account_id=request.state.account_id, salt=request.state.salt, account=account)
@@ -344,7 +345,7 @@ async def check_username(username: Annotated[str, "检测用户名是否已经�
 
 
 @router_account.patch('/accounts/credential/', summary="更新用户认证信息",
-                      response_model=AccountPublic, tags=[Tag.account])
+                      response_model=AccountInfo, tags=[Tag.account])
 async def credential(data: Annotated[UpdateCredential, "更新用户认证信息"],
                      request: Annotated[Request, "请求对象"],
                      svc: AccountService = Depends(get_account_service)):
@@ -359,7 +360,7 @@ async def credential(data: Annotated[UpdateCredential, "更新用户认证信息
         svc: 账号业务服务
 
     Returns:
-        AccountPublic: 更新后的账号信息
+        AccountInfo: 更新后的账号信息
     """
     try:
         instance = await svc.change_credential(request.state.account_id, data)

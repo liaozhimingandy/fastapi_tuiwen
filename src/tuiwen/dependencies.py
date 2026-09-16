@@ -10,6 +10,7 @@
 约定: DAO 只 flush 不 commit, 事务提交/回滚出口统一在 API 层(dao.commit()/rollback())。
 """
 from typing import Annotated, AsyncGenerator, Any
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from fastapi import Depends, HTTPException, Security, Request, FastAPI, status
 from fastapi.security import SecurityScopes, OAuth2PasswordBearer
@@ -72,16 +73,28 @@ async def check_authentication(request: Request, token: Annotated[str, Depends(o
     request.state.salt = payload["salt"]
 
 
-async def get_current_user(security_scopes: SecurityScopes, token: Annotated[str, Depends(oauth2_scheme)]):
+async def get_current_user(
+        security_scopes: SecurityScopes,
+        token: Annotated[str, Depends(oauth2_scheme)],
+        session: Annotated[AsyncSession, "请求级只读会话, 用于回库确认账户"] = Depends(get_read_session),
+) -> Account:
     """
         在需要用户信息的地方调用
+
+        校验顺序: 令牌签名/有效期/类型 → scope 权限 → 回库取真实账户。
+        令牌里只有 account_id 与 salt, 账户资料与状态一律以库中数据为准:
+        账户不存在(已注销)时直接 401, 避免返回只带 account_id 的占位对象。
 
         Args:
             security_scopes: 权限范围,可以为空
             token: 令牌,从Header中获取
+            session: 请求级只读会话; 认证只做一次唯一索引查询, 无需写会话
 
         Returns:
-            用户信息
+            Account: 数据库中的账户实例(字段为真实值, 非仅 account_id 的占位对象)
+
+        Raises:
+            HTTPException: 401 —— 令牌无效/过期/类型不符、scope 不足、账户不存在
 
         Example usage:
 
@@ -94,7 +107,6 @@ async def get_current_user(security_scopes: SecurityScopes, token: Annotated[str
                 return {"message": f"hello word, 欢迎您,{user.account_id}"}
 
     """
-
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail='could not validate credentials',
@@ -111,15 +123,8 @@ async def get_current_user(security_scopes: SecurityScopes, token: Annotated[str
     except AssertionError:
         raise credentials_exception
 
+    # 先做纯令牌侧的 scope 校验: 权限不足无需白跑一次数据库
     token_scopes = payload.get("scopes", [])
-    instance = Account(account_id=payload["account_id"])
-    # #  数据库查询用户信息
-    # statement = select(Account).where(Account.account_id == payload["account_id"])
-    # results = await session.exec(statement)
-    # instance = results.first()
-    # if not instance:
-    #     raise credentials_exception
-
     for scope in security_scopes.scopes:
         if scope not in token_scopes:
             raise HTTPException(
@@ -128,19 +133,35 @@ async def get_current_user(security_scopes: SecurityScopes, token: Annotated[str
                 headers={"WWW-Authenticate": authenticate_value},
             )
 
+    # 回库取真实账户: account_id 上是唯一索引, 这次查询走索引且只读, 代价很小
+    # (认证属框架级原语, 直接查表而不经 Service/DAO, 避免为一次主键查询再开一个写会话)
+    result = await session.exec(select(Account).where(Account.account_id == payload["account_id"]))
+    instance = result.first()
+    if not instance:
+        # 令牌签名有效但账户已被删除/注销, 与令牌无效同样处理, 不泄露账户是否存在
+        raise credentials_exception
+
     return instance
 
 
 async def get_current_active_user(
         current_user: Account = Security(get_current_user, scopes=["admin"]),
-):
-    """在 get_current_user 基础上再校验账户是否被禁用(is_active=False 直接 401)。
+) -> Account:
+    """在 get_current_user 基础上再校验账户是否被禁用。
 
-    NOTE: 这里用的 Account 只带了 account_id, 未查库, is_active 取的是模型默认值 True,
-          实际不会拦截被禁用的账号; 需要真正拦截时应补一次数据库查询
+    get_current_user 现已回库取真实账户, 因此这里的 is_active 是库中的真实状态,
+    不再恒为模型默认值 True —— is_active=False 的账号会被真正拦下。
+
+    NOTE: 该字段声明为 bool | None(可空), 判据用 `not` 会让 NULL 也视为未激活而被拦截;
+          若线上存在 is_active 为 NULL 的历史数据, 需先刷成 True 再启用本依赖。
+    NOTE: 目前没有任何路由引用它, 需要拦截禁用账号时在对应接口上用它替换 get_current_user。
     """
     if not current_user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not enough permissions")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return current_user
 
 

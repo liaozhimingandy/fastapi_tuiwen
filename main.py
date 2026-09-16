@@ -7,10 +7,11 @@
 """
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.openapi.docs import get_swagger_ui_html, get_swagger_ui_oauth2_redirect_html, get_redoc_html
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import JSONResponse
 
 from src.tuiwen import (api_router, logger, custom_generate_unique_id,
                         get_version_from_txt, get_settings, dispose_engine, close_async_pool, init_mail_sender,

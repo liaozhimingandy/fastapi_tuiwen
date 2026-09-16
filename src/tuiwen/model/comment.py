@@ -18,10 +18,15 @@ from src.tuiwen.utils.utils import convert_to_timezone
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
 
-class CommentInput(SQLModel):
+class Comment(SQLModel, table=True):
+    """评论数据库表(tw_comment)。
+
+    - comment_id: uuid7 主键, 时间有序, 评论游标分页按它倒序
+    - is_root/parent_id: 一级评论 is_root=True 且 parent_id 为空; 楼中楼指向父评论ID
+    - obj_id + obj_type: 被评论的目标(帖子/其它)
     """
-    评论模型
-    """
+    __tablename__ = f"{TABLE_PREFIX}comment"  # 表名
+    __table_args__ = {'comment': '评论'}  # 表备注
 
     class ObjTypeEnum(IntEnum):
         """评论对象类别"""
@@ -58,9 +63,3 @@ class CommentInput(SQLModel):
     @field_serializer('create_at')
     def serialize_datetime(self, value):
         return convert_to_timezone(value)
-
-
-class Comment(CommentInput, table=True):
-    """评论数据库表(tw_comment)。"""
-    __tablename__ = f"{TABLE_PREFIX}comment"  # 表名
-    __table_args__ = {'comment': '评论'}  # 表备注

@@ -97,14 +97,6 @@ class Settings(BaseSettings):
 
     # ====================================================================
 
-    BACKEND_CORS_ORIGINS: Annotated[
-        list[str] | str, BeforeValidator(parse_cors)
-    ]
-
-
-    # CORS
-    # NOTE: 该字段上面第 100~102 行已声明过一次(无默认值), 此处重复定义;
-    #       pydantic v2 不会报错, 后者覆盖前者, 属应清理的冗余
     BACKEND_CORS_ORIGINS: Annotated[list[str] | str, BeforeValidator(parse_cors)]=Field(default_factory=list)
 
     # ===================== 环境文件加载规则 =====================

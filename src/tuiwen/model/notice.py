@@ -3,7 +3,7 @@
 """
 =================================================
     @Project: fastapi_tuiwen
-    @File： account.py
+    @File： notice.py
     @Author：liaozhimingandy
     @Email: liaozhimingandy@gmail.com
     @Date：2026/8/2 11:30
@@ -65,6 +65,8 @@ class Notice(SQLModel, table=True):
                             sa_column_kwargs={'comment': '单用户接收人ID，系统公告为空'})
 
     # 触发者（点赞/评论/关注的人，系统通知为 None）
+    # NOTE: 字段是字符串ID但 default=1 是整数 —— asyncpg 对 varchar 传 int 会直接报错,
+    #       系统通知要么显式传 "1", 要么把默认值改成 None
     trigger_account_id: Optional[str] = Field(nullable=True, default=1, index=True, max_length=32,
                                            sa_column_kwargs={'comment': '触发者用户ID，系统通知为1'})
     type: NoticeType | None = Field(default=NoticeType.SYSTEM, nullable=False, ge=0, sa_type=SmallInteger,

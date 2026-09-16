@@ -19,6 +19,7 @@ TABLE_PREFIX = get_settings().TABLE_PREFIX
 
 # ------------------------------ 天亮即焚模型 ------------------------------
 class EmotionTagEnum(IntEnum):
+    """情绪标签编号(与前端约定一致, 落库时只存编号)。"""
     NONE = 0        # 未选择情绪
     INSOMNIA = 1    # 失眠
     WRONGED = 2     # 委屈
@@ -72,7 +73,11 @@ class Snap(SQLModel, table=True):
 
 
 class SnapCreate(SQLModel):
-    """发布天亮即焚的入参模型(仅业务字段, 不含 IP/点赞数等服务端字段)。"""
+    """发布天亮即焚的入参模型(仅业务字段, 不含 IP/点赞数等服务端字段)。
+
+    NOTE: emotion 的 description 只列举到 6, 而 EmotionTagEnum 一共有 15 个情绪标签,
+          两处枚举说明不同步, 以 EmotionTagEnum 为准
+    """
     content: dict = Field(..., max_length=512, description='内容')
     emotion: int | None = Field(default=None, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
     topic: str | None = Field(default=None, description="话题编号")
