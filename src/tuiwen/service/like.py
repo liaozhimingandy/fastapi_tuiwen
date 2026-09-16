@@ -32,7 +32,10 @@ class LikeService:
         Returns:
             Like: 落库后的点赞实体(未 commit, 事务由上层 API 控制)
         """
-        return await self.dao.create(like)
+        instance = await self.dao.create(like)
+        await self.dao.write_db.commit()
+        await self.dao.write_db.refresh(instance)
+        return instance
 
     async def like_count(self, obj_id: str):
         """
@@ -58,7 +61,9 @@ class LikeService:
         Returns:
             bool: True 表示确实取消到了记录; False 表示本来就没点过赞
         """
-        return await self.dao.delete_like(obj_id=obj_id, account_id=account_id)
+        await self.dao.delete_like(obj_id=obj_id, account_id=account_id)
+        await self.dao.write_db.commit()
+        return True
 
     async def get_like_count(self, obj_id: str, account_id: str):
         """

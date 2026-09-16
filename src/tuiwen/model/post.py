@@ -11,7 +11,7 @@ from uuid import UUID
 from datetime import datetime
 
 from pydantic import field_serializer
-from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Numeric, Identity
+from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Numeric, Identity, func
 from sqlalchemy.dialects.postgresql import INET
 from sqlmodel import SQLModel, Field, Index, text
 
@@ -122,10 +122,14 @@ class Post(SQLModel, table=True):
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False,
                                                    server_default=text("NOW()")))
-    update_at: datetime = Field(..., default_factory=datetime.now, description='最后修改时间',
-                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                    onupdate=datetime.now, comment='最后修改时间')
-                                   )
+    update_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
+                                sa_column=Column(
+                                    DateTime(timezone=True),
+                                    server_default=func.now(),
+                                    onupdate=func.now(),
+                                    nullable=False,
+                                    comment="最后更新时间"
+                                ))
 
     @field_serializer('create_at', 'update_at')
     def serialize_datetime(self, value):

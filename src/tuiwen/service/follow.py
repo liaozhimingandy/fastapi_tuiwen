@@ -38,6 +38,7 @@ class FollowService:
         try:
             instance = await self.dao.create(obj)
             await self.dao.write_db.commit()
+            await self.dao.write_db.refresh(instance)
             return instance
         except Exception as e:
             raise BizError(code=400, message=str(e))
@@ -53,7 +54,9 @@ class FollowService:
         Returns:
             bool: 是否删除到记录
         """
-        return await self.dao.delete_by_fields(follower_id=follower_id, followee_id=followee_id)
+        await self.dao.delete_by_fields(follower_id=follower_id, followee_id=followee_id)
+        await self.dao.write_db.commit()
+        return True
 
     async def get_follow_info_by_id(self, account_id):
         """

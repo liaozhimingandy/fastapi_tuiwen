@@ -11,17 +11,17 @@
 =================================================
 """
 import os, uuid
-from datetime import datetime, timezone, date
-from enum import  IntEnum
+from datetime import datetime, timezone, date, UTC
+from enum import IntEnum
 from typing import Optional
 
 from pydantic import EmailStr, field_validator, field_serializer
-from sqlalchemy import DateTime, SMALLINT, Column, JSON, BigInteger, Identity
+from sqlalchemy import DateTime, SMALLINT, Column, JSON, BigInteger, Identity, func
 from sqlmodel import SQLModel, Field, text
 
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import convert_to_timezone
-from utils import get_random_salt
+from src.tuiwen.utils import get_random_salt
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -82,7 +82,7 @@ class AccountPublicCommon(SQLModel):
 class AccountLogin(SQLModel):
     """登录字段: 邮箱 + 密码(前端已 MD5, 固定 32 位)。"""
     mail: EmailStr | None = Field(None, index=True, max_length=64, description='电子邮箱')
-    password: str  = Field(..., max_length=32, min_length=32, description='用户密码')
+    password: str = Field(..., max_length=32, min_length=32, description='用户密码')
 
 
 class AccountCreate(AccountPublicCommon, AccountLogin):
@@ -149,8 +149,9 @@ class Account(SQLModel, table=True):
     bio: str | None = Field(None, max_length=256, description='用户自我简介',
                             sa_column_kwargs={'comment': '用户自我简介'})
     user_type: int = Field(default=1, sa_type=SMALLINT, ge=1, description='账户类型',
-                                  sa_column_kwargs={'comment': '账户类型'})
-    password: str = Field(None, max_length=64, min_length=64, description='用户密码;经过MD5计算加密', sa_column_kwargs={'comment': '用户密码'})
+                           sa_column_kwargs={'comment': '账户类型'})
+    password: str = Field(None, max_length=64, min_length=64, description='用户密码;经过MD5计算加密',
+                          sa_column_kwargs={'comment': '用户密码'})
     salt: str = Field(default=None, max_length=8, description='盐', sa_column_kwargs={'comment': '盐'})
     allow_add_friend: bool | None = Field(default=True, description='允许添加好友',
                                           sa_column_kwargs={'comment': '允许添加好友'})
@@ -166,12 +167,17 @@ class Account(SQLModel, table=True):
                                          sa_column_kwargs={'comment': '是否允许震动提示'})
 
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                   comment='创建日期时间', nullable=False, server_default=text("NOW()"))
-                                  )
-    update_at: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
-                                   sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now, comment='最后修改时间')
-                                   )
+                                sa_column=Column(DateTime(timezone=True), default=datetime.now,
+                                                 comment='创建日期时间', nullable=False, server_default=text("NOW()"))
+                                )
+    update_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
+                                sa_column=Column(
+                                    DateTime(timezone=True),
+                                    server_default=func.now(),
+                                    onupdate=func.now(),
+                                    nullable=False,
+                                    comment="最后更新时间"
+                                ))
 
     @field_serializer('create_at', 'update_at')
     def serialize_datetime(self, value):
@@ -181,7 +187,7 @@ class Account(SQLModel, table=True):
     #       normalize 成小写, 现在只有 username 做小写归一; Service 层注册查重是
     #       case-insensitive 的, 但登录按 mail 精确匹配, 大小写不一致会登不上
 
-    @field_validator("username",  "mail", mode="before")
+    @field_validator("username", "mail", mode="before")
     def username_to_lower(cls, v: Optional[str]) -> Optional[str]:
         """落库前把用户名统一转小写并去首尾空白, 保证唯一性按小写语义生效。"""
         if v is None:
@@ -227,14 +233,14 @@ class App(SQLModel, table=False):
                                     sa_column_kwargs={'comment': '应用英文名称'})
     is_active: bool = Field(default=True, description='激活状态', sa_column_kwargs={'comment': '激活状态'})
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                   comment='创建日期时间', nullable=False, server_default=text("NOW()"))
-                                  )
+                                sa_column=Column(DateTime(timezone=True), default=datetime.now,
+                                                 comment='创建日期时间', nullable=False, server_default=text("NOW()"))
+                                )
     update_at: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
-                                   sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now, comment='最后修改时间')
-                                   )
+                                sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now,
+                                                 comment='最后修改时间')
+                                )
 
     @field_serializer('create_at', 'update_at')
     def serialize_datetime(self, value):
         return convert_to_timezone(value)
-

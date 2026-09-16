@@ -37,7 +37,10 @@ class PostService:
         Returns:
             Post: 落库后的帖子实体(未 commit)
         """
-        return await self.dao.create(post)
+        instance = await self.dao.create(post)
+        await self.dao.write_db.commit()
+        await self.dao.write_db.refresh(instance)
+        return instance
 
     async def delete_by_post_id(self, post_id: uuid.UUID, account_id: str):
         """
@@ -50,7 +53,9 @@ class PostService:
         Returns:
             bool: 是否删除到记录
         """
-        return await self.dao.delete_by_post_id(post_id, account_id)
+        await self.dao.delete_by_post_id(post_id, account_id)
+        await self.dao.write_db.commit()
+        return True
 
     async def update_post_right(self, post_id: uuid.UUID, account_id: str, right_status: int):
         """
@@ -64,7 +69,9 @@ class PostService:
         Returns:
             bool: 是否更新到记录(False 表示帖子不存在或不属于该账户)
         """
-        return await self.dao.update_post_right(post_id, account_id, right_status)
+        await self.dao.update_post_right(post_id, account_id, right_status)
+        await self.dao.write_db.commit()
+        return True
 
     async def get_posts_latest(self, account_id: str):
         """

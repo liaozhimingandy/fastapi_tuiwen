@@ -111,7 +111,7 @@ async def test_oauth_admin(
 async def health_check() -> dict[str, Any]:
     """服务存活探针, 返回固定 ok 与当前北京时间, 供 LB / K8s 探活使用。"""
     current_time = convert_to_cst_time(datetime.now())
-    return {"message": "ok", "gmt_created": current_time}
+    return {"message": "ok", "create_at": current_time}
 
 
 @router_public.get("/", tags=["root"], summary="根路径", include_in_schema=False)

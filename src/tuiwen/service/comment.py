@@ -34,7 +34,10 @@ class CommentService:
         Returns:
             Comment: 落库后的评论实体(未 commit)
         """
-        return await self.dao.create(comment)
+        instance = await self.dao.create(comment)
+        await self.dao.write_db.commit()
+        await self.dao.write_db.refresh(instance)
+        return instance
 
     async def delete(self, comment_id, account_id):
         """
@@ -47,7 +50,9 @@ class CommentService:
         Returns:
             bool: 是否删除到记录
         """
-        return await self.dao.delete_by_fields(comment_id=comment_id, account_id=account_id)
+        await self.dao.delete_by_fields(comment_id=comment_id, account_id=account_id)
+        await self.dao.write_db.commit()
+        return True
 
     async def get(self, obj_id, obj_type, limit, cursor=None) -> PageResult[Comment]:
         """

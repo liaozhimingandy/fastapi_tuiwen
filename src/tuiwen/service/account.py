@@ -18,14 +18,12 @@
 """
 import re
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import timedelta, datetime, UTC
 from typing import Annotated
 import random
 
 import httpx
-from sqlmodel import select, or_
 
-from dal.base import PageResult
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.common.exceptions import EmailAlreadyRegisteredError, UsernameAlreadyUsedError
 # 模型统一从 model 包绝对导入(原 "from model.account" 是裸导入, 只在把 src/tuiwen 也加入
@@ -143,12 +141,12 @@ class AccountService:
 
         # 排除被更新字段
         forbidden_fields = {"account_id", "username", "mail", "mobile", "id", "password", "salt", "is_active",
-                            "user_type", "im_id", "gmt_created", "gmt_modified"}
+                            "user_type", "im_id", "create_at", "update_at"}
 
         account_data = account.model_dump(exclude_unset=True, exclude=forbidden_fields)
-        instance.sqlmodel_update(account_data)
-
-        return await self.dao.partial_update(instance.id, instance.model_dump())
+        instance = await self.dao.partial_update(instance.id, account_data)
+        await self.dao.write_db.commit()
+        return instance
 
     async def search(self, keyword: str, offset: int, limit: int):
         """
@@ -162,7 +160,7 @@ class AccountService:
         Returns:
             list[Account]: 匹配到的账号列表
         """
-        return await self.search(keyword=keyword, offset=offset, limit=limit)
+        return await self.dao.search(keyword=keyword, offset=offset, limit=limit)
 
     # ---------------------------------------------------------
     # 验证码 / 密码
@@ -263,11 +261,18 @@ class AccountService:
 
         # 更新用户信息
         # 重置密码时同步换盐, 使旧密码哈希彻底失效
-        instance.salt = get_random_salt(8)
-        instance.password = hash_password(front_md5=account.password, salt=instance.salt)
-
+        new_salt = get_random_salt(6)
+        new_password = hash_password(front_md5=account.password,salt=new_salt,)
+        instance = await self.dao.partial_update(
+            instance.id,
+            {
+                "salt": new_salt,
+                "password": new_password,
+            },
+        )
         # 保存到数据库
-        return await self.dao.partial_update(instance.id, instance.model_dump())
+        await self.dao.write_db.commit()
+        return instance
 
     # ---------------------------------------------------------
     # 认证 / 令牌
@@ -298,14 +303,16 @@ class AccountService:
             raise BizError(code=400, message=str(e))
 
         data = {"account_id": instance.account_id, "salt": instance.salt, 'scopes': 'basic'}
-        refresh_token = generate_jwt_token(data, expires_in=timedelta(minutes=get_settings().REFRESH_TOKEN_EXPIRE_MINUTES),
+        refresh_token = generate_jwt_token(data,
+                                           expires_in=timedelta(minutes=get_settings().REFRESH_TOKEN_EXPIRE_MINUTES),
                                            grant_type="refresh_token")
 
         data.update(**{'jwt_account_id': instance.account_id})
         access_token = generate_jwt_token(data, grant_type="access_token")
 
         return RefreshToken(refresh_token=refresh_token, access_token=access_token,
-                            expires_in=int(timedelta(minutes=get_settings().REFRESH_TOKEN_EXPIRE_MINUTES).total_seconds()),
+                            expires_in=int(
+                                timedelta(minutes=get_settings().REFRESH_TOKEN_EXPIRE_MINUTES).total_seconds()),
                             account_id=instance.account_id)
 
     @classmethod
@@ -417,11 +424,15 @@ class AccountService:
             instance = await self.dao.get_by_unique_field("account_id", account_id)
             # 用户名统一小写存储, 避免大小写造成重复账号
             instance.username = new_val.strip().lower()
+            instance.create_at = datetime.now(UTC)
+            instance = await self.dao.update(instance)
+            await self.dao.write_db.commit()
+            return instance
 
-            return await self.dao.update(instance)
         return None
 
-    async def change_password(self, account_id: str, salt, account: Annotated[AccountPasswordChange, '修改密码必要的参数']):
+    async def change_password(self, account_id: str, salt,
+                              account: Annotated[AccountPasswordChange, '修改密码必要的参数']):
         """
         已登录状态下修改密码
 
@@ -441,14 +452,22 @@ class AccountService:
 
         """
         try:
-            instance = await self.dao.get_by_fields(account_id=account_id, password=hash_password(account.password_current, salt))
+            instance = await self.dao.get_by_fields(account_id=account_id,
+                                                    password=hash_password(account.password_current, salt))
             if not instance:
                 raise BizError(code=400, message="原密码不对,请重新输入原密码")
             assert account.password_new != instance.password, "新密码不能和旧密码相同"
         except AssertionError as e:
             raise BizError(code=400, message=str(e))
 
-        instance.salt = get_random_salt(6)
-        instance.password = hash_password(front_md5=account.password_new, salt=instance.salt)
-
-        return await self.dao.update(instance)
+        new_salt = get_random_salt(6)
+        new_password = hash_password(front_md5=account.password, salt=new_salt, )
+        instance = await self.dao.partial_update(
+            instance.id,
+            {
+                "salt": new_salt,
+                "password": new_password,
+            },
+        )
+        await self.dao.write_db.commit()
+        return instance

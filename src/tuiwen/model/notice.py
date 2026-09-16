@@ -13,7 +13,7 @@
 from enum import IntEnum
 
 from pydantic import field_serializer
-from sqlalchemy import Column, DateTime, text, JSON, BigInteger, SmallInteger, Identity
+from sqlalchemy import Column, DateTime, text, JSON, BigInteger, SmallInteger, Identity, func
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from typing import Optional
@@ -101,10 +101,14 @@ class Notice(SQLModel, table=True):
         sa_column_kwargs={'comment': '是否已删除 0否 1是'}
     )
     # 更新时间
-    update_at: datetime = Field(..., default_factory=datetime.now, description='最后修改时间',
-                                 sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                  onupdate=datetime.now, comment='最后修改时间')
-                                 )
+    update_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
+                                sa_column=Column(
+                                    DateTime(timezone=True),
+                                    server_default=func.now(),
+                                    onupdate=func.now(),
+                                    nullable=False,
+                                    comment="最后更新时间"
+                                ))
 
     @field_serializer('create_at', 'update_at')
     def serialize_datetime(self, value):
