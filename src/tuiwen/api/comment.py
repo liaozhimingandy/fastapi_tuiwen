@@ -22,7 +22,7 @@ from src.tuiwen.dependencies import get_comment_service
 from src.tuiwen.models import PageResponse
 from src.tuiwen.service.comment import CommentService
 from src.tuiwen.core import Tag
-from model.comment import Comment, CommentInput
+from src.tuiwen.model.comment import Comment, CommentInput
 
 # NOTE: 本路由自身已带 /v2 前缀, 又挂在 /api/v2 之下, 最终对外路径为 /api/v2/v2/comments/...
 #       与 post 模块的 /api/v2/posts/... 风格不一致, 新增接口时需留意

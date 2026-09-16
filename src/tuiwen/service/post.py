@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 
 from src.tuiwen.dal.post import PostDAO
-from model.post import Post
+from src.tuiwen.model.post import Post
 
 
 @dataclass

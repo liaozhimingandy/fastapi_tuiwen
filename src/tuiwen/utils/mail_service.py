@@ -8,6 +8,14 @@
     @Email: liaozhimingandy@gmail.com
     @Date：2026/8/2 18:43
     @Desc: FastAPI 全局常驻邮件服务（全局单例、启动自动初始化）
+
+    职责: 提供 SMTP 邮件发送能力(验证码/密码重置等模板),
+    init_mail_sender() 在应用启动时按环境构建全局 MailSender 单例,
+    业务侧通过 send_verify_mail()/send_reset_pwd_mail() 快捷发送。
+
+    NOTE: 生产 SMTP 授权码以明文硬编码在本文件中(smtp_password="ebvy..."),
+          已随代码进入版本历史, 属安全隐患; 建议尽快作废该授权码并迁移到
+          SECRET_KEY_FILE 同类的密钥文件/环境变量机制
 =================================================
 """
 import smtplib
@@ -122,12 +130,14 @@ global_mail_sender: Optional[MailSender] = None
 
 def init_mail_sender(is_prod: bool = False) -> None:
     """
-    初始化全局邮件服务
+    初始化全局邮件服务(由 lifespan 启动阶段调用一次)
     :param is_prod: 是否生产环境，自动切换配置
     """
     global global_mail_sender
 
     # 生产环境配置（QQ邮箱示例，可替换为阿里/腾讯SES）
+    # NOTE: 账号与授权码明文硬编码在源码中, 属敏感信息泄露风险;
+    #       建议改由环境变量/密钥文件注入(可复用 core.config 的 *_FILE 加载机制)
     if is_prod:
         global_mail_sender = MailSender(
             smtp_host="smtp.qq.com",
@@ -153,7 +163,7 @@ def init_mail_sender(is_prod: bool = False) -> None:
 # 5. 全局通用快捷发送方法
 # ==============================
 def send_verify_mail(to_email: str, code: str, expire: int = 5) -> bool:
-    """全局发送验证码邮件"""
+    """全局发送验证码邮件(需先 init_mail_sender, 否则抛 RuntimeError)。"""
     if not global_mail_sender:
         raise RuntimeError("邮件服务未初始化，请在FastAPI启动事件中执行 init_mail_sender()")
     return global_mail_sender.send(
@@ -165,7 +175,7 @@ def send_verify_mail(to_email: str, code: str, expire: int = 5) -> bool:
 
 
 def send_reset_pwd_mail(to_mail: str, code: str, expire: int = 10) -> bool:
-    """全局发送密码重置邮件"""
+    """全局发送密码重置邮件(需先 init_mail_sender)。"""
     if not global_mail_sender:
         raise RuntimeError("邮件服务未初始化，请在FastAPI启动事件中执行 init_mail_sender()")
     return global_mail_sender.send(

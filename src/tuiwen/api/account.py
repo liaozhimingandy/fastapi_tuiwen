@@ -27,8 +27,8 @@ from starlette.responses import RedirectResponse
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dependencies import get_account_service, get_current_user, oauth2_scheme
 from src.tuiwen.service.account import AccountService
-from model.oauth import RefreshToken, AccessToken, CodeVerify, TurnstileVerifyToken, UpdateCredential
-from model.account import AccountPublic, AccountCreate, Account, AccountPublicCommon, AccountPasswordChange, AccountPasswordReset
+from src.tuiwen.model.oauth import RefreshToken, AccessToken, CodeVerify, TurnstileVerifyToken, UpdateCredential
+from src.tuiwen.model.account import AccountPublic, AccountCreate, Account, AccountPublicCommon, AccountPasswordChange, AccountPasswordReset
 from src.tuiwen.core import Tag
 from src.tuiwen.models import PageResponse
 from src.tuiwen.utils.mail_service import send_reset_pwd_mail

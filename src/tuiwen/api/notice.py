@@ -18,7 +18,7 @@ from src.tuiwen.service.notice import NoticeService
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_notice_service
 from src.tuiwen.models import PageResponse
-from model.notice import Notice
+from src.tuiwen.model.notice import Notice
 
 
 # NOTE: 本路由自带 /v2 前缀, 挂在 /api/v2 之下后实际路径为 /api/v2/notices/...

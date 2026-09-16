@@ -13,7 +13,7 @@
 from sqlalchemy import update
 
 from src.tuiwen.dal.base import BaseDAO
-from model.snap import Snap
+from src.tuiwen.model.snap import Snap
 
 
 class SnapDAO(BaseDAO[Snap]):

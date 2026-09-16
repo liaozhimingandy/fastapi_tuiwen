@@ -17,7 +17,7 @@ import uuid
 from sqlmodel import select
 
 from src.tuiwen.dal.base import BaseDAO, PageResult
-from model.comment import Comment
+from src.tuiwen.model.comment import Comment
 
 
 class CommentDAO(BaseDAO[Comment]):

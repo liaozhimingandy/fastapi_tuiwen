@@ -20,7 +20,7 @@ from fastapi import APIRouter, Body, status, Depends, Request, HTTPException
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dependencies import get_follow_service
 from src.tuiwen.service.follow import FollowService
-from model.follow import Follow, FollowCountModel
+from src.tuiwen.model.follow import Follow, FollowCountModel
 
 router_follow = APIRouter(prefix="/follows", tags=["follow"])
 

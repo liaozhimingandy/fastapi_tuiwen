@@ -1,3 +1,8 @@
+"""上传文件模型: 通用文件表(tw_file), 图片/视频/音频/文档统一存储。
+
+以内容 MD5 作为唯一键实现秒传(同文件重复上传直接复用已有记录),
+差异化元数据(宽高/时长/封面)统一放 extra JSONB。
+"""
 from typing import Optional
 from datetime import datetime
 from pydantic import field_serializer
@@ -10,6 +15,7 @@ from src.tuiwen.utils.utils import convert_to_timezone
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
 class FileBase(SQLModel):
+    """文件公共字段(非表模型): url/存储 key/MD5/大小/状态等。"""
     file_type: int = Field(default=1, max_length=16, description="文件类型:image/video/audio/doc", ge=0, sa_type=SMALLINT,)
     url: str = Field(..., max_length=128, description='文件url', sa_column_kwargs={'comment': '文件url'})
     storage_key: str = Field(..., max_length=64, description="对象存储key", index=True)

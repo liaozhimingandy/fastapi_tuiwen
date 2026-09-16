@@ -8,7 +8,7 @@
     NoticeService → NoticeDAO → PostgreSQL
 """
 from src.tuiwen.dal.base import BaseDAO
-from model.notice import Notice
+from src.tuiwen.model.notice import Notice
 
 
 class NoticeDAO(BaseDAO[Notice]):

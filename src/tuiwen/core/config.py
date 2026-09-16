@@ -1,3 +1,12 @@
+"""全局配置模块。
+
+基于 pydantic-settings 的 Settings 单例，集中管理：
+- JWT / Turnstile / PostgreSQL / Redis 等密钥（支持环境变量或密钥文件两种来源）
+- 数据库连接串、静态资源、CORS、时区、Token 有效期等运行参数
+- Docker 部署时完全走环境变量，本地开发读取 .env.develop
+
+对外入口: get_settings()（lru_cache 单例）；OpenAPI 分组枚举 Tag 也定义在此。
+"""
 import os
 from enum import Enum
 from functools import lru_cache
@@ -10,6 +19,17 @@ from pydantic_settings import BaseSettings
 from ..utils.logger import logger
 
 def parse_cors(v: Any) -> list[str] | str:
+    """CORS 来源的宽容解析: 允许环境变量写成逗号分隔字符串(如 "http://a.com,http://b.com")。
+
+    Args:
+        v: 原始配置值, 字符串或列表
+
+    Returns:
+        list[str] | str: 解析后的来源列表(原样返回已是列表/JSON数组的情况)
+
+    Raises:
+        ValueError: 无法识别的类型
+    """
     if isinstance(v, str) and not v.startswith("["):
         return [i.strip() for i in v.split(",")]
     elif isinstance(v, list | str):
@@ -18,6 +38,7 @@ def parse_cors(v: Any) -> list[str] | str:
 
 
 class Settings(BaseSettings):
+    """应用全局配置(字段名即环境变量名, 大小写不敏感)。"""
     # 基础配置
     TABLE_PREFIX: str = Field("tw_", description="table prefix")
     DEBUG: bool = Field(False, description="debug mode", json_schema_extra={"env_default": "False"})
@@ -71,6 +92,7 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def REDIS_KEY_PREFIX(self) -> str:
+        """Redis 键统一前缀, 按环境区分(dev/prod), 避免多环境共用同一 Redis 时键冲突。"""
         return f"tw:{'dev' if self.DEBUG else 'prod'}"
 
     # ====================================================================
@@ -81,6 +103,8 @@ class Settings(BaseSettings):
 
 
     # CORS
+    # NOTE: 该字段上面第 100~102 行已声明过一次(无默认值), 此处重复定义;
+    #       pydantic v2 不会报错, 后者覆盖前者, 属应清理的冗余
     BACKEND_CORS_ORIGINS: Annotated[list[str] | str, BeforeValidator(parse_cors)]=Field(default_factory=list)
 
     # ===================== 环境文件加载规则 =====================
@@ -157,6 +181,7 @@ class Settings(BaseSettings):
         return self
 
 class Tag(Enum):
+    """OpenAPI 文档分组标签, 与 main.py 的 tags_metadata、各路由的 tags 参数一一对应。"""
     account = 'account'
     post = 'post'
     like = 'like'
@@ -168,6 +193,14 @@ class Tag(Enum):
     more = 'more'
 
 
+# ===================== 令牌权限范围(scopes) 公共常量 =====================
+# 原先定义在 account/router.py, Service 引用它会形成「Service → 路由」的反向依赖;
+# 现下沉到 core, 供令牌签发(service/account.py)与依赖校验(dependencies.oauth2_scheme)共用
+SCOPES_BASIC = "basic"    # 普通用户: 登录后默认授予
+SCOPES_ADMIN = "admin"    # 管理权限: 需显式校验
+
+
 @lru_cache
 def get_settings():
+    """返回全局唯一的 Settings 实例(lru_cache 缓存, 进程内只构造一次)。"""
     return Settings()

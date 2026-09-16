@@ -7,7 +7,7 @@
     @Author：liaozhimingandy
     @Email: liaozhimingandy@gmail.com
     @Date：2026/8/2 11:30
-    @Desc: 
+    @Desc: 通知/公告模型: 单用户通知与系统公告统一落 tw_notice 表
 =================================================
 """
 from enum import IntEnum
@@ -45,6 +45,16 @@ class NoticeTargetScope(IntEnum):
 
 
 class Notice(SQLModel, table=True):
+    """通知数据库表(tw_notice)。
+
+    设计要点:
+    - account_id 为空表示系统公告, 否则是发给单个用户的通知
+    - trigger_account_id 记录点赞/评论/关注等动作的触发者(系统通知固定为 1)
+    - target_type + target_id 指向关联资源(帖子/评论/用户)
+    - target_scope 控制公告推送范围(全部/新用户/VIP)
+    - extra 冗余头像/昵称/预览文本, 列表页免联表查询
+    - is_deleted 软删除标记
+    """
     __tablename__ = f"{TABLE_PREFIX}notice"
     __table_args__ = {'comment': '通知'}
 

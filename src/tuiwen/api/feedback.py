@@ -14,7 +14,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_feedback_service
-from model.feedback import FeedbackResponse, FeedbackCreate, Feedback, FeedbackStatus
+from src.tuiwen.model.feedback import FeedbackResponse, FeedbackCreate, Feedback, FeedbackStatus
 from src.tuiwen.service.feedback import FeedbackService
 
 # 反馈接口不要求登录: 未登录用户同样可以提交

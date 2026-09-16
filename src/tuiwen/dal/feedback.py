@@ -8,7 +8,7 @@
     FeedbackService → FeedbackDAO → PostgreSQL
 """
 from src.tuiwen.dal.base import BaseDAO
-from model.feedback import Feedback
+from src.tuiwen.model.feedback import Feedback
 
 
 class FeedbackDAO(BaseDAO[Feedback]):

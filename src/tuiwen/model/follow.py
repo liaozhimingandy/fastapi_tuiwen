@@ -1,3 +1,7 @@
+"""关注模型: 关注关系表(tw_follow)与关注统计响应模型。
+
+follower_id(关注者) + followee_id(被关注者) 有联合唯一索引, 保证不重复关注。
+"""
 from datetime import datetime
 
 from pydantic import BaseModel, field_serializer
@@ -38,6 +42,7 @@ class Follow(SQLModel, table=True):
 
 
 class FollowCountModel(BaseModel):
+    """关注主页统计响应: 粉丝数/关注数/是否已关注/获赞数。"""
     follower_count: int = Field(0, description='粉丝数')
     followee_count: int = Field(0, description='关注的数量')
     is_following: bool = Field(False, description='是否正在关注')

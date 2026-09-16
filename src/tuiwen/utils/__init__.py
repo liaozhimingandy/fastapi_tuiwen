@@ -1,3 +1,8 @@
+"""utils 包对外统一出口。
+
+按用途聚合: 日志(logger) / 通用函数(utils) / JWT(jwt_token) /
+邮件(mail_service) / Redis(redis_util), 上层只从 src.tuiwen.utils 导入。
+"""
 from .logger import logger
 from .utils import (allowed_file, get_version_from_pyproject, get_version_from_txt,
                     get_random_salt, custom_generate_unique_id, convert_to_cst_time, hash_password)

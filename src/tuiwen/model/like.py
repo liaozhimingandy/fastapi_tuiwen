@@ -17,7 +17,7 @@ class LikeInput(SQLModel):
     """
 
     class ObjTypeEnum(IntEnum):
-        """评论对象类别"""
+        """点赞对象类别(当前仅支持帖子)。"""
         POST = 1
 
     id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
@@ -37,6 +37,7 @@ class LikeInput(SQLModel):
 
 
 class Like(LikeInput, table=True):
+    """点赞数据库表(tw_like)。"""
     __tablename__ = f"{TABLE_PREFIX}like"  # 表名
 
     # 创建联合索引
@@ -47,5 +48,6 @@ class Like(LikeInput, table=True):
     )
 
 class LikeCountModel(BaseModel):
+    """点赞数查询响应: 总数 + 当前用户是否已点赞。"""
     count: int = Field(0, description='点赞的数量')
     is_liked: bool = Field(False, description='是否已经点赞')

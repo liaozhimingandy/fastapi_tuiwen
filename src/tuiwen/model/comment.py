@@ -1,3 +1,8 @@
+"""评论模型: 评论表(tw_comment)与入参模型。
+
+comment_id 采用 uuid7(时间有序), 评论分页按其做游标;
+obj_id + obj_type 组合标识被评论的目标(帖子/其它)。
+"""
 from enum import IntEnum
 import uuid
 from uuid import UUID
@@ -56,5 +61,6 @@ class CommentInput(SQLModel):
 
 
 class Comment(CommentInput, table=True):
+    """评论数据库表(tw_comment)。"""
     __tablename__ = f"{TABLE_PREFIX}comment"  # 表名
     __table_args__ = {'comment': '评论'}  # 表备注

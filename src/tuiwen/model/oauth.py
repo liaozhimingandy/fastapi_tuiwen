@@ -1,3 +1,7 @@
+"""OAuth/令牌与验证码模型: token 响应结构、验证码发送入参、凭据更新入参。
+
+不映射数据库表, 仅做请求/响应的数据校验载体。
+"""
 from datetime import timedelta
 from enum import Enum
 from typing import Literal, Optional
@@ -18,15 +22,19 @@ class Token(SQLModel):
     access_token: str = Field(..., description="请求令牌")
 
 class AccessToken(Token):
+    """访问令牌: 在基础字段上补充账户ID。"""
     account_id: str = Field(..., description="账户ID")
 
 class RefreshToken(AccessToken):
+    """刷新令牌: 携带 refresh_token 字段, 用于换取新的 access_token。"""
     refresh_token: str = Field(..., description="刷新令牌")
 
 class AppAccessToken(Token):
-    app_id: str = Field(..., description="账户ID")
+    """应用级访问令牌(小程序/服务端应用), 携带 app_id。"""
+    app_id: str = Field(..., description="应用ID")
 
 class AppRefreshToken(AppAccessToken):
+    """应用级刷新令牌。"""
     refresh_token: str = Field(..., description="刷新令牌")
 
 ########################################################################################################################
@@ -55,12 +63,12 @@ class TurnstileVerifyToken(SQLModel):
 
 class UpdateCredential(SQLModel):
     """
-    type: username / mail / phone
+    type: username / mail / mobile
     new_value: 新值
     password: 修改邮箱、手机号必填；修改用户名不需要传
     code: 修改邮箱、手机号必填；用户名不需要
     """
-    type: Literal["username", "mail", "phone"]
+    type: Literal["username", "mail", "mobile"]
     new_value: str
     password: Optional[str] = None
     code: Optional[str] = None

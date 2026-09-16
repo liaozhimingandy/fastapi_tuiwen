@@ -11,7 +11,7 @@
 from dataclasses import dataclass
 from sqlmodel import desc
 from src.tuiwen.dal.notice import NoticeDAO
-from model.notice import NoticeType, Notice
+from src.tuiwen.model.notice import NoticeType, Notice
 
 
 @dataclass

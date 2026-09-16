@@ -9,7 +9,7 @@
     UploadService → UploadDAO → PostgreSQL
 """
 from src.tuiwen.dal.base import BaseDAO
-from model.file import File
+from src.tuiwen.model.file import File
 
 
 class FileDAO(BaseDAO[File]):

@@ -1,4 +1,10 @@
 # SECRET_KEY用于JWT令牌签名的随机密钥
+"""JWT 签发与校验工具。
+
+generate_jwt_token: 组装标准声明(aud/iss/jti/iat/nbf/exp) + 业务数据后用 HS256 签名;
+verify_jwt_token:   解析并校验签名/过期/audience/grant_type, 失败时统一返回
+                    {"message": 原因} 字典(不抛异常), 由调用方判断 "message" 键是否存在。
+"""
 import uuid
 from datetime import timedelta, datetime, timezone
 
@@ -26,11 +32,12 @@ def generate_jwt_token(data: dict, expires_in: timedelta = timedelta(days=1),
     :return:
     """
     payload = {
-        "aud": "www.alsoapp.com",
-        "iss": "Online JWT Builder",
-        "jti": str(uuid.uuid4()).replace('-', ''),
-        "iat": datetime.now(timezone.utc),
-        "nbf": datetime.now(timezone.utc),
+        "aud": "www.alsoapp.com",       # 接收方
+        "iss": "Online JWT Builder",    # 签发方
+        "jti": str(uuid.uuid4()).replace('-', ''),  # 唯一标识, 防重放
+        "iat": datetime.now(timezone.utc),          # 签发时间
+        "nbf": datetime.now(timezone.utc),          # 生效时间
+        # 过期 = expires_in + 30 分钟缓冲(容忍客户端时钟偏差)
         "exp": datetime.now(timezone.utc) + expires_in + timedelta(minutes=30),
         "grant_type": grant_type,
         "version": "2.0",
@@ -45,14 +52,14 @@ def generate_jwt_token(data: dict, expires_in: timedelta = timedelta(days=1),
 
 
 def verify_jwt_token(data: str, grant_type: str = "access_token") -> dict:
-    """
+    """解析并校验 jwt token。
 
-    解析jwt token
+    校验项: 签名(HS256) / 过期时间(verify_exp) / audience / grant_type 类型。
+    设计上失败不抛异常, 而是返回 {"message": 原因}, 调用方通过 'message' 键判断是否成功。
 
-    :param settings:
-    :param grant_type: 校验令牌类型
-    :param data: 需要解密的数据
-    :return:
+    :param data: 待解析的 JWT 字符串
+    :param grant_type: 期望的令牌类型(access_token / refresh_token), 不匹配视为失败
+    :return: 成功返回声明集 dict; 失败返回 {"message": 失败原因}
     """
     try:
         decode = jwt.decode(data, key=get_settings().SECRET_KEY, algorithms=['HS256'], audience='www.alsoapp.com',

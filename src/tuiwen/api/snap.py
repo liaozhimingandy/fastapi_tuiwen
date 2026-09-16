@@ -17,7 +17,7 @@ from fastapi import APIRouter, Request, Depends, Query
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_snap_service
 from src.tuiwen.models import PageResponse
-from model.snap import Snap, SnapCreate
+from src.tuiwen.model.snap import Snap, SnapCreate
 from src.tuiwen.service.snap import SnapService
 
 router_public = APIRouter(prefix='/snaps', tags=[Tag.more])

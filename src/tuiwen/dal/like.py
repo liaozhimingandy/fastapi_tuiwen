@@ -13,7 +13,7 @@
 from sqlmodel import delete, select, exists
 
 from src.tuiwen.dal.base import BaseDAO
-from model.like import Like
+from src.tuiwen.model.like import Like
 
 
 class LikeDAO(BaseDAO[Like]):

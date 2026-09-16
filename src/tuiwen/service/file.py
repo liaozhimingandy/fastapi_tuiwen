@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from src.tuiwen.dal.file import FileDAO
 from src.tuiwen.core import get_settings
-from model.post import File
+from src.tuiwen.model.file import File
 
 
 @dataclass

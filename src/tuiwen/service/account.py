@@ -25,14 +25,17 @@ import random
 import httpx
 from sqlmodel import select, or_
 
-# NOTE: SCOPES_BASIC 目前定义在 account/router.py 里, Service 直接引用路由模块属于反向依赖,
-#       理想做法是把它下沉到 core/config.py 之类的公共常量模块; 这里先修正为可用的绝对导入
-from src.tuiwen.account.router import SCOPES_BASIC
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.common.exceptions import EmailAlreadyRegisteredError, UsernameAlreadyUsedError
-from model.account import AccountCreate, Account, AccountPublicCommon, CodeVerify, TurnstileVerifyToken, \
-    UpdateCredential, AccountPasswordChange, AccountPasswordReset, RefreshToken, AccessToken
-from src.tuiwen.core import get_settings
+# 模型统一从 model 包绝对导入(原 "from model.account" 是裸导入, 只在把 src/tuiwen 也加入
+# sys.path 时才成立, 与项目「唯一源根=项目根」的约定冲突);
+# 重构后账户字段与令牌/验证码模型分别位于 account / oauth 两个模块
+from src.tuiwen.model.account import (AccountCreate, Account, AccountPublicCommon,
+                                      AccountPasswordChange, AccountPasswordReset)
+from src.tuiwen.model.oauth import (AccessToken, CodeVerify, RefreshToken,
+                                    TurnstileVerifyToken, UpdateCredential)
+# SCOPES_BASIC 已下沉到 core(原定义在 account/router.py, 属反向依赖)
+from src.tuiwen.core import get_settings, SCOPES_BASIC
 from src.tuiwen.dal.account import AccountDAO
 from src.tuiwen.utils.jwt_token import generate_jwt_token, verify_jwt_token
 from src.tuiwen.utils.redis_util import RedisKey, redis_get, redis_set, redis_delete

@@ -10,7 +10,7 @@
 from dataclasses import dataclass
 
 from src.tuiwen.dal.feedback import FeedbackDAO
-from model.snap import Feedback
+from src.tuiwen.model.feedback import Feedback
 
 
 @dataclass

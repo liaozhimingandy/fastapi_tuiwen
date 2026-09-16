@@ -1,3 +1,8 @@
+"""天亮即焚(匿名树洞)模型: snap 表(tw_snap)与发布入参。
+
+内容匿名展示(alias_name 为当晚临时代号), 带情绪标签与话题,
+点赞数直接冗余在表上, 由 SQL 原子自增维护。
+"""
 from datetime import datetime
 from enum import IntEnum
 from ipaddress import IPv4Address, IPv6Address
@@ -34,6 +39,14 @@ class EmotionTagEnum(IntEnum):
 
 
 class Snap(SQLModel, table=True):
+    """天亮即焚数据库表(tw_snap)。
+
+    - content: JSON 内容体
+    - emotion: 情绪标签编号(见 EmotionTagEnum)
+    - alias_name: 当晚匿名临时代号(必填)
+    - like: 点赞数冗余字段, 由 DAL 用 SQL 原子自增维护
+    - from_ip: 来源 IP(INET 类型)
+    """
     __tablename__ = f"{TABLE_PREFIX}snap"
     __table_args__ = {"comment": "天亮即焚表"}
 
@@ -59,6 +72,7 @@ class Snap(SQLModel, table=True):
 
 
 class SnapCreate(SQLModel):
+    """发布天亮即焚的入参模型(仅业务字段, 不含 IP/点赞数等服务端字段)。"""
     content: dict = Field(..., max_length=512, description='内容')
     emotion: int | None = Field(default=None, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
     topic: str | None = Field(default=None, description="话题编号")

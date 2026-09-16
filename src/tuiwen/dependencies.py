@@ -1,3 +1,14 @@
+"""FastAPI 依赖注入中心(Composition Root)。
+
+职责分三段:
+1. 认证依赖: OAuth2 Bearer 令牌解析(check_authentication / get_current_user /
+   get_current_active_user), 校验通过后把 account_id / salt 写入 request.state;
+2. 会话依赖: 请求级数据库会话(get_session / get_conn);
+3. DI 工厂: 为每张表提供「写会话+读会话 → DAO → Service」的依赖链,
+   api 层统一通过 get_xxx_service(...) 注入, Service 再通过 dao 访问数据。
+
+约定: DAO 只 flush 不 commit, 事务提交/回滚出口统一在 API 层(dao.commit()/rollback())。
+"""
 from typing import Annotated, AsyncGenerator, Any
 from sqlmodel.ext.asyncio.session import AsyncSession
 from fastapi import Depends, HTTPException, Security, Request, FastAPI, status
@@ -5,7 +16,9 @@ from fastapi.security import SecurityScopes, OAuth2PasswordBearer
 
 from src.tuiwen.core import AsyncSessionLocal
 from src.tuiwen.utils import verify_jwt_token
-from src.tuiwen.account import Account
+# Account 模型随模块重构已迁移到 model 包(src.tuiwen.account 不存在),
+# 这里同步修正导入路径, 否则本模块(及整个应用) import 即失败
+from src.tuiwen.model.account import Account
 
 from src.tuiwen.core.database import (
     get_write_session,
@@ -13,6 +26,7 @@ from src.tuiwen.core.database import (
 )
 
 
+# OAuth2 密码流: 文档页的 Authorize 按钮会把 token 请求发到该地址
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/oauth/authorize/password/", scopes={
     "basic": "basic access",
     "admin": "write access and read access"
@@ -36,7 +50,7 @@ async def check_authentication(request: Request, token: Annotated[str, Depends(o
                       '/redoc',
                       '/oauth/authorize/password/',
                       '/accounts/password/reset/',
-                      '/oauth/authorize/password/']  # 排除的路径
+                      '/oauth/authorize/password/']  # 排除的路径(免登录白名单; 列表内有重复项, 可清理)
 
     if request.url.path in excluded_paths:
         return None  # 如果是排除路径，不做认证检查
@@ -120,7 +134,11 @@ async def get_current_user(security_scopes: SecurityScopes, token: Annotated[str
 async def get_current_active_user(
         current_user: Account = Security(get_current_user, scopes=["admin"]),
 ):
-    """用于进一步过滤是否有数据操作权限的用户信息"""
+    """在 get_current_user 基础上再校验账户是否被禁用(is_active=False 直接 401)。
+
+    NOTE: 这里用的 Account 只带了 account_id, 未查库, is_active 取的是模型默认值 True,
+          实际不会拦截被禁用的账号; 需要真正拦截时应补一次数据库查询
+    """
     if not current_user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not enough permissions")
     return current_user
@@ -128,7 +146,7 @@ async def get_current_active_user(
 
 # ========== 会话依赖（供路由层使用） ==========
 async def get_session() -> AsyncGenerator[Any, Any]:
-    """标准异步会话依赖，自动管理会话生命周期"""
+    """标准异步会话依赖(经 AsyncSessionLocal 工厂构造), 异常自动回滚、请求结束自动关闭。"""
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -140,11 +158,12 @@ async def get_session() -> AsyncGenerator[Any, Any]:
 
 
 async def get_conn(app: FastAPI) -> AsyncGenerator[Any, Any]:
-    """返回数据库会话;适合手动管理连接"""
+    """返回 asyncpg 原生连接(需先由 lifespan 把连接池挂到 app.state.pool), 适合批量/COPY 场景。"""
     async with app.state.pool.acquire() as conn:
         yield conn
 
 
+# ========== DAO 依赖工厂(每张表一个: 写会话 + 读会话 → DAO 实例) ==========
 async def get_notice_dao(
     write_db: AsyncSession = Depends(get_write_session),
     read_db: AsyncSession = Depends(get_read_session),
@@ -236,6 +255,7 @@ async def get_account_dao(
     )
 
 
+# ========== Service 依赖工厂(DAO → Service; api 层实际注入的就是这些) ==========
 def get_notice_service(dao = Depends(get_notice_dao)):
     from src.tuiwen.service.notice import NoticeService
     return NoticeService(dao=dao)

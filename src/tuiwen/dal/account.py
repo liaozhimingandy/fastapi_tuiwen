@@ -13,7 +13,7 @@
 from sqlmodel import select, or_, func
 
 from src.tuiwen.dal.base import BaseDAO
-from model.account import Account
+from src.tuiwen.model.account import Account
 
 
 class AccountDAO(BaseDAO[Account]):

@@ -1,3 +1,10 @@
+"""应用入口: 组装 FastAPI 实例、生命周期、中间件与文档页。
+
+启动流程(lifespan):
+    打印 banner → 初始化 Redis(失败即自杀) → 初始化 PostgreSQL 连接/连接池
+    → 初始化全局邮件服务 → 对外提供服务
+停机流程: 关闭 asyncpg 连接池 → dispose SQLAlchemy 引擎 → 关闭 Redis
+"""
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,9 +17,10 @@ from src.tuiwen import (api_router, logger, custom_generate_unique_id,
                         init_redis, close_redis, init_postgres)
 
 
+# 版本号与描述从 VERSION 文件首行读取(CI/CD 可只改该文件)
 __version__, description = get_version_from_txt("VERSION")
 
-# 标签描述配置
+# 标签描述配置(对应 core.config.Tag 与各路由的 tags, 决定文档页分组显示)
 tags_metadata = [
     {
         "name": "health",
@@ -56,7 +64,7 @@ tags_metadata = [
     },
 ]
 
-# 服务地址
+# 服务地址(文档页右上角可切换调试的服务端)
 servers = [
     {"url": "https://api.tuiwen.alsoapp.com", "description": "生产环境地址"},
     {"url": "https://api-test.tuiwen.alsoapp.com", "description": "测试环境地址"},
@@ -66,7 +74,7 @@ servers = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """app生命周期函数"""
+    """app生命周期函数: yield 之前是启动逻辑, 之后是停机清理。"""
     # app 启动前
     # app.state.pool = await get_async_pool()
 
@@ -74,7 +82,10 @@ async def lifespan(app: FastAPI):
     # from src.tuiwen.core import init_db
     # await init_db()
     # logger.info("init database success")
+    # NOTE: 建表已注释, 表结构当前依赖数据库侧脚本/人工维护; 若要启用请先补
+    #       core.database._import_all_models() 的模型导入(现为空函数)
 
+    # 启动横幅(纯展示, 与业务无关)
     from pyfiglet import Figlet
     ft = Figlet(font="ansi_shadow")
     ascii_art = ft.renderText("API-TUIWEN")
@@ -85,6 +96,8 @@ async def lifespan(app: FastAPI):
     logger.info("✅ server started")
 
     import os, signal
+    # 1. Redis 初始化(缓存/验证码依赖, 属强依赖: 失败即终止进程, 避免半可用状态)
+    # NOTE: 直接 kill 自身进程, 容器编排下表现为反复重启; 可用 sys.exit(1) 起同样效果且更易读
     try:
         await init_redis()
         logger.info("✅ Redis 同步连接初始化成功")
@@ -99,12 +112,13 @@ async def lifespan(app: FastAPI):
         logger.error("【FATAL】PostgreSQL 数据库初始化失败，服务无法启动: %s", e)
         os.kill(os.getpid(), signal.SIGTERM)
 
-    # 邮件系统
+    # 邮件系统(按 DEBUG 自动切本地 MailDev / 生产 SMTP)
     init_mail_sender(is_prod=not get_settings().DEBUG)
     logger.info("✅ 全局邮件服务初始化完成")
     logger.info(f"✅ 系统启动成功,正在以[{ '测试' if get_settings().DEBUG else '生产' }]环境运行❗")
-    yield
+    yield   # ← 服务对外可用期间
     # 停机：释放所有连接资源
+    # NOTE: 裸 except 会吞掉清理阶段的异常, 排查停机问题时建议至少 logger.warning 记录下来
     try:
         await close_async_pool()
         await dispose_engine()
@@ -113,6 +127,7 @@ async def lifespan(app: FastAPI):
         pass
 
 
+# 应用实例: 关掉默认 docs/redoc, 改为下方自定义(静态资源走本地 /static, 便于内网部署)
 app = FastAPI(title="内部API文档",
               description=description,
               version=__version__,
@@ -136,14 +151,16 @@ app = FastAPI(title="内部API文档",
               redirect_slashes=True,
               )
 
+# 挂载业务路由(总前缀 /api/v2, 由 api/router.py 定义)
 app.include_router(api_router)
 
-# 静态文件目录
+# 静态文件目录(前端 swagger 资源、上传的媒体文件均由此对外暴露)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 ##################################################### 中间件 ############################################################
-# 允许的来源（这里是 * 表示所有域名, 你也可以指定特定的域名）
-# 配置允许跨域的域名、请求方法等
+# 跨域中间件: 允许跨域的域名、请求方法、请求头
+# NOTE: allow_credentials=True 与 allow_origins=["*"] 组合会被浏览器拒绝(规范禁止),
+#       生产环境应把 BACKEND_CORS_ORIGINS 配成具体域名
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().BACKEND_CORS_ORIGINS,  # 允许跨域访问的来源
@@ -154,6 +171,7 @@ app.add_middleware(
 
 
 ########################################### openapi样式文件自定义,如果时公网可关闭,使用默认CDN #####################
+# 三个文档页均使用本地 /static 下的资源(不依赖公网 CDN, 适合内网/离线环境)
 @app.get("/docs", include_in_schema=False, tags=["docs"])
 async def custom_swagger_ui_html():
     return get_swagger_ui_html(

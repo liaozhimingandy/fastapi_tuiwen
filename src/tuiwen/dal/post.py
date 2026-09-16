@@ -15,7 +15,7 @@ import uuid
 from sqlmodel import delete, update, select, or_
 
 from src.tuiwen.dal.base import BaseDAO
-from model.post import Post, RightStatusEnum
+from src.tuiwen.model.post import Post, RightStatusEnum
 
 
 class PostDAO(BaseDAO[Post]):

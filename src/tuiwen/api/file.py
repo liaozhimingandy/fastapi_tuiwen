@@ -18,7 +18,7 @@ from fastapi import APIRouter, status, UploadFile, HTTPException, Depends, Reque
 from src.tuiwen.dependencies import get_upload_service
 from src.tuiwen.service.file import FileService
 from src.tuiwen.core import Settings
-from model.file import FileBase
+from src.tuiwen.model.file import FileBase
 from src.tuiwen.core import Tag
 from src.tuiwen.utils import allowed_file
 from src.tuiwen.core import get_settings

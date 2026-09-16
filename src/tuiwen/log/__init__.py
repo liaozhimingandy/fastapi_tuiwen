@@ -7,7 +7,7 @@
     @Author：liaozhimingandy
     @Email: liaozhimingandy@gmail.com
     @Date：2025/4/3 08:58
-    @Desc: 
+    @Desc: 日志模块入口(当前仅提供日志表模型, 运行时日志见 utils.logger)
 =================================================
 """
 

@@ -1,3 +1,4 @@
+"""用户反馈模型: 反馈表(tw_feedback)、创建/管理端入参与响应模型。"""
 from datetime import datetime, timezone
 from enum import IntEnum
 from ipaddress import IPv4Address, IPv6Address
@@ -47,6 +48,10 @@ class FeedbackLevel(IntEnum):
 
 
 class FeedbackStatus(IntEnum):
+    """处理状态流转: PENDING → PROCESSING → DONE; CLOSED(0) 表示关闭。
+
+    NOTE: label 映射把 CLOSED 写成了 4, 实际枚举值是 0, 也会 KeyError
+    """
     PENDING = 1      # 待处理
     PROCESSING = 2   # 处理中
     DONE = 3         # 已处理完成
@@ -58,7 +63,7 @@ class FeedbackStatus(IntEnum):
             1: "PENDING",
             2: "PROCESSING",
             3: "DONE",
-            4: "CLOSED"
+            0: "CLOSED"
         }
         return mapping[self.value]
 
@@ -108,6 +113,11 @@ class Feedback(FeedbackCreate, table=True):
 
 # ------------------------------ 返回前端响应模型 ------------------------------
 class FeedbackResponse(SQLModel):
+    """反馈详情响应模型(from_attributes 支持 ORM 对象直接转换)。
+
+    NOTE: account_id / handle_user_id 声明为 Optional[int], 但模型里是字符串 ID,
+          序列化时 Pydantic v2 会因类型不匹配报错, 应改为 Optional[str]
+    """
     id: int
     account_id: Optional[int]
     title: Optional[str]

@@ -13,7 +13,7 @@
 from dataclasses import dataclass
 
 from src.tuiwen.dal.like import LikeDAO
-from model.post import Like
+from src.tuiwen.model.like import Like
 
 
 @dataclass

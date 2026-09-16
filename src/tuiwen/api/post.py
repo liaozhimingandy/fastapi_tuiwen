@@ -18,7 +18,7 @@ from fastapi import APIRouter, status, Request, Body, Depends, Path, Query, Resp
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_post_service
 from src.tuiwen.models import PageResponse
-from model.post import Post, PostCreate, PostRightStatusUpdate
+from src.tuiwen.model.post import Post, PostCreate, PostRightStatusUpdate
 from src.tuiwen.service.post import PostService
 
 router_post = APIRouter(prefix="/posts", tags=[Tag.post])

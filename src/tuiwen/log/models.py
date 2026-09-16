@@ -7,7 +7,7 @@
     @Author：liaozhimingandy
     @Email: liaozhimingandy@gmail.com
     @Date：2025/4/3 08:58
-    @Desc: 
+    @Desc: 日志表模型(结构化日志落库, 供后台检索与审计)
 =================================================
 """
 import uuid
@@ -22,6 +22,11 @@ from src.tuiwen import get_settings
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
 class Log(SQLModel, table=True):
+    """系统运行日志表。
+
+    每条业务/异常事件落一行: app_id 标识来源应用, trace_id 串起一次请求的全链路,
+    log_level 沿用标准日志级别数值(TRACE 0 ~ CRITICAL 50), context 存 JSON 上下文。
+    """
 
     __tablename__ = f"{TABLE_PREFIX}log"
     __table_args__ = {'comment': '日志记录信息表'}

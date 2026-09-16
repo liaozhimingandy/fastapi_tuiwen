@@ -6,7 +6,7 @@
     @Author：liaozhimingandy
     @Email: liaozhimingandy@gmail.com
     @Date：2025/1/11 11:44
-    @Desc: 
+    @Desc: 数据库基础设施: 异步引擎/会话工厂/建表初始化/asyncpg 原生连接池/停机清理
 ================================================="""
 from typing import Annotated, TypeVar
 
@@ -29,6 +29,7 @@ from ..utils.logger import logger
 
 settings = get_settings()
 DATABASE_URL = str(settings.SQLALCHEMY_DATABASE_URI)
+# 模块级单例引擎: 整个应用共享这一个连接池, 由 FastAPI lifespan 在停机时 dispose
 engine: AsyncEngine = create_async_engine(
     DATABASE_URL,
     echo=not settings.DEBUG,
@@ -39,7 +40,11 @@ engine: AsyncEngine = create_async_engine(
     connect_args={"timeout": 60} # 连接超时时间
     )  # Annotated[bool, Doc("是否显示数据库层面日志")]
 
+# NOTE: echo=not settings.DEBUG 的语义与直觉相反 —— 生产环境(DEBUG=False)会打印全部 SQL 日志,
+#       本地调试反而安静; 如需"调试时才打 SQL", 应改为 echo=settings.DEBUG
 # 创建异步session
+# NOTE: expire_on_commit=False 使 commit 后 ORM 实例属性仍然可用(项目 DAO 规范依赖此行为);
+#       autoflush=False 避免查询前隐式 flush 带来的意外写库
 AsyncSessionLocal = sessionmaker(
     bind=engine,
     class_=AsyncSession,
@@ -53,6 +58,10 @@ T = TypeVar("T")
 def _import_all_models() -> None:
     """集中导入所有模型，确保元数据注册到 metadata
     单独抽成函数，避免循环导入，同时保证建表前所有模型已加载
+
+    NOTE: 函数体当前为空 —— src/tuiwen/model/ 下的模型一个都没被导入,
+          SQLModel.metadata 里不会有任何表, 因此 init_db()/drop_and_create_tables()
+          实际什么表都不会创建; 需要补上对 src.tuiwen.model.* 的导入后才有效
     """
 
 
@@ -112,13 +121,14 @@ async def get_async_pool()->asyncpg.Pool:
         logger.info("asyncpg 原生连接池初始化完成")
     return _asyncpg_pool
 
-
 async def get_write_session():
-    async with AsyncSession(engine) as session:
+    """FastAPI 依赖: 提供写会话(请求结束自动关闭, 不自动 commit, 事务出口在上层)。"""
+    async with AsyncSessionLocal() as session:
         yield session
 
 async def get_read_session():
-    async with AsyncSession(engine) as session:
+    """FastAPI 依赖: 提供读会话(当前与写会话共用同一 engine, 未来读写分离时在此拆分)。"""
+    async with AsyncSessionLocal() as session:
         yield session
 
 
@@ -152,6 +162,7 @@ async def init_postgres():
     await get_async_pool()
 
     # 3. 创建不存在的数据表（不会覆盖已有数据）
+    # NOTE: init_db() 依赖的 _import_all_models() 当前是空函数, 启用前需先补上模型导入
     # await init_db()
 
     logger.info("✅ PostgreSQL 完整初始化完成")

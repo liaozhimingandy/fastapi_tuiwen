@@ -1,3 +1,7 @@
+"""帖子模型: 帖子表(tw_post)、创建入参、权限更新入参及相关枚举。
+
+post_id 采用 uuid7(时间有序), 天然适合按时间游标分页。
+"""
 from decimal import Decimal
 from enum import IntEnum
 import uuid
@@ -48,6 +52,8 @@ class PostRightStatusUpdate(SQLModel):
 
 
 class PostCreate(PostRightStatusUpdate):
+    """发帖入参模型 = 权限三字段 + 内容/来源/位置等业务字段。"""
+
     class FromDeviceEnum(IntEnum):
         """设备来源类型"""
 
@@ -86,6 +92,9 @@ class PostCreate(PostRightStatusUpdate):
 class Post(PostCreate, table=True):
     """
     帖子模型
+
+    数据库表 tw_post: 在入参字段之上补充自增主键 id、状态与创建/更新时间;
+    create_at/update_at 序列化时统一转配置时区(Asia/Shanghai)。
     """
 
     __tablename__ = f"{TABLE_PREFIX}post"  # 表名

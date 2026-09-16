@@ -7,7 +7,11 @@
     @Author：liaozhimingandy
     @Email: liaozhimingandy@gmail.com
     @Date：2025/2/15 21:31
-    @Desc: 测试用例
+    @Desc: 端到端接口测试(TestClient 走真实 lifespan)
+
+           依赖外部服务: PostgreSQL / Redis / 邮件服务(MailDev) 均需就绪,
+           且 Redis 中能取到验证码, 属集成测试而非单元测试。
+           执行前提: 先启动服务依赖, 再 `pytest test_main.py`
 =================================================
 """
 from collections.abc import Generator
@@ -28,6 +32,7 @@ from src.tuiwen import get_settings
 from src.tuiwen.utils.redis_util import RedisKey
 
 
+# 旧方案: 直连已启动的服务(需先 uvicorn 起服务); 现改为 TestClient 进程内调用, 无需起服务
 # @pytest.fixture(scope="module")
 # def client() -> Generator[TestClient, None, None]:
 #     with httpx.Client(base_url="http://127.0.0.1:8000") as c:
@@ -35,6 +40,11 @@ from src.tuiwen.utils.redis_util import RedisKey
 
 @pytest.fixture(scope="module")
 def client() -> Generator[TestClient, None, None]:
+    """模块级共享的 TestClient。
+
+    进入上下文即触发 app.lifespan: 会连 Redis / PostgreSQL / 初始化邮件服务,
+    环境不就绪时整个测试模块都会失败。
+    """
     with TestClient(app, client=('127.0.0.1', 9000), base_url='http://127.0.0.1:8000/api/v2') as c:
         yield c
 
@@ -50,6 +60,7 @@ config = get_settings()
 _sync_redis: redis.Redis | None = None
 
 def get_sync_redis() -> redis.Redis:
+    """同步 Redis 客户端单例(测试内直接读缓存, 例如取邮箱验证码)。"""
     global _sync_redis
     if _sync_redis is None:
         _sync_redis = redis.Redis(
@@ -64,12 +75,19 @@ def get_sync_redis() -> redis.Redis:
     return _sync_redis
 
 def redis_sync_get(key: str):
+    """按 key 读取 Redis 值(主要用于从缓存里捞验证码)。"""
     cli = get_sync_redis()
     return cli.get(key)
 
 
 class TestMain:
-    """测试类"""
+    """测试类
+
+    用例之间通过类属性串联上下文(account_id / post_id / comment_id / snap_id),
+    因此执行顺序敏感, 不建议单独运行某个用例。
+    NOTE: md5_hash 是类级共享的 md5 对象, update 后状态会跨用例累积,
+          变更密码类用例依赖它保持同值, 修改时要留意
+    """
     BASE_URL = "http://127.0.0.1:8000/api/v2"
     account_id = ''
     post_id = ''
@@ -79,7 +97,12 @@ class TestMain:
 
     @pytest.fixture(scope="class", autouse=True)
     def test_register_and_login(self, client: TestClient):
-        """测试用户注册"""
+        """类级前置: 随机邮箱注册一个新账号并登录, 把 token 注入 client。
+
+        Returns:
+            dict: account_id / mail / refresh_token / 已带 Authorization 头的 client,
+                  后续用例通过 test_register_and_login.get(...) 取用
+        """
 
         passowrd = '123456'
         TestMain.md5_hash.update(passowrd.encode('utf-8'))
@@ -125,6 +148,7 @@ class TestMain:
             "client": client  # 把配置好 token 的 client 也传回去
         }
 
+    # ==================== 会话 / 账号 ====================
     def test_refresh_token(self, test_register_and_login) -> None:
         """测试刷新token"""
         r = test_register_and_login.get('client').get(f'/oauth/refresh-token/{TestMain.account_id}/refresh_token/',
@@ -158,7 +182,7 @@ class TestMain:
         assert r.status_code == 200
 
         # 404
-        r = test_register_and_login.get('client').get(f"/accounts/search/{keyword}-{str(uuid.uuid4())}/")
+        r = test_register_and_login.get('client').get(f"/accounts/search/{keyword}-{str(uuid.uuid7())}/")
         assert r.status_code == status.HTTP_200_OK and r.json().get('total') == 0
 
     def test_put_account(self, test_register_and_login) -> None:
@@ -215,6 +239,7 @@ class TestMain:
         r = client.put(f'/accounts/password/reset/', json=data)
         assert r.status_code == status.HTTP_400_BAD_REQUEST
 
+    # ==================== 帖子 ====================
     def test_create_post(self, test_register_and_login) -> None:
         """创建帖子"""
         data = {
@@ -239,6 +264,11 @@ class TestMain:
         assert r.status_code == 200 and r.json()['total'] > 0, "帖子数量为0"
 
     def test_get_account_posts(self, test_register_and_login) -> None:
+        """按游标取某账号的帖子
+
+        NOTE: 断言 total == 0 但提示语写的是"帖子数量为0", 语义相反;
+              且游标用的是刚创建的 post_id, 返回 0 条属预期, 作者本意应是校验"游标之后无数据"
+        """
         client = test_register_and_login.get('client')
 
         r = client.get(f'/posts/accounts/{TestMain.account_id}/', params={'limit': 10, 'cursor': TestMain.post_id})
@@ -262,8 +292,13 @@ class TestMain:
         r = client.delete(f"/posts/{TestMain.post_id}/")
         assert r.status_code == status.HTTP_204_NO_CONTENT
 
+    # ==================== 评论 ====================
     def test_create_comment(self, test_register_and_login) -> None:
-        """创建评论"""
+        """创建评论
+
+        NOTE: comment_id 由客户端用 uuid4 生成, 而生产链路是 uuid7(时间有序, 支撑游标分页),
+              测试数据与真实数据的时间序语义不一致
+        """
         data = {
             "comment_id": str(uuid.uuid4()),
             "is_root": False,
@@ -278,7 +313,10 @@ class TestMain:
         TestMain.comment_id = data.get('comment_id')
 
     def test_get_comments(self, test_register_and_login) -> None:
+        """评论分页(带游标 / 不带游标两种)"""
         client = test_register_and_login.get('client')
+        # NOTE: 这里用 self.post_id 取的是类属性初值 '', 并非前面创建的帖子ID(应为 TestMain.post_id),
+        #       因此实际请求路径形如 /comments/1//, 断言也就失去了校验意义
         r = client.get(f'/comments/1/{self.post_id}/', params={'limit': 10, 'cursor': TestMain.comment_id})
         assert r.status_code == 200 and r.json().get('total') == 0, '不应该有数据'
         r = client.get(f'/comments/1/{self.post_id}/', params={'limit': 10})
@@ -290,6 +328,7 @@ class TestMain:
         r = client.delete(f"/comments/{TestMain.comment_id}/")
         assert r.status_code == status.HTTP_204_NO_CONTENT
 
+    # ==================== 点赞 ====================
     def test_create_like(self, test_register_and_login) -> None:
         """给帖子点赞"""
         data = {
@@ -314,8 +353,13 @@ class TestMain:
         assert r.status_code == 200
         assert r.json().get('is_liked') == False
 
+    # ==================== 文件上传 ====================
     def test_upload_image(self, test_register_and_login) -> None:
-        """测试图片上传"""
+        """测试图片上传
+
+        NOTE: 依赖本机固定路径的图片文件, 换机器/CI 上必然失败;
+              建议改为 fixture 生成的临时小图
+        """
         client = test_register_and_login.get('client')
         with open(r'C:\Users\liaoz\Pictures\【可乐】智能云千帆行业实战：金融大模型应用探索与开发实践1915.867.png',
                   'rb') as f:
@@ -323,6 +367,7 @@ class TestMain:
             response = client.post(f'/upload/image/', files=files)
             assert response.status_code == status.HTTP_201_CREATED
 
+    # ==================== 关注 ====================
     def test_create_follower(self, test_register_and_login) -> None:
         """创建关注"""
         account_id = test_register_and_login.get('account_id')
@@ -353,12 +398,17 @@ class TestMain:
         assert r.json().get('is_following') == False
 
     def test_get_posts(self, test_register_and_login) -> None:
-        """获取下页数据"""
+        """获取下页数据
+
+        NOTE: 查询参数写成了 'cusror'(拼写错误), 服务端只认 cursor,
+              因此这里实际测的是"不带游标的第一页"
+        """
         client = test_register_and_login.get('client')
         r = client.get('/posts/', params={'limit': 10, 'cusror': TestMain.post_id})
         assert r.status_code == 200
         assert r.json().get('total') > 0, '没有数据了'
 
+    # ==================== 反馈 / 天亮即焚 ====================
     def test_submit_feedback(self, test_register_and_login):
         "测试提交反馈信息"
         client = test_register_and_login.get('client')
@@ -390,6 +440,8 @@ class TestMain:
 
     def test_get_snaps(self, test_register_and_login):
         "获取帖子数据"
+
+        # NOTE: 同 test_get_posts, 'cusror' 为拼写错误, 游标实际未生效
         client = test_register_and_login.get('client')
         r = client.get('/snaps/', params={'limit': 10, 'cusror': 1})
         assert r.status_code == status.HTTP_200_OK
