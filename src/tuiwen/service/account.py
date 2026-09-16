@@ -25,6 +25,7 @@ import random
 import httpx
 from sqlmodel import select, or_
 
+from dal.base import PageResult
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.common.exceptions import EmailAlreadyRegisteredError, UsernameAlreadyUsedError
 # 模型统一从 model 包绝对导入(原 "from model.account" 是裸导入, 只在把 src/tuiwen 也加入
@@ -161,12 +162,7 @@ class AccountService:
         Returns:
             list[Account]: 匹配到的账号列表
         """
-        cleaned = keyword.strip().lower()
-        statement = select(Account).where(
-            or_(Account.username.contains(cleaned), Account.nick_name.contains(cleaned))).offset(offset).limit(limit)
-
-        # 交给基类统一执行: 自动选择读/主库 + 慢 SQL 埋点 + 异常日志
-        return (await self.dao.exec_read(statement, "search_accounts")).all()
+        return await self.search(keyword=keyword, offset=offset, limit=limit)
 
     # ---------------------------------------------------------
     # 验证码 / 密码
