@@ -107,7 +107,7 @@ class FileService:
             mime_type=mime_type,
             original_name=original_name,
             file_size=file_size,
-            extra=None,
+            extra={},
             status=1,  # 0=临时文件，绑定帖子后改为1正式
         )
 
