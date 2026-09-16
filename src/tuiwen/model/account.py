@@ -3,7 +3,7 @@
 """
 =================================================
     @Project: FastAPIDemo
-    @File： models.py
+    @File： account.py
     @Author：liaozhimingandy
     @mail: liaozhimingandy@gmail.com
     @Date：2025/1/19 09:19
@@ -11,9 +11,9 @@
 =================================================
 """
 import os, uuid
-from datetime import datetime, timedelta, timezone, date
-from enum import Enum, IntEnum
-from typing import Literal, Optional
+from datetime import datetime, timezone, date
+from enum import  IntEnum
+from typing import Optional
 
 from pydantic import EmailStr, field_validator, field_serializer
 from sqlalchemy import DateTime, SMALLINT, Column, JSON, BigInteger, Identity
@@ -188,77 +188,3 @@ class App(SQLModel, table=False):
     def serialize_datetime(self, value):
         return convert_to_timezone(value)
 
-########################################################################################################################
-# token
-class Token(SQLModel):
-    expires_in: int = Field(default=int(timedelta(days=1).total_seconds()), description="过期时间,单位为秒")
-    token_type: str = Field(default='Bearer', description="令牌类型")
-    scopes: str = Field(default='basic', description="权限范围")
-    access_token: str = Field(..., description="请求令牌")
-
-class AccessToken(Token):
-    account_id: str = Field(..., description="账户ID")
-
-class RefreshToken(AccessToken):
-    refresh_token: str = Field(..., description="刷新令牌")
-
-class AppAccessToken(Token):
-    app_id: str = Field(..., description="账户ID")
-
-class AppRefreshToken(AppAccessToken):
-    refresh_token: str = Field(..., description="刷新令牌")
-
-########################################################################################################################
-# 验证码
-########################################################################################################################
-class CodeChannel(str, Enum):
-    SMS = "sms"
-    MAIL = "mail"
-
-
-class CodeScene(str, Enum):
-    LOGIN = "login"
-    REGISTER = "register"
-    RESET_PWD = "reset_pwd"
-    BIND = "bind"
-
-class CodeVerify(SQLModel):
-    channel: CodeChannel = Field(..., description="渠道")
-    account: str = Field(..., description="手机号或邮箱")
-    scene: CodeScene = Field(..., description="场景")
-    code: str | None = Field(None, min_length=4, max_length=6, description="验证码")
-
-class TurnstileVerifyToken(SQLModel):
-    cf_turnstile_token: str
-
-
-class UpdateCredential(SQLModel):
-    """
-    type: username / mail / phone
-    new_value: 新值
-    password: 修改邮箱、手机号必填；修改用户名不需要传
-    code: 修改邮箱、手机号必填；用户名不需要
-    """
-    type: Literal["username", "mail", "phone"]
-    new_value: str
-    password: Optional[str] = None
-    code: Optional[str] = None
-
-    @field_validator("password")
-    def check_password_required(cls, v, values):
-        t = values.data.get("type")
-        if t in ("mail", "mobile"):
-            if not v or len(v.strip()) == 0:
-                raise ValueError("修改邮箱、手机号必须输入当前密码")
-        return v
-
-    @field_validator("code")
-    def check_code_required(cls, v, values):
-        t = values.data.get("type")
-        if t in ("mail", "mobile"):
-            if not v or len(v.strip()) == 0:
-                raise ValueError("修改邮箱、手机号必须传入验证码code")
-        # 修改用户名时，即使前端传了code也清空
-        if t == "username":
-            return None
-        return v

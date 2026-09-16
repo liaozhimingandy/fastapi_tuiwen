@@ -12,10 +12,8 @@
 """
 from dataclasses import dataclass
 
-from sqlalchemy import delete
-
 from src.tuiwen.dal.like import LikeDAO
-from src.tuiwen.post.models import Like
+from model.post import Like
 
 
 @dataclass

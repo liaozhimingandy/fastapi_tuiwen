@@ -13,15 +13,14 @@
 分层位置:
     API → FollowService → FollowDAO → PostgreSQL
 """
-import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Body, status, Depends, Request, Path, Query, HTTPException
+from fastapi import APIRouter, Body, status, Depends, Request, HTTPException
 
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dependencies import get_follow_service
 from src.tuiwen.service.follow import FollowService
-from src.tuiwen.post.models import Follow, FollowCountModel
+from model.follow import Follow, FollowCountModel
 
 router_follow = APIRouter(prefix="/follows", tags=["follow"])
 

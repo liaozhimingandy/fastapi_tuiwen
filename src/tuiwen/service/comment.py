@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from src.tuiwen.dal.base import PageResult
 from src.tuiwen.dal.comment import CommentDAO
-from src.tuiwen.post.models import Comment
+from model.post import Comment
 
 
 @dataclass

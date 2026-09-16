@@ -30,7 +30,7 @@ from sqlmodel import select, or_
 from src.tuiwen.account.router import SCOPES_BASIC
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.common.exceptions import EmailAlreadyRegisteredError, UsernameAlreadyUsedError
-from src.tuiwen.account.models import AccountCreate, Account, AccountPublicCommon, CodeVerify, TurnstileVerifyToken, \
+from model.account import AccountCreate, Account, AccountPublicCommon, CodeVerify, TurnstileVerifyToken, \
     UpdateCredential, AccountPasswordChange, AccountPasswordReset, RefreshToken, AccessToken
 from src.tuiwen.core import get_settings
 from src.tuiwen.dal.account import AccountDAO

@@ -16,7 +16,7 @@ from fastapi import APIRouter, status, Request, Depends
 
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_like_service
-from src.tuiwen.post.models import LikeInput, Like, LikeCountModel
+from model.like import LikeInput, Like, LikeCountModel
 from src.tuiwen.service.like import LikeService
 
 router_like = APIRouter(prefix="/likes", tags=[Tag.like])

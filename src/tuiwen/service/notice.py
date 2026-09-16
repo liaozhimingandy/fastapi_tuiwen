@@ -9,9 +9,9 @@
     API → NoticeService → NoticeDAO → PostgreSQL
 """
 from dataclasses import dataclass
-from sqlmodel import desc, asc
+from sqlmodel import desc
 from src.tuiwen.dal.notice import NoticeDAO
-from src.tuiwen.notice.models import NoticeType, Notice
+from model.notice import NoticeType, Notice
 
 
 @dataclass

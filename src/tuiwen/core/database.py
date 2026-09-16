@@ -54,9 +54,7 @@ def _import_all_models() -> None:
     """集中导入所有模型，确保元数据注册到 metadata
     单独抽成函数，避免循环导入，同时保证建表前所有模型已加载
     """
-    from src.tuiwen.account.models import Account
-    from src.tuiwen.post.models import Post, Comment, Like, File, Follow
-    from src.tuiwen.log.models import Log
+
 
 async def init_db():
     """初始化数据库：仅创建不存在的表（不删数据，启动时调用）"""

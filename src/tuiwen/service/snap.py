@@ -12,7 +12,7 @@
 from dataclasses import dataclass
 
 from src.tuiwen.dal.snap import SnapDAO
-from src.tuiwen.more.models import Snap
+from model.snap import Snap
 
 
 @dataclass

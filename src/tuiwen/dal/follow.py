@@ -9,7 +9,7 @@
     FollowService → FollowDAO → PostgreSQL
 """
 from src.tuiwen.dal.base import BaseDAO
-from src.tuiwen.post.models import Follow
+from model.follow import Follow
 
 
 class FollowDAO(BaseDAO[Follow]):

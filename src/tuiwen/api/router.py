@@ -25,7 +25,7 @@ from src.tuiwen.api.snap import router_public as snap_router_public
 from src.tuiwen.api.file import router_upload
 
 # 全部业务接口的统一前缀, 最终对外路径形如 /api/v2/posts/
-api_router = APIRouter(prefix="/api/v2")
+api_router_v2 = APIRouter(prefix="/api/v2")
 # 公开分组: 无认证依赖, 提供注册/登录/验证码/公开帖子等匿名能力
 router_public = APIRouter(dependencies=[])
 # 受保护分组: 组内任一接口被访问前, 都会先执行 check_authentication 校验令牌
@@ -47,5 +47,5 @@ router_public.include_router(snap_router_public)      # 天亮即焚
 router_public.include_router(post_router_public)      # 公开帖子
 
 # 两个分组统一挂到 /api/v2 之下
-api_router.include_router(router_auth)
-api_router.include_router(router_public)
+api_router_v2.include_router(router_auth)
+api_router_v2.include_router(router_public)
