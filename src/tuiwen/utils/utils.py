@@ -76,12 +76,12 @@ def get_version_from_txt(file_name: str) -> tuple[str, str]:
     return data, ""
 
 
-def get_random_salt(length: int = 8) -> str:
+def get_random_salt(length: int = 6) -> str:
     """
     返回指定长度的salt
 
     Args:
-        length: 长度,默认为8
+        length: 长度,默认为6
 
     Returns:
         字符串salt

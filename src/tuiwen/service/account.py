@@ -452,7 +452,7 @@ class AccountService:
         except AssertionError as e:
             raise BizError(code=400, message=str(e))
 
-        instance.salt = get_random_salt(8)
+        instance.salt = get_random_salt(6)
         instance.password = hash_password(front_md5=account.password_new, salt=instance.salt)
 
         return await self.dao.update(instance)

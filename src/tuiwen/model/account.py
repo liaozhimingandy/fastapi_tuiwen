@@ -21,6 +21,7 @@ from sqlmodel import SQLModel, Field, text
 
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import convert_to_timezone
+from utils import get_random_salt
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -32,7 +33,7 @@ def uuid_generator(size: int = 7):
 
 def salt_default():
     """盐默认生成"""
-    return uuid_generator(8)
+    return get_random_salt(6)
 
 
 def userid_default():
