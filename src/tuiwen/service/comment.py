@@ -2,7 +2,11 @@
 评论业务服务层(CommentService)
 
 职责:
-    只做业务编排与参数透传, 真正的数据库操作交给 CommentDAO; 不做事务提交。
+    只做业务编排与参数透传, 真正的数据库操作交给 CommentDAO。
+
+事务说明:
+    create / delete 在 DAO 执行后自行 commit, 保证调用方拿到的是已落库的数据;
+    ⚠️ api/comment.py 在这两个方法之后又调了一次 dao.commit(), 属重复提交(空事务), 无副作用。
 
 分层位置:
     API → CommentService → CommentDAO → PostgreSQL
@@ -49,6 +53,11 @@ class CommentService:
 
         Returns:
             bool: 是否删除到记录
+
+        NOTE: 这里恒返回 True —— 丢弃了 DAO 的 rowcount。
+              评论不存在、或评论不属于该 account_id 时同样是 True, 调用方无法区分;
+              API 层返回 204 掩盖了这一点, 但换个返回体就会暴露。
+              需要真实结果时把 DAO 的返回值透传出来即可。
         """
         await self.dao.delete_by_fields(comment_id=comment_id, account_id=account_id)
         await self.dao.write_db.commit()

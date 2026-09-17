@@ -52,6 +52,9 @@ class PostService:
 
         Returns:
             bool: 是否删除到记录
+
+        NOTE: 恒返回 True —— 丢弃了 DAO 的 rowcount, 帖子不存在或不属于该 account_id
+              时同样是 True, 调用方无法区分(API 返回 204 掩盖了这一点)
         """
         await self.dao.delete_by_post_id(post_id, account_id)
         await self.dao.write_db.commit()
@@ -68,6 +71,8 @@ class PostService:
 
         Returns:
             bool: 是否更新到记录(False 表示帖子不存在或不属于该账户)
+
+        NOTE: 恒返回 True —— 同上, DAO 的 rowcount 被丢弃
         """
         await self.dao.update_post_right(post_id, account_id, right_status)
         await self.dao.write_db.commit()
@@ -127,8 +132,12 @@ class PostService:
         Returns:
             Post | None: 帖子实体
 
+        NOTE: 无任何可见性校验 —— 接口在受保护分组里(需登录), 但任何登录用户只要猜到
+              post_id 就能读到别人的私密帖(right_status=PRIVATE)。公开详情走的是
+              get_s_post, 这里若要收紧, 应改为 `post_id + account_id == 本人` 或
+              `right_status == PUBLIC` 的二选一条件
         """
-        # :todo 考虑后续如果是非本人的非公开帖子数据
+        # :todo 考虑后续如果是非本人的非公开帖子数据判断
         return await self.dao.get_by_unique_field("post_id", post_id)
 
     async def get_s_post(self, post_id: uuid.UUID):

@@ -596,7 +596,8 @@ def create_default_users():
     logger.info("===== 系统预设用户批量注册 =====")
     for username in RESERVED_USERNAMES:
         data = {
-            "email": f"{username}@alsoapp.com",
+            # 注册接口的入参模型(AccountCreate→AccountLogin)
+            "mail": f"{username}@alsoapp.com",
             "password": DEFAULT_PASSWORD,
             "username": username,
             "nick_name": DEFAULT_NICK_NAME,

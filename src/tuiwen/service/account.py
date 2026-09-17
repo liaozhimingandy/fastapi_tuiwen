@@ -10,17 +10,22 @@
     6. 安全: Cloudflare Turnstile 人机检测
 
 不负责:
-    1. 事务提交(commit) —— 按 DAO 规范由上层/路由控制
-    2. HTTP 相关处理 —— BizError 由 API 层转换为 HTTPException
+    1. HTTP 相关处理 —— BizError 由 API 层转换为 HTTPException
+
+事务说明:
+    本层的写方法(register/reset_password/change_password/change_credential/update_account)
+    在 DAO flush 之后自行 commit, 保证调用方拿到的是真正落库的数据;
+    ⚠️ 部分 API 在调用本层之后又调了一次 dao.commit(), 属重复提交(第二次提交的是空事务),
+       不会出错但多一次往返, 清理时可以统一收敛到一侧
 
 分层位置:
     API → AccountService → AccountDAO → PostgreSQL (Redis 存验证码 / SMTP 发信)
 """
 import re
+import secrets
 from dataclasses import dataclass
-from datetime import timedelta, datetime, UTC
+from datetime import timedelta
 from typing import Annotated
-import random
 
 import httpx
 
@@ -72,9 +77,15 @@ class AccountService:
         Raises:
             EmailAlreadyRegisteredError: 邮箱已被注册
             UsernameAlreadyUsedError: 账号ID已被占用
+
         """
         account_data = dto.model_dump()
         instance = Account(**account_data)
+
+        # 用户名黑名单正则校验
+        ok, detail = validate_username(instance.username)
+        if not ok:
+            raise BizError(code=400, message=detail)
 
         # 用户名兜底
         if not instance.username:
@@ -88,12 +99,14 @@ class AccountService:
 
         if exist_user:
             # 区分冲突字段抛出不同提示
-            if exist_user.mail.lower() == instance.mail.lower():
+            # mail 允许为空(AccountLogin.mail 是可选字段), 命中账号可能没填邮箱,
+            # 直接 .lower() 会 AttributeError; 用假值兜底再比较
+            if (exist_user.mail or "").lower() == (instance.mail or "").lower() and instance.mail:
                 raise EmailAlreadyRegisteredError(
                     code=400,
                     message="该邮箱已被注册,如您是账号所有者,请直接登录"
                 )
-            if exist_user.username.lower() == instance.username.lower():
+            if (exist_user.username or "").lower() == (instance.username or "").lower():
                 raise UsernameAlreadyUsedError(
                     code=400,
                     message="该账号ID已被占用，请更换后重试"
@@ -101,11 +114,10 @@ class AccountService:
 
         # 更新用户信息
         # 每个账号独立随机盐, 避免彩虹表批量破解
-        instance.salt = get_random_salt(8)
+        instance.salt = get_random_salt(6)
         instance.password = hash_password(front_md5=instance.password, salt=instance.salt)
 
         # 新增数据库记录
-        # 注意：按照你的DAO规范，service层不做commit，commit交给上层/路由外层事务
         await self.dao.create(instance)
         await self.dao.write_db.commit()
         await self.dao.write_db.refresh(instance)
@@ -169,8 +181,9 @@ class AccountService:
         """
         生成并缓存重置密码验证码, 返回发信所需上下文
 
-        校验: 邮箱格式 → 用户是否存在 → 1 小时发送限流
-        验证码随机 6 位数字, 写入 Redis 并设置过期时间。
+        校验: 邮箱格式 → 用户是否存在 → 发送限流(与验证码 TTL 同为 REDIS_EXPIRE, 默认 30 分钟)
+        验证码随机 6 位数字(用 secrets 生成, 不用 random —— 后者是可预测的伪随机序列),
+        写入 Redis 并设置过期时间。
 
         Args:
             data: 接收验证码的邮箱信息
@@ -183,7 +196,7 @@ class AccountService:
         """
         # send_notification
         code = data.model_dump(exclude={'code'})
-        instance_code = CodeVerify(**code, code="".join(random.choices("0123456789", k=6)))
+        instance_code = CodeVerify(**code, code="".join(secrets.choice("0123456789") for _ in range(6)))
         if not MAIL_PATTERN.match(instance_code.account):
             raise BizError(
                 code=400,
@@ -197,9 +210,11 @@ class AccountService:
             raise BizError(code=404, message="本系统没有这个邮箱的用户,请确认")
 
         # ======================
-        # 1小时发送限流
+        # 发送限流(与验证码同为 REDIS_EXPIRE, 默认 30 分钟)
         # ======================
-        key = RedisKey.reset_pwd_code(instance_code.account)
+        # key 用查到的账户ID而不是客户端提交的字符串:
+        # 用户申请验证码时填邮箱、重置时填用户名也应当能对上, 用提交值做 key 会错位
+        key = RedisKey.reset_pwd_code(instance.account_id)
         if await redis_get(key):
             raise BizError(
                 code=400,
@@ -239,9 +254,10 @@ class AccountService:
         if not instance:
             raise BizError(code=404, message="no such account")
 
-        # 按业界规范构造 key; 必须与发送验证码时(account_send_code 用客户端提交的 account 字段)
-        # 使用同一个标识, 否则读到的 key 与写入的 key 不一致, 校验永远失败
-        redis_key = RedisKey.reset_pwd_code(account.username)
+        # 用账户ID构造 key —— 必须与 account_send_code 侧完全一致。
+        # 两边都用查到的账户ID, 用户"用邮箱收码、用用户名重置"(或大小写不一致)才能校验通过;
+        # 若改用提交值, 两侧字符串不同就会读到空值, 表现为"验证码已过期或未发送"
+        redis_key = RedisKey.reset_pwd_code(instance.account_id)
 
         # 从 Redis 获取验证码
         correct_code = await redis_get(redis_key)
@@ -298,11 +314,12 @@ class AccountService:
         try:
             instance = await self.dao.get_account_by_email_or_username(mail=username, username=username)
             assert instance is not None and instance.password == hash_password(password, instance.salt), '请重新检查你的用户名和密码'
-
+            assert instance.is_active is True, '账号已经禁用'
         except AssertionError as e:
             raise BizError(code=400, message=str(e))
 
-        data = {"account_id": instance.account_id, "salt": instance.salt, 'scopes': 'basic'}
+
+        data = {"account_id": instance.account_id, "salt": instance.salt, 'scopes': SCOPES_BASIC}
         refresh_token = generate_jwt_token(data,
                                            expires_in=timedelta(minutes=get_settings().REFRESH_TOKEN_EXPIRE_MINUTES),
                                            grant_type="refresh_token")
@@ -423,9 +440,16 @@ class AccountService:
 
             instance = await self.dao.get_by_unique_field("account_id", account_id)
             # 用户名统一小写存储, 避免大小写造成重复账号
-            instance.username = new_val.strip().lower()
-            instance.create_at = datetime.now(UTC)
-            instance = await self.dao.update(instance)
+            # 用 partial_update(Core UPDATE) 而不是 dao.update() 整对象覆盖, 原因有二:
+            #   1. dao.update() 内部走 write_db.merge(), merge 会把所有列(含 update_at 的旧值)
+            #      一并写进 SET, 列的 onupdate=func.now() 因此不触发, update_at 不会刷新;
+            #   2. 只更新 username 一列, 也与本服务其它更新路径(update_account /
+            #      reset_password / change_password)的写法保持一致。
+            # 原实现写的是 `instance.create_at = datetime.now(UTC)`: 既改错了字段
+            # (覆盖了创建时间, 且 update_at 反而不动), 又是应用时钟, 与 DB 时钟口径不一致
+            instance = await self.dao.partial_update(
+                instance.id, {"username": new_val.strip().lower()}
+            )
             await self.dao.write_db.commit()
             return instance
 
@@ -451,17 +475,22 @@ class AccountService:
             BizError: 原密码错误(400) / 新旧密码相同(400)
 
         """
-        try:
-            instance = await self.dao.get_by_fields(account_id=account_id,
-                                                    password=hash_password(account.password_current, salt))
-            if not instance:
-                raise BizError(code=400, message="原密码不对,请重新输入原密码")
-            assert account.password_new != instance.password, "新密码不能和旧密码相同"
-        except AssertionError as e:
-            raise BizError(code=400, message=str(e))
+        # 先按令牌里的盐算出原密码摘要, 与库中摘要做等值比较(库里存的是加盐 SHA256)
+        current_hash = hash_password(account.password_current, salt)
+        instance = await self.dao.get_by_fields(account_id=account_id, password=current_hash)
+        if not instance:
+            raise BizError(code=400, message="原密码不对,请重新输入原密码")
+
+        # 新旧是否相同的判定必须"同盐比同盐":
+        #   入参是明文 MD5、库中是加盐摘要, 直接比较永远不等(原实现的 assert 形同虚设);
+        #   而用了新盐去算摘要, 盐不同摘要必然不同, 同样比不出来 —— 必须用旧盐重算新密码
+        if hash_password(account.password_new, instance.salt) == instance.password:
+            raise BizError(code=400, message="新密码不能和旧密码相同")
 
         new_salt = get_random_salt(6)
-        new_password = hash_password(front_md5=account.password, salt=new_salt, )
+        # 落库的是"新密码 + 新盐"的摘要; 原实现写的是 account.password, 而
+        # AccountPasswordChange 只有 password_current / password_new 两个字段, 会 AttributeError
+        new_password = hash_password(front_md5=account.password_new, salt=new_salt,)
         instance = await self.dao.partial_update(
             instance.id,
             {

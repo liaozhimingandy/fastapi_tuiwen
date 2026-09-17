@@ -84,9 +84,9 @@ class RedisKey:
     _prefix: str = get_settings().REDIS_KEY_PREFIX
 
     @classmethod
-    def reset_pwd_code(cls, account: str) -> str:
+    def reset_pwd_code(cls, account_id: str) -> str:
         """密码重置验证码 key(发码与校验两侧必须用同一生成规则, 否则永远校验不通过)。"""
-        return f"{cls._prefix}:reset_pwd:account:{account}"
+        return f"{cls._prefix}:reset_pwd:account:{account_id}"
 
 def main(*args, **kwargs) -> None:
     """模块自测入口(当前为空实现)。"""

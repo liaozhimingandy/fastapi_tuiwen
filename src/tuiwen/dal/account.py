@@ -19,7 +19,7 @@ from src.tuiwen.model.account import Account
 class AccountDAO(BaseDAO[Account]):
     model = Account
 
-    async def get_account_by_email_or_username(self, mail: str | None, username: str) -> Account | None:
+    async def get_account_by_email_or_username(self, mail: str | None, username: str | None) -> Account | None:
         """
         查询邮箱(忽略大小写) 或者 用户名(忽略大小写)是否已存在
         返回匹配到的ORM实例，无匹配返回None

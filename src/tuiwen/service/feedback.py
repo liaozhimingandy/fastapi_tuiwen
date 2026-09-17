@@ -2,7 +2,10 @@
 用户反馈业务服务层(FeedbackService)
 
 职责:
-    接收 API 层组装好的反馈实体并落库, 不涉及事务提交。
+    接收 API 层组装好的反馈实体并落库。
+
+事务说明:
+    create_feedback 在 DAO 之后自行 commit(与其它 Service 一致)。
 
 分层位置:
     API → FeedbackService → FeedbackDAO → PostgreSQL
@@ -27,7 +30,7 @@ class FeedbackService:
             feedback: 已补全服务端字段的反馈实体
 
         Returns:
-            Feedback: 落库后的反馈实体(未 commit)
+            Feedback: 落库后的反馈实体
         """
         instance =  await self.dao.create(feedback)
         await self.dao.write_db.commit()

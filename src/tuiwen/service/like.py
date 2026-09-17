@@ -31,6 +31,14 @@ class LikeService:
 
         Returns:
             Like: 落库后的点赞实体(未 commit, 事务由上层 API 控制)
+
+        NOTE: 本方法不做重复点赞的前置判断, 靠 tw_like 的联合唯一索引
+              (obj_type, obj_id, account_id) 兜底; 重复点赞会抛 IntegrityError,
+              而这里没有像 FollowService 那样转 BizError, 最终表现为 500。
+              需要在 API 层给出"已点赞"提示的话, 应在此处捕获并转 BizError
+        NOTE: api/like.py 直接把表模型 Like 当请求体, 且 model_dump(exclude={}) 不做任何
+              排除 —— 客户端可以伪造 account_id 给别人点赞(id/create_at 也会被带进来)。
+              应改为从前端只收 obj_id/obj_type, account_id 取 request.state.account_id
         """
         instance = await self.dao.create(like)
         await self.dao.write_db.commit()
@@ -60,6 +68,12 @@ class LikeService:
 
         Returns:
             bool: True 表示确实取消到了记录; False 表示本来就没点过赞
+
+        NOTE: 恒返回 True —— DAO 的 rowcount 被丢掉了, 本来就没点赞也返回成功
+        NOTE: 本层与 DAO 都把目标类型写死成 POST(LikeDAO.delete_like 里
+              `obj_type == Like.ObjTypeEnum.POST`), 方法签名也没有 obj_type 参数。
+              将来支持给评论点赞时, 这里会误删同 obj_id 的帖子点赞记录 ——
+              建议现在就把 obj_type 显式提为参数
         """
         await self.dao.delete_like(obj_id=obj_id, account_id=account_id)
         await self.dao.write_db.commit()

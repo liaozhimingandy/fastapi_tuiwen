@@ -20,13 +20,14 @@ class LikeDAO(BaseDAO[Like]):
     # 绑定 DAO 对应的 ORM 模型
     model = Like
 
-    async def delete_like(self, obj_id: str, account_id: str) -> bool:
+    async def delete_like(self, obj_id: str, account_id: str, obj_type: int = Like.ObjTypeEnum.POST) -> bool:
         """
         取消当前用户对某帖子的点赞(硬删除)
 
         Args:
             obj_id: 目标对象ID
             account_id: 点赞人账户ID
+            obj_type: 目标对象类型
 
         Returns:
             bool: True 表示确实删除到记录; False 表示本来就没点赞
@@ -34,24 +35,25 @@ class LikeDAO(BaseDAO[Like]):
         事务: 只执行不提交, 由上层决定 commit 时机(遵循「DAO 不提交事务」的规范)
         """
         statement = delete(Like).where(Like.obj_id == obj_id, Like.account_id == account_id,
-                                       Like.obj_type == Like.ObjTypeEnum.POST)
+                                       Like.obj_type == obj_type)
         # exec_write 内部已统一走主库 + 埋点, 返回 CursorResult, rowcount 即影响行数
         result = await self.exec_write(statement, "delete_like")
         return bool(result.rowcount)
 
-    async def get_like_count(self, obj_id: str, account_id: str) -> dict:
+    async def get_like_count(self, obj_id: str, account_id: str, obj_type: int = Like.ObjTypeEnum.POST) -> dict:
         """
         统计某帖子的点赞总数, 并判断当前用户是否已点赞
 
         Args:
             obj_id: 目标对象ID
             account_id: 当前登录账户ID
+            obj_type: 目标对象类型
 
         Returns:
             dict: {"like_count": int, "is_liked": bool}
         """
         # 子查询: 当前用户对该帖子的点赞记录
-        statement_sub = select(Like.id).where(Like.obj_id == obj_id, Like.obj_type == Like.ObjTypeEnum.POST,
+        statement_sub = select(Like.id).where(Like.obj_id == obj_id, Like.obj_type == obj_type,
                                               Like.account_id == account_id)
         # 是否存在的布尔查询: SELECT EXISTS (SELECT id FROM ...)
         statement_exists = select(exists(statement_sub))

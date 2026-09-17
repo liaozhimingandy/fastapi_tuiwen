@@ -34,6 +34,11 @@ class FollowService:
 
         Returns:
             Follow: 落库后的实体(未 commit)
+
+        NOTE: 没有校验 follower_id != followee_id —— 目前允许用户关注自己,
+              自关注会直接污染 get_follow_info_by_id 的 is_following 口径
+        NOTE: 用 `except Exception` 把 DAO/DB 异常一律转成 400 BizError, 会把唯一索引冲突
+              和真正的数据库故障混为一谈(后者本该是 5xx), 排查时建议区分对待
         """
         try:
             instance = await self.dao.create(obj)
@@ -53,6 +58,8 @@ class FollowService:
 
         Returns:
             bool: 是否删除到记录
+
+        NOTE: 恒返回 True —— 丢弃了 DAO 的 rowcount, 没关注过也返回成功
         """
         await self.dao.delete_by_fields(follower_id=follower_id, followee_id=followee_id)
         await self.dao.write_db.commit()
@@ -75,6 +82,11 @@ class FollowService:
         NOTE: is_following 的统计条件为 follower_id==followee_id==account_id,
               实际只会命中「自己关注自己」的记录, 若要表达「我是否已关注对方」
               需要额外传入目标账户ID
+        NOTE: 上面这个 count 是 int(0/1), 而 api/follow.py 用 FollowCountModel 的
+              `is_following: bool` 承接, 靠 pydantic 隐式转换; 一旦自关注记录不止一条
+              (count>=2)就会校验失败。改成 bool(...) 或直接 `exists()` 更稳
+        NOTE: like_count 硬编码 0, 获赞数尚未实现 —— 若前端已展示该字段, 需补聚合查询
+              (tw_post.like 的 sum, 或专门的计数表)
         """
         # 粉丝数
         follower_count = await self.dao.count(followee_id=account_id)

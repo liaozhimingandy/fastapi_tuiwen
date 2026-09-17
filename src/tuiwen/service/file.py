@@ -39,11 +39,19 @@ class FileService:
 
         Args:
             file: FastAPI 的 UploadFile 对象
+            uploader_account_id: 上传者账户ID, 由 API 层从 request.state 取
 
         Returns:
-            TWImage: 图片记录(image_url / image_name / image_md5)
-            :param file:
-            :param uploader_account_id:
+            File: 文件记录(命中秒传时返回已存在的那条)
+
+        NOTE: 秒传分支(命中 file_md5)不校验 account_id —— 只要内容一致, 任何登录用户
+              都能拿到别人那条 File 记录的 url/storage_key。若上传内容是私有素材,
+              应按业务决定是否对该分支加归属校验
+        NOTE: 没有大小/数量限制, `await file.read()` 会把整个文件读进内存;
+              api/file.py 的 allowed_file 只校验了图片格式, ALLOWED_IMAGE_FORMATS 之外
+              的体积上限需要另加。大文件建议改流式落盘 + size 阈值校验
+        NOTE: 先写磁盘再写库, 若 DB 写入失败会在存储目录留下孤儿文件(反之则不会出现);
+              需要严格一致时可改为写临时名 + 提交成功后 rename
         """
 
         contents = await file.read()  # 读取文件内容
@@ -62,19 +70,21 @@ class FileService:
 
         settings = get_settings()
 
-        # 根据mime判断文件类型 image / video / audio / doc
-        mime_type = file.content_type or "application/octet‑stream"
+        # 根据 mime 判断落盘子目录 image / video / audio / doc
+        # NOTE: 原实现在这里同时算了一个字符串 file_type("image"/"video"/...), 但下面组装
+        #       File 时写的是字面量 file_type=1, 那个变量从未被读取(死代码), 已删除。
+        #       若确实要区分类别, 应给 model/file.py 的 file_type 定一套 int 枚举并在这里映射,
+        #       否则该列永远是 1, 与字段 description("image/video/audio/doc") 不符
+        # NOTE: 默认值里的连字符必须是 ASCII '-'。原写法 "application/octet‑stream" 用的是
+        #       U+2011(non-breaking hyphen), 不是合法 MIME 类型
+        mime_type = file.content_type or "application/octet-stream"
         if mime_type.startswith("image/"):
-            file_type = "image"
             sub_dir = "images"
         elif mime_type.startswith("video/"):
-            file_type = "video"
             sub_dir = "videos"
         elif mime_type.startswith("audio/"):
-            file_type = "audio"
             sub_dir = "audios"
         else:
-            file_type = "doc"
             sub_dir = "docs"
 
         upload_dir = f"{settings.STORAGE_LOCAL_ROOT}/{sub_dir}"
