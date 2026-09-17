@@ -97,7 +97,11 @@ class Settings(BaseSettings):
 
     # ====================================================================
 
-    BACKEND_CORS_ORIGINS: Annotated[list[str] | str, BeforeValidator(parse_cors)]=Field(default_factory=list)
+    BACKEND_CORS_ORIGINS: Annotated[list[str] | str, BeforeValidator(parse_cors)]
+
+    # ===============================snap=================================
+    SNAP_SESSION_OPEN_HOUR: int = 23
+    SNAP_SESSION_BURN_HOUR: int = 6
 
     # ===================== 环境文件加载规则 =====================
     class Config:

@@ -17,6 +17,9 @@
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 
+from sqlalchemy import text
+
+from src.tuiwen import get_settings
 from src.tuiwen.dal.base import PageResult
 from src.tuiwen.dal.snap import SnapDAO
 from src.tuiwen.model.snap import Snap
@@ -25,9 +28,9 @@ from src.tuiwen.model.snap import Snap
 # 「天亮即焚」场次窗口常量
 # =========================================================
 # 当晚开闸时刻(含)。改这里就能调整场次长短, 例如 22 表示 22:00 开闸
-SNAP_SESSION_OPEN_HOUR = 23
+SNAP_SESSION_OPEN_HOUR = get_settings().SNAP_SESSION_OPEN_HOUR
 # 次日焚毁时刻(不含)。内容在该时刻之后一律不再对外返回
-SNAP_SESSION_BURN_HOUR = 6
+SNAP_SESSION_BURN_HOUR = get_settings().SNAP_SESSION_OPEN_HOUR
 # 首页最新快照的条数
 SNAP_LATEST_LIMIT = 10
 
@@ -116,7 +119,7 @@ class SnapService:
         start, end = window
         # 排序必须显式指定: 不排序时数据库返回顺序不确定, 分页会出现重复/漏记录
         return await self.dao.page_by_time_range(
-            start=start, end=end, limit=SNAP_LATEST_LIMIT, order_by='-id'
+            start=start, end=end, limit=SNAP_LATEST_LIMIT, order_by=Snap.id.desc()
         )
 
     async def get_snaps(self, limit: int = 10, offset: int = 0) -> PageResult[Snap]:
@@ -137,7 +140,7 @@ class SnapService:
         start, end = window
         # 与 get_snaps_latest 保持同一排序, 否则同一场次内两个接口的顺序会不一致
         return await self.dao.page_by_time_range(
-            start=start, end=end, limit=limit, offset=offset, order_by='-id'
+            start=start, end=end, limit=limit, offset=offset, order_by=Snap.id.desc()
         )
 
     async def inc_snaps_like(self, pk: int):

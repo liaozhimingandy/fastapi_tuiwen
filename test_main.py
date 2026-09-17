@@ -45,7 +45,7 @@ def client() -> Generator[TestClient, None, None]:
     进入上下文即触发 app.lifespan: 会连 Redis / PostgreSQL / 初始化邮件服务,
     环境不就绪时整个测试模块都会失败。
     """
-    with TestClient(app, client=('127.0.0.1', 9000), base_url='http://127.0.0.1:8000/api/v2') as c:
+    with TestClient(app, client=('127.0.0.1', 9080), base_url='http://127.0.0.1:8000/api/v2') as c:
         yield c
 
 
@@ -115,7 +115,7 @@ class TestMain:
             "sex": 0,
             "avatar": ""
         }
-
+        print(data)
         # with httpx.Client() as client:
         r = client.post(f"/accounts/register/", json=data,
                         headers={"Content-Type": "application/json"})
@@ -123,7 +123,7 @@ class TestMain:
         TestMain.account_id = r.json().get('account_id')
         username = r.json().get('username')
         account_id = r.json().get('account_id')
-        mail = r.json().get('mail')
+        mail = data.get('mail')
 
         #     登录逻辑
         form_data = {
@@ -215,15 +215,26 @@ class TestMain:
         }
         client = test_register_and_login.get('client')
         r = client.put(f'/accounts/password/change/', json=data)
-        assert r.status_code == status.HTTP_200_OK
+        assert r.status_code == status.HTTP_400_BAD_REQUEST, r.json()
+
+        new_md5 = md5()
+        new_md5.update('test'.encode('utf-8'))
+        # 200
+        data = {
+            "account_id": TestMain.account_id,
+            "password_current": TestMain.md5_hash.hexdigest(),
+            "password_new": new_md5.hexdigest()
+        }
+        client = test_register_and_login.get('client')
+        r = client.put(f'/accounts/password/change/', json=data)
+        assert r.status_code == status.HTTP_200_OK, r.json()
 
     def test_password_reset(self, test_register_and_login) -> None:
         """密码重置"""
         # 提取验证码
-        redis_key = RedisKey.reset_pwd_code(test_register_and_login.get('mail'))
+        redis_key = RedisKey.reset_pwd_code(test_register_and_login.get('account_id'))
         # 从 Redis 获取验证码
         correct_code = redis_sync_get(redis_key)
-
         assert correct_code is not None
 
         data = {
@@ -233,7 +244,7 @@ class TestMain:
         }
         client = test_register_and_login.get('client')
         r = client.put(f'/accounts/password/reset/', json=data)
-        assert r.status_code == status.HTTP_200_OK, r.json().get('detail')
+        assert r.status_code == status.HTTP_200_OK, r.json()
         # 测试验证码不对的情况
         data['code'] = "666777"
         r = client.put(f'/accounts/password/reset/', json=data)

@@ -82,14 +82,14 @@ class AccountService:
         account_data = dto.model_dump()
         instance = Account(**account_data)
 
+        # 用户名兜底
+        if not instance.username:
+            instance.username = instance.account_id
+
         # 用户名黑名单正则校验
         ok, detail = validate_username(instance.username)
         if not ok:
             raise BizError(code=400, message=detail)
-
-        # 用户名兜底
-        if not instance.username:
-            instance.username = instance.account_id
 
         # 查重
         exist_user = await self.dao.get_account_by_email_or_username(
