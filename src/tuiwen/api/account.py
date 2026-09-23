@@ -249,10 +249,13 @@ async def account_send_code(data: Annotated[CodeVerify, "验证码信息"],
     Returns:
         dict: 固定的提示文案, 不返回验证码本身
     """
-    result = await svc.account_send_code(data)
-    # 后台发送邮箱通知
-    background_tasks.add_task(send_reset_pwd_mail, **result)
-    return {"message": "验证码已经发送至你的邮箱,请查收!"}
+    try:
+        result = await svc.account_send_code(data)
+        # 后台发送邮箱通知
+        background_tasks.add_task(send_reset_pwd_mail, **result)
+        return {"message": "验证码已经发送至你的邮箱,请查收!"}
+    except BizError as e:
+        raise HTTPException(status_code=e.code, detail=e.message)
 
 
 @router_public.put("/accounts/password/reset/", summary="账号密码重置", tags=[Tag.account],
