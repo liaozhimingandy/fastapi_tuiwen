@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = Field(60 * 24 * 28)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(60 * 24 * 1)
 
+    VIDEO_MAX_BYTES = 100 * 1024 * 1024
+    VIDEO_ALLOW_SUFFIX: str
+
     # ===================== Redis 配置=====================
     REDIS_HOST: str = Field("127.0.0.1", description="redis host")
     REDIS_PORT: int = Field(6379, description="redis port")

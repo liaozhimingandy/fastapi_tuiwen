@@ -275,6 +275,15 @@ async def get_account_dao(
         read_db=read_db,
     )
 
+async def get_video_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+    from src.tuiwen.dal.video import VideoDAO
+    return VideoDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
 
 # ========== Service 依赖工厂(DAO → Service; api 层实际注入的就是这些) ==========
 def get_notice_service(dao = Depends(get_notice_dao)):
@@ -313,3 +322,7 @@ def get_account_service(dao = Depends(get_account_dao)):
 def get_feedback_service(dao = Depends(get_feedback_dao)):
     from src.tuiwen.service.feedback import FeedbackService
     return FeedbackService(dao=dao)
+
+def get_video_service(dao = Depends(get_video_dao)):
+    from src.tuiwen.service.video import VideoService
+    return VideoService(dao=dao)
