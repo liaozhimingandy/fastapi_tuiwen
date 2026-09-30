@@ -23,6 +23,7 @@ from src.tuiwen.api.like import router_like
 from src.tuiwen.api.post import router_post, router_public as post_router_public
 from src.tuiwen.api.snap import router_public as snap_router_public
 from src.tuiwen.api.file import router_upload
+from src.tuiwen.api.video import router_upload as video_router_public
 
 # 全部业务接口的统一前缀, 最终对外路径形如 /api/v2/posts/
 api_router_v2 = APIRouter(prefix="/api/v2")
@@ -45,6 +46,7 @@ router_public.include_router(account_router_public)   # 注册/登录/找回密�
 router_public.include_router(feedback_router_public)  # 用户反馈
 router_public.include_router(snap_router_public)      # 天亮即焚
 router_public.include_router(post_router_public)      # 公开帖子
+router_public.include_router(video_router_public)   # 视频上传
 
 # 两个分组统一挂到 /api/v2 之下
 api_router_v2.include_router(router_auth)

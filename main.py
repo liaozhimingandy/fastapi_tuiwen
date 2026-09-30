@@ -80,9 +80,9 @@ async def lifespan(app: FastAPI):
     # app.state.pool = await get_async_pool()
 
     # 初始化数据库
-    # from src.tuiwen.core import init_db
-    # await init_db()
-    # logger.info("init database success")
+    from src.tuiwen.core import init_db
+    await init_db()
+    logger.info("init database success")
     # NOTE: 建表已注释, 表结构当前依赖数据库侧脚本/人工维护; 若要启用请先补
     #       core.database._import_all_models() 的模型导入(现为空函数)
 

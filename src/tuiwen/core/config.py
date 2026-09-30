@@ -73,8 +73,11 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = Field(60 * 24 * 28)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(60 * 24 * 1)
 
-    VIDEO_MAX_BYTES = 100 * 1024 * 1024
+    # 视频相关存储路径
+    VIDEO_MAX_BYTES: int = 100 * 1024 * 1024
     VIDEO_ALLOW_SUFFIX: str
+    VIDEO_STORAGE_DIR: str = "/app/static/medias/videos"
+    VIDEO_STORAGE_URL_PREFIX: str = "/static/medias/videos"
 
     # ===================== Redis 配置=====================
     REDIS_HOST: str = Field("127.0.0.1", description="redis host")

@@ -14,17 +14,20 @@ class Storage(abc.ABC):
 
     # ---------- 必须实现的抽象接口 ----------
     @abc.abstractmethod
-    async def save(self, name: str, content: BinaryIO) -> str:
+    async def save(self, name: str, content: BinaryIO, file_suffix: str) -> str:
         """
         保存文件（Django风格）
         :param name: 文件key
         :param content: 类文件对象 BinaryIO，后端逐块读取，不一次性加载全部到内存
+        :param file_suffix: 文件后缀名
         :return: 最终存储key
         """
+        raise NotImplementedError
 
     @abc.abstractmethod
     async def open(self, name: str, mode: str = "rb") -> BinaryIO:
         """打开文件，返回文件句柄（本地=文件对象；S3=读取流）"""
+        raise NotImplementedError
 
     @abc.abstractmethod
     async def delete(self, name: str) -> None:
@@ -41,6 +44,7 @@ class Storage(abc.ABC):
     @abc.abstractmethod
     async def url(self, name: str) -> str:
         """生成可访问的 URL"""
+        raise NotImplementedError
 
     @abc.abstractmethod
     async def get_available_name(self, name: str) -> str:

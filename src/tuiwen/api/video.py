@@ -14,9 +14,9 @@
 from typing import Annotated
 
 from fastapi import APIRouter, status, UploadFile, HTTPException, Depends, Request
-from fastapi.params import Form
+from fastapi.params import Form, File
 
-from dependencies import get_video_service
+from src.tuiwen.dependencies import get_video_service
 from src.tuiwen.service.video import VideoService
 from src.tuiwen.model.video import Video
 from src.tuiwen.core import Settings
@@ -29,13 +29,15 @@ router_upload = APIRouter(prefix="/upload", tags=[Tag.upload])
 
 
 @router_upload.post('/video/', summary="视频", response_model=Video, status_code=status.HTTP_201_CREATED)
-async def upload_video(file: Annotated[UploadFile, "视频文件"],
-                       request: Request,
-                       title: Annotated[str | None, Form(max_length=200)] = None,
-                       description: Annotated[str | None, Form()] = None,
-                       category: Annotated[int | None, Form()] = None,
-                       settings: Annotated[Settings, "全局的设置对象"] = Depends(get_settings),
-                       svc: VideoService = Depends(get_video_service)):
+async def upload_video(
+        request: Request,
+        file: Annotated[UploadFile, File(description="视频文件，支持mp4等格式")],
+        title: Annotated[str | None, Form(max_length=200)] = None,
+        description: Annotated[str | None, Form()] = None,
+        category: Annotated[int | None, Form()] = None,
+        video_md5: Annotated[str | None, Form()] = None,
+        settings: Annotated[Settings, "全局的设置对象"] = Depends(get_settings),
+        svc: VideoService = Depends(get_video_service)):
     """
     上传视频文件
     Args:
@@ -58,8 +60,13 @@ async def upload_video(file: Annotated[UploadFile, "视频文件"],
     allow_suffix = settings.VIDEO_ALLOW_SUFFIX.split(",") or (".mp4", ".mov", ".mkv")
     filename = file.filename.lower()
     suffix = filename[filename.rfind("."):] if "." in filename else ""
+
     if suffix not in allow_suffix:
         raise HTTPException(status_code=400, detail=f"不支持的文件格式，允许：{allow_suffix}")
 
-    return await svc.upload(file, uploader_account_id=request.state.account_id, title=title, description=description,
+    try:
+        return await svc.upload(file, uploader_account_id=getattr(request.state, "account_id", "1"), title=title,
+                            description=description, video_md5=video_md5,
                             category=category, max_size=MAX_SIZE)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

@@ -1,3 +1,4 @@
+import uuid
 from enum import IntEnum, StrEnum
 from typing import Optional, Dict
 from datetime import datetime
@@ -5,9 +6,9 @@ from pydantic import field_serializer
 
 from sqlalchemy.sql.functions import func
 from sqlmodel import SQLModel, Field, text
-from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Identity, Boolean
+from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Identity, Boolean, UniqueConstraint
 
-from common.snowflake import gen_snowflake_id
+from src.tuiwen.common.snowflake import gen_snowflake_id
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import convert_to_timezone
 
@@ -35,7 +36,9 @@ class VideoTranscodeStatus(IntEnum):
 
 class Video(SQLModel, table=True):
     __tablename__ = f"{TABLE_PREFIX}video"
-    __table_args__ = {'comment': '视频主表，存储视频基础元信息'}
+    __table_args__ = (UniqueConstraint("account_id", "video_md5", name="uk_tw_video_account_md5"),
+                      {"comment": "用户上传视频记录表"}
+                      )
 
     # 内部自增主键，仅数据库内部使用，业务对外不暴露
     id: int = Field(
@@ -47,13 +50,13 @@ class Video(SQLModel, table=True):
     )
 
     # 业务对外视频ID：雪花64位Bigint，唯一索引
-    video_id: int = Field(
-        default_factory=gen_snowflake_id,
+    video_id: uuid.UUID = Field(
+        default_factory=uuid.uuid7,
         index=True,
         unique=True,
         description='业务视频雪花ID（对外暴露）',
-        sa_column_kwargs={'comment': '业务视频雪花ID，对外接口使用，全局唯一'},
-        sa_type=BigInteger
+        sa_column_kwargs={'comment': '业务视频ID，对外接口使用，全局唯一', "server_default": text("uuidv7()")},
+        max_length=36
     )
 
     poster: Optional[str] = Field(
@@ -118,8 +121,9 @@ class Video(SQLModel, table=True):
         sa_column_kwargs={"comment": "默认播放资源地址，优先播放此地址"}
     )
 
-    account_id: Optional[int] = Field(
+    account_id: Optional[str] = Field(
         None,
+        max_length=8,
         description="作者账号雪花ID",
         sa_column_kwargs={"comment": "视频作者账号雪花ID，关联账号表"}
     )
@@ -145,10 +149,9 @@ class Video(SQLModel, table=True):
     )
 
     is_deleted: bool = Field(
-        ...,
-        index=True,
+        False,
         description="软删除标记：false正常，true已删除",
-        sa_column_kwargs={"comment": "软删除标记：false正常，true逻辑删除"}
+        sa_column_kwargs={"comment": "软删除标记：false正常，true逻辑删除",  "server_default": text("false")},
     )
 
     create_at: datetime = Field(
@@ -207,14 +210,13 @@ class VideoSource(SQLModel, table=True):
         sa_column_args=[Identity(always=False)]
     )
 
-    video_id: int = Field(
+    video_id: str = Field(
         ...,
         nullable=False,
         index=True,
-        description="关联视频雪花ID",
+        description="关联视频ID",
         sa_column_kwargs={"comment": "关联视频主表的业务雪花video_id"},
-        sa_type=BigInteger,
-        foreign_key=f"{TABLE_PREFIX}video.video_id"
+        max_length=36
     )
 
     url: str = Field(

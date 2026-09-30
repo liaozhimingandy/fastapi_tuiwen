@@ -32,7 +32,7 @@ DATABASE_URL = str(settings.SQLALCHEMY_DATABASE_URI)
 # 模块级单例引擎: 整个应用共享这一个连接池, 由 FastAPI lifespan 在停机时 dispose
 engine: AsyncEngine = create_async_engine(
     DATABASE_URL,
-    echo=not settings.DEBUG,
+    echo=settings.DEBUG,
     pool_pre_ping=True,          # 自动检测失效连接，自动重连（生产必备）
     pool_recycle=3600,           # 连接1小时后强制回收，避免超时失效
     pool_size=5,                 # 常驻连接数
