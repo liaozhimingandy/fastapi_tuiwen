@@ -2,7 +2,7 @@ import uuid
 from enum import IntEnum, StrEnum
 from typing import Optional, Dict
 from datetime import datetime
-from pydantic import field_serializer
+from pydantic import field_serializer, BaseModel
 
 from sqlalchemy.sql.functions import func
 from sqlmodel import SQLModel, Field, text
@@ -54,9 +54,8 @@ class Video(SQLModel, table=True):
         default_factory=uuid.uuid7,
         index=True,
         unique=True,
-        description='业务视频雪花ID（对外暴露）',
-        sa_column_kwargs={'comment': '业务视频ID，对外接口使用，全局唯一', "server_default": text("uuidv7()")},
-        max_length=36
+        description='业务视频ID（对外暴露）',
+        sa_column_kwargs={'comment': '业务视频ID，对外接口使用，全局唯一', "server_default": text("uuidv7()")}
     )
 
     poster: Optional[str] = Field(
@@ -114,13 +113,6 @@ class Video(SQLModel, table=True):
         sa_type=SMALLINT
     )
 
-    default_url: str = Field(
-        ...,
-        max_length=255,
-        description="默认播放地址（HLS/MP4）",
-        sa_column_kwargs={"comment": "默认播放资源地址，优先播放此地址"}
-    )
-
     account_id: Optional[str] = Field(
         None,
         max_length=8,
@@ -142,7 +134,7 @@ class Video(SQLModel, table=True):
     transcode_msg: Optional[str] = Field(None, max_length=128, sa_column_kwargs={"comment": "转码失败原因"})
 
     extra: Optional[Dict] = Field(
-        default={},
+        default_factory=dict,
         description='扩展元数据JSON',
         sa_column_kwargs={'comment': '扩展元数据JSON，存放额外信息：原始文件key、编码信息、码率等'},
         sa_type=JSON
@@ -271,3 +263,55 @@ class VideoSource(SQLModel, table=True):
     )
 
 
+class VideoFeedQuery(BaseModel):
+    feed_id: uuid.UUID | None = None
+    cursor: str | None = None
+    limit: int = Field(
+        default=10,
+        ge=1,
+        le=20,
+    )
+
+class VideoAuthor(SQLModel):
+    account_id: str
+    nickname: str | None = None
+    avatar_url: str | None = None
+
+
+class VideoStats(SQLModel):
+    view_count: int = 0
+    like_count: int = 0
+    comment_count: int = 0
+    share_count: int = 0
+
+
+class VideoInteraction(SQLModel):
+    liked: bool = False
+    collected: bool = False
+    followed: bool = False
+
+
+class VideoFeedItem(SQLModel):
+    video_id: uuid.UUID
+    poster_url: str | None = None
+    play_url: str
+    width: int | None = None
+    height: int | None = None
+    duration: int | None = None
+    orientation: int | None = None
+    title: str | None = None
+    description: str | None = None
+    author: VideoAuthor | None = None
+    stats: VideoStats = Field(
+        default_factory=VideoStats
+    )
+    interaction: VideoInteraction = Field(
+        default_factory=VideoInteraction
+    )
+
+
+class VideoFeedResponse(SQLModel):
+    feed_id: uuid.UUID
+    items: list[VideoFeedItem]
+    next_cursor: str | None = None
+    has_more: bool = False

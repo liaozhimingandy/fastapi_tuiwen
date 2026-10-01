@@ -1,16 +1,17 @@
 import hashlib
-import os
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from src.tuiwen import get_settings
+from src.tuiwen.common.feed_cursor import FeedCursor
 from src.tuiwen.core.storage import Storage
 from src.tuiwen.core.storage import storage
 from src.tuiwen.common.snowflake import gen_snowflake_id
-from src.tuiwen.model.video import Video, VideoOrientation, VideoTranscodeStatus
+from src.tuiwen.model.video import Video, VideoOrientation, VideoTranscodeStatus, VideoFeedResponse, VideoInteraction, \
+    VideoStats, VideoFeedItem
 from src.tuiwen.dal.video import VideoDAO
 from src.tuiwen.common.exceptions import BizError
 
@@ -34,107 +35,322 @@ class VideoService:
             return VideoOrientation.UNKNOWN
         return VideoOrientation.LANDSCAPE if width > height else VideoOrientation.PORTRAIT
 
-    async def upload(self, upload_file, max_size: int, title, description, category,
-                     uploader_account_id: str = '1', video_md5: Optional[str] = None):
-        """流式上传，不一次性加载全部文件到内存
-        :param max_size:
-        :param category:
-        :param description:
-        :param title:
-        :param uploader_account_id:
-        :param upload_file
-        :param video_md5: 前端传过来的md5（precheck用）
-        相同md5文件复用底层存储，但每个用户生成独立视频记录
+    @staticmethod
+    def _build_play_url(video: Video) -> str:
+        ym = video.create_at.strftime("%Y%m")
+        return (
+            f"/static/videos/"
+            f"{ym}/"
+            f"{video.video_id}/"
+            f"hls/playlist.m3u8"
+        )
+
+    @staticmethod
+    def _build_poster_url(video: Video) -> str:
+        ym = video.create_at.strftime("%Y%m")
+        return (
+            f"/static/videos/"
+            f"{ym}/"
+            f"{video.video_id}/"
+            f"poster.jpg"
+        )
+
+    async def upload(
+            self,
+            upload_file,
+            max_size: int,
+            title: str | None,
+            description: str | None,
+            category: int | None,
+            uploader_account_id: str = "1",
+            video_md5: Optional[str] = None,
+    ) -> Video:
         """
-        # 标记：是否命中已有文件（不需要再上传存储）
-        hit_exist_file: Optional[str] = None
-        # 1. 如果前端携带md5，预查重
-        if video_md5:
-            # 查找任意一条拥有该md5的记录，拿存储地址，不直接return
-            instance = await self.dao.get_one(video_md5=video_md5, account_id=uploader_account_id)
-            if instance:
-                hit_exist_file = instance.default_url
-                return instance
-
-        # 2. 初始化md5计算器
-        md5_obj = hashlib.md5()
-        video_id = uuid.uuid7() # gen_snowflake_id()
+        流式上传视频。
+        处理逻辑：
+        1. 前端 MD5 仅用于预检查，不直接信任。
+        2. 服务端重新计算真实 MD5。
+        3. 根据真实 MD5 查找已有视频资源。
+        4. 如果底层文件已经存在：
+            - 不重复上传文件
+            - 不重复转码
+            - 新建当前用户自己的 Video 记录
+            - 复用已有 storage_key
+        5. 如果底层文件不存在：
+            - 上传原始文件
+            - 新建 Video
+            - 后续进入转码流程
+        """
+        settings = get_settings()
+        video_id = uuid.uuid7()
         filename = upload_file.filename or ""
-        ext = os.path.splitext(filename.lower())[1] or ".mp4"
+        ext = Path(filename).suffix.lower() or ".mp4"
 
-        temp_dir = Path(get_settings().VIDEO_STORAGE_DIR, 'tmp')
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        # ---------------------------------------------------------
+        # 1. 前端 MD5 预检查
+        # ---------------------------------------------------------
+        # 注意：
+        # 前端传来的 MD5 不能作为最终依据。
+        # 它只能用于提前告诉服务端：
+        # “我认为这个文件是 xxx”
+        # 真正入库时必须使用服务端计算出的 MD5。
+        if video_md5:
+            existing_video = await self.dao.get_one(
+                video_md5=video_md5,
+                account_id=uploader_account_id,
+            )
+            if existing_video:
+                return existing_video
+
+        # ---------------------------------------------------------
+        # 2. 创建临时文件
+        # ---------------------------------------------------------
+        temp_dir = Path(
+            settings.VIDEO_STORAGE_DIR,
+            "tmp",
+        )
+        temp_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
         temp_file_path = temp_dir / f"{video_id}{ext}"
+        md5_obj = hashlib.md5()
         total_bytes = 0
 
         try:
-            # 流式读取分片，计算md5，写入临时文件
-            with open(temp_file_path, "wb") as f:
+            # -----------------------------------------------------
+            # 3. 流式读取 UploadFile
+            # -----------------------------------------------------
+            with temp_file_path.open("wb") as temp_file:
                 while True:
                     chunk = await upload_file.read(self.chunk_size)
                     if not chunk:
                         break
                     total_bytes += len(chunk)
+
+                    # 超过大小限制
                     if total_bytes > max_size:
-                        raise BizError(code=413, message=f"文件不能超过 {max_size / 1024 / 1024:.2f}MB")
+                        raise BizError(
+                            code=413,
+                            message=(
+                                f"文件不能超过 "
+                                f"{max_size / 1024 / 1024:.2f}MB"
+                            ),
+                        )
+                    # 计算服务端真实 MD5
                     md5_obj.update(chunk)
-                    f.write(chunk)
+                    # 写入临时文件
+                    temp_file.write(chunk)
 
+            # -----------------------------------------------------
+            # 4. 空文件检查
+            # -----------------------------------------------------
             if total_bytes == 0:
-                raise BizError(code=400, message="文件为空")
+                raise BizError(
+                    code=400,
+                    message="文件为空",
+                )
 
+            # -----------------------------------------------------
+            # 5. 获取服务端真实 MD5
+            # -----------------------------------------------------
             file_md5 = md5_obj.hexdigest()
-            # 3. 二次兜底查重：看是否已经存在该md5的文件资源
-            file_instance = await self.dao.get_one(video_md5=file_md5, account_id=uploader_account_id)
-            if file_instance:
-                hit_exist_file = file_instance.default_url
 
-            # 4. 判断：复用已有文件 还是 上传新文件到存储
-            if hit_exist_file:
-                # ✅ 文件已经存在，跳过storage上传，直接复用存储地址
-                file_url = hit_exist_file
-                # 临时文件不再需要，直接删除
+            # -----------------------------------------------------
+            # 6. 二次查重
+            # -----------------------------------------------------
+            # 这里必须使用真实 MD5。
+            # 注意：
+            # 这里不要再限定 account_id。
+            # 因为你的目标是：
+            # 不同用户上传相同文件
+            # ↓
+            # 底层文件只保存一次
+            existing_video = await self.dao.get_one(
+                video_md5=file_md5
+            )
+
+            # -----------------------------------------------------
+            # 7. 确定底层存储资源
+            # -----------------------------------------------------
+            storage_key: str
+            need_transcode: bool
+
+            if existing_video:
+                # =================================================
+                # 已经存在底层文件
+                # =================================================
+                existing_storage_key = (existing_video.extra or {}).get("storage_key")
+                if not existing_storage_key:
+                    raise BizError(
+                        code=500,
+                        message="已有视频记录缺少存储地址",
+                    )
+                storage_key = existing_storage_key
+                # 不需要再次上传
+                # 不需要再次转码
+                need_transcode = False
+                # 临时文件可以删除
                 temp_file_path.unlink(missing_ok=True)
             else:
-                # 文件不存在，执行上传到storage
+                # =================================================
+                # 第一次上传这个文件
+                # =================================================
+                # 注意：
+                # storage.save() 应该接收“临时文件路径”，
+                # 而不是再次使用已经读取完毕的 UploadFile。
+                # 这里假设你的 StorageService 支持：
+                # save_file(video_id, file_path, ext)
                 upload_file.file.seek(0)
-                final_key = await self.storage.save(str(video_id), upload_file, ext)
-                file_url = await self.storage.url(final_key)
+                storage_key = await self.storage.save(
+                    str(video_id),
+                    upload_file,
+                    ext,
+                )
+                need_transcode = True
 
-            # 6. 入库：新建独立视频记录！！不管md5是否重复，都新建tw_video
+            # -----------------------------------------------------
+            # 8. 创建当前用户自己的 Video 记录
+            # -----------------------------------------------------
             video = Video(
                 video_id=video_id,
                 poster=None,
                 title=title,
                 description=description,
                 category=category,
-                default_url=file_url,
                 account_id=uploader_account_id,
                 video_md5=file_md5,
-                transcode_status=VideoTranscodeStatus.PENDING,
+                transcode_status=(
+                    VideoTranscodeStatus.PENDING if need_transcode else VideoTranscodeStatus.SUCCESS
+                ),
                 transcode_msg=None,
                 is_deleted=False,
                 extra={
+                    # 原始文件名
                     "original_filename": filename,
-                    "storage_key": file_url,
+                    # 真正的存储 Key
+                    # 注意：
+                    # 这里保存 storage_key，
+                    # 不保存 CDN URL。
+                    "storage_key": storage_key,
+                    # 文件大小
                     "size_bytes": total_bytes,
+                    # MIME 类型
                     "content_type": upload_file.content_type,
+                    # 文件后缀
                     "file_suffix": ext,
-                    "upload_at": datetime.utcnow().isoformat()
-                }
+                    # 上传时间
+                    "upload_at": datetime.now(timezone.utc).isoformat(),
+                },
             )
+
+            # -----------------------------------------------------
+            # 9. 写入数据库
+            # -----------------------------------------------------
             instance = await self.dao.create(video)
             await self.dao.write_db.commit()
             await self.dao.write_db.refresh(instance)
 
-            # 删除临时文件
+            # -----------------------------------------------------
+            # 10. 删除临时文件
+            # -----------------------------------------------------
             temp_file_path.unlink(missing_ok=True)
-            # 投递转码任务（注意：相同md5文件只需要转码一次，这里你可以加判断）
-            # transcode_task.delay(video_id, file_url)
+
+            # -----------------------------------------------------
+            # 11. 投递转码任务
+            # -----------------------------------------------------
+            # 只有真正第一次出现的文件才需要转码。
+            if need_transcode:
+                # TODO:
+                # await self.transcode_service.submit(
+                #     video_id=video_id,
+                #     storage_key=storage_key,
+                # )
+                pass
+
             return instance
+
         except Exception:
-            if temp_file_path.exists():
-                temp_file_path.unlink(missing_ok=True)
+            # 发生异常时清理临时文件
+            temp_file_path.unlink(missing_ok=True)
             raise
         finally:
+            # 关闭 UploadFile
             await upload_file.close()
+
+    async def feed(self, feed_id: Optional[str] = None, limit: int = 10,
+                   cursor: Optional[str] = None) -> VideoFeedResponse:
+        """
+        {
+            "feed_id": "0199c8a2-7d35-7abc-8def-123456789abc",
+            "items": [],
+            "next_cursor": "eyJ...",
+            "has_more": true
+            }
+        :param feed_id:
+        :param limit:
+        :param cursor:
+        :return:
+        """
+
+        # 第一次请求
+        if cursor:
+            try:
+                decoded = FeedCursor.decode(cursor)
+            except ValueError:
+                raise BizError(
+                    code=400,
+                    message="无效的分页游标",
+                )
+
+            # cursor 中的 feed_id 优先
+            feed_id = decoded.feed_id
+            videos = await self.dao.get_feed(
+                cursor_create_at=decoded.create_at,
+                cursor_id=decoded.id,
+                limit=limit + 1,
+            )
+        else:
+            # 新建一次 Feed Session
+            feed_id = feed_id or uuid.uuid7()
+            videos = await self.dao.get_feed(
+                limit=limit + 1,
+            )
+        # 多查询一条，用于判断 has_more
+        has_more = len(videos) > limit
+        if has_more:
+            videos = videos[:limit]
+        items = []
+        for video in videos:
+            item = VideoFeedItem(
+                video_id=video.video_id,
+                poster_url=self._build_poster_url(video),
+                play_url=self._build_play_url(video),
+                width=video.width,
+                height=video.height,
+                duration=video.duration,
+                orientation=video.orientation,
+                title=video.title,
+                description=video.description,
+                stats=VideoStats(),
+                interaction=VideoInteraction(),
+            )
+            items.append(item)
+
+        # 生成下一页 Cursor
+        next_cursor = None
+        if has_more and videos:
+            last_video = videos[-1]
+
+            next_cursor = FeedCursor.encode(
+                feed_id=feed_id,
+                create_at=last_video.create_at,
+                id=last_video.id,
+            )
+
+        return VideoFeedResponse(
+            feed_id=feed_id,
+            items=items,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )

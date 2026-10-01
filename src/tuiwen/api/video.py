@@ -11,24 +11,25 @@
 分层位置:
     API → UploadService → UploadDAO → PostgreSQL (+ 本地存储)
 """
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, status, UploadFile, HTTPException, Depends, Request
-from fastapi.params import Form, File
+from fastapi.params import Form, File, Query
 
 from src.tuiwen.dependencies import get_video_service
 from src.tuiwen.service.video import VideoService
-from src.tuiwen.model.video import Video
+from src.tuiwen.model.video import Video, VideoFeedQuery, VideoFeedResponse
 from src.tuiwen.core import Settings
 from src.tuiwen.core import Tag
 from src.tuiwen.utils import allowed_file
 from src.tuiwen.core import get_settings
 
 # NOTE: 沿用历史前缀, 实际对外路径为 /api/v2/upload/image/
-router_upload = APIRouter(prefix="/upload", tags=[Tag.upload])
+router_upload = APIRouter(prefix="/videos", tags=[Tag.upload])
 
 
-@router_upload.post('/video/', summary="视频", response_model=Video, status_code=status.HTTP_201_CREATED)
+@router_upload.post('/upload/', summary="视频", response_model=Video, status_code=status.HTTP_201_CREATED)
 async def upload_video(
         request: Request,
         file: Annotated[UploadFile, File(description="视频文件，支持mp4等格式")],
@@ -47,6 +48,14 @@ async def upload_video(
         svc: 视频业务服务
     Returns:
         Video: 视频主表记录
+        :param file:
+        :param request:
+        :param svc:
+        :param video_md5:
+        :param settings:
+        :param description:
+        :param category:
+        :param title:
     """
 
     # 基础参数校验
@@ -66,7 +75,17 @@ async def upload_video(
 
     try:
         return await svc.upload(file, uploader_account_id=getattr(request.state, "account_id", "1"), title=title,
-                            description=description, video_md5=video_md5,
-                            category=category, max_size=MAX_SIZE)
+                                description=description, video_md5=video_md5,
+                                category=category, max_size=MAX_SIZE)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router_upload.get('/feed/', summary="返回推荐流", response_model=VideoFeedResponse,
+                   status_code=status.HTTP_200_OK)
+async def feed(request: Request,
+               query: Annotated[VideoFeedQuery, Query()],
+               svc: VideoService = Depends(get_video_service)):
+    """返回推荐流
+    """
+    return await svc.feed(feed_id=query.feed_id, limit=query.limit, cursor=query.cursor)

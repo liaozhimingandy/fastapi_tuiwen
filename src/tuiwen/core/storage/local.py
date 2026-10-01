@@ -104,7 +104,7 @@ class LocalStorage(Storage):
         stat = await asyncio.to_thread(full.stat)
         return stat.st_size
 
-    async def url(self, name: str) -> str:
+    async def url(self, name: str, **kwargs) -> str:
         return f"{self.static_prefix}/{name}"
 
     async def get_available_name(self, name: str) -> str:

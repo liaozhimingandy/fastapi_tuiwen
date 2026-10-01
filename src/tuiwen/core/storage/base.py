@@ -42,7 +42,7 @@ class Storage(abc.ABC):
         """返回文件大小（字节）"""
 
     @abc.abstractmethod
-    async def url(self, name: str) -> str:
+    async def url(self, name: str, **kwargs) -> str:
         """生成可访问的 URL"""
         raise NotImplementedError
 
