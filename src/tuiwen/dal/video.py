@@ -1,9 +1,10 @@
 from datetime import datetime
+from typing import Sequence
 
 from sqlmodel import select, or_, and_
 
 from src.tuiwen.dal.base import BaseDAO
-from src.tuiwen.model.video import Video, VideoTranscodeStatus
+from src.tuiwen.model.video import Video, VideoTranscodeStatus, VideoSource
 
 
 class VideoDAO(BaseDAO[Video]):
@@ -45,4 +46,13 @@ class VideoDAO(BaseDAO[Video]):
         )
         result = await self.read_db.exec(statement)
         return result.all()
+
+    async def complete_transcode(
+            self,
+            video: Video,
+    ) -> None:
+
+        self.write_db.add(video)
+        await self.delete_by_unique_field("video_id", video.video_id)
+        await self.write_db.flush()
 

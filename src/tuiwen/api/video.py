@@ -19,7 +19,8 @@ from fastapi.params import Form, File, Query
 
 from src.tuiwen.dependencies import get_video_service
 from src.tuiwen.service.video import VideoService
-from src.tuiwen.model.video import Video, VideoFeedQuery, VideoFeedResponse
+from src.tuiwen.model.video import Video, VideoFeedQuery, VideoFeedResponse, TranscodeCompleteRequest, \
+    TranscodeFailedRequest
 from src.tuiwen.core import Settings
 from src.tuiwen.core import Tag
 from src.tuiwen.utils import allowed_file
@@ -89,3 +90,19 @@ async def feed(request: Request,
     """返回推荐流
     """
     return await svc.feed(feed_id=query.feed_id, limit=query.limit, cursor=query.cursor)
+
+
+@router_upload.post("/internal/transcode-complete/",response_model=bool,)
+def transcode_complete(
+    data: TranscodeCompleteRequest,
+    svc: VideoService = Depends(get_video_service),
+):
+    return svc.transcode_complete(data)
+
+
+@router_upload.post("/internal/transcode-failed/",response_model=bool,)
+def transcode_failed(
+    data: TranscodeFailedRequest,
+    service: VideoService = Depends(get_video_service),
+) -> bool:
+    return service.transcode_failed(data)

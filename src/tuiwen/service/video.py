@@ -9,11 +9,12 @@ from src.tuiwen import get_settings
 from src.tuiwen.common.feed_cursor import FeedCursor
 from src.tuiwen.core.storage import Storage
 from src.tuiwen.core.storage import storage
-from src.tuiwen.common.snowflake import gen_snowflake_id
+from src.tuiwen.dal.video_source import VideoSourceDAO
 from src.tuiwen.model.video import Video, VideoOrientation, VideoTranscodeStatus, VideoFeedResponse, VideoInteraction, \
-    VideoStats, VideoFeedItem
+    VideoStats, VideoFeedItem, VideoSource, VideoSourceType, TranscodeFailedRequest
 from src.tuiwen.dal.video import VideoDAO
 from src.tuiwen.common.exceptions import BizError
+from src.tuiwen.utils import logger
 
 
 @dataclass
@@ -26,6 +27,7 @@ class VideoService:
     """
 
     dao: VideoDAO
+    source_dao: VideoSourceDAO
     chunk_size: int = 1024 * 1024  # 1MB 分片，可调整
     storage: Storage = storage
 
@@ -39,7 +41,7 @@ class VideoService:
     def _build_play_url(video: Video) -> str:
         ym = video.create_at.strftime("%Y%m")
         return (
-            f"/static/videos/"
+            f"{get_settings().VIDEO_STORAGE_URL_PREFIX}"
             f"{ym}/"
             f"{video.video_id}/"
             f"hls/playlist.m3u8"
@@ -49,7 +51,7 @@ class VideoService:
     def _build_poster_url(video: Video) -> str:
         ym = video.create_at.strftime("%Y%m")
         return (
-            f"/static/videos/"
+            f"{get_settings().VIDEO_STORAGE_URL_PREFIX}"
             f"{ym}/"
             f"{video.video_id}/"
             f"poster.jpg"
@@ -354,3 +356,92 @@ class VideoService:
             next_cursor=next_cursor,
             has_more=has_more,
         )
+
+    async def transcode_complete(self, data):
+        video = await self.dao.get_by_unique_field("video_id", data["video_id"])
+
+        if video is None:
+            raise BizError(
+                f"视频不存在: {data.video_id}"
+            )
+
+        # 已经成功，重复回调直接幂等返回
+        if video.transcode_status == VideoStats.READY:
+            return True
+
+        # 不是当前转码任务
+        if video.transcode_id != data.transcode_id:
+            logger.warning(
+                "忽略旧转码任务回调: video_id=%s",
+                data.video_id,
+            )
+            return False
+
+        if not data.variants:
+            raise BizError(
+                "转码结果为空"
+            )
+
+        sources = [
+            VideoSource(
+                video_id=video.video_id,
+                type=VideoSourceType.HLS,
+                quality=item.quality,
+                path=item.path,
+                size=item.size,
+                bitrate=item.bitrate,
+            )
+            for item in data.variants
+        ]
+
+        video.transcode_status = VideoStats.READY
+        video.duration = data.duration
+        video.width = data.width
+        video.height = data.height
+        video.transcode_msg = None
+
+        await self.dao.complete_transcode(video=video)
+        await self.source_dao.bulk_create(sources)
+        await self.source_dao.commit()
+        await self.dao.write_db.commit()
+
+        return True
+
+    async def transcode_failed(self, data: TranscodeFailedRequest,) -> bool:
+        video = self.dao.get_by_unique_field("video_id", data.video_id)
+
+        if video is None:
+            raise BizError(f"视频不存在: {data.video_id}")
+
+        # 已经成功，不允许失败回调覆盖 READY
+        if video.transcode_status == VideoStats.READY:
+            logger.warning(
+                "忽略转码失败回调，视频已经成功: "
+                "video_id=%s, transcode_id=%s",
+                data.video_id,
+                data.transcode_id,
+            )
+            return True
+
+        # 转码任务不是当前任务，说明是旧任务回调
+        if video.transcode_id != data.transcode_id:
+            logger.warning(
+                "忽略过期转码失败回调: "
+                "video_id=%s, callback_transcode_id=%s, "
+                "current_transcode_id=%s",
+                data.video_id,
+                data.transcode_id,
+                video.transcode_id,
+            )
+            return False
+
+        # 已经失败，重复回调直接幂等返回
+        if video.transcode_status == VideoStats.FAILED:
+            return True
+
+        video.transcode_status = VideoStats.FAILED
+        video.transcode_msg = data.detail
+        await self.dao.update(video)
+        await self.dao.write_db.commit()
+
+        return True

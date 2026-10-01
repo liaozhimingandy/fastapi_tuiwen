@@ -11,7 +11,7 @@ from .base import Storage
 
 
 class LocalStorage(Storage):
-    def __init__(self, base_dir: str, static_prefix: str = "/static/videos", min_free_bytes: int = 10 * 1024**3):
+    def __init__(self, base_dir: str, static_prefix: str = "/static/medias/videos", min_free_bytes: int = 10 * 1024**3):
         self.base_dir = Path(base_dir, self._get_ym())
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.static_prefix = static_prefix

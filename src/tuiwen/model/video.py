@@ -8,30 +8,30 @@ from sqlalchemy.sql.functions import func
 from sqlmodel import SQLModel, Field, text
 from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Identity, Boolean, UniqueConstraint
 
-from src.tuiwen.common.snowflake import gen_snowflake_id
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import convert_to_timezone
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
+
 # 视频分类（短/中/长）
 class VideoCategory(IntEnum):
-    SHORT = 1   # <1分钟
+    SHORT = 1  # <1分钟
     MEDIUM = 2  # 1-30分钟
-    LONG = 3      # >30分钟
+    LONG = 3  # >30分钟
 
 
 class VideoOrientation(IntEnum):
     UNKNOWN = 0
     LANDSCAPE = 1  # 横屏
-    PORTRAIT = 2   # 竖屏
+    PORTRAIT = 2  # 竖屏
 
 
 class VideoTranscodeStatus(IntEnum):
-    PENDING = 0   # 待转码
+    PENDING = 0  # 待转码
     PROCESSING = 1  # 转码中
-    SUCCESS = 2   # 转码成功
-    FAILED = 3    # 转码失败
+    SUCCESS = 2  # 转码成功
+    FAILED = 3  # 转码失败
 
 
 class Video(SQLModel, table=True):
@@ -143,7 +143,7 @@ class Video(SQLModel, table=True):
     is_deleted: bool = Field(
         False,
         description="软删除标记：false正常，true已删除",
-        sa_column_kwargs={"comment": "软删除标记：false正常，true逻辑删除",  "server_default": text("false")},
+        sa_column_kwargs={"comment": "软删除标记：false正常，true逻辑删除", "server_default": text("false")},
     )
 
     create_at: datetime = Field(
@@ -178,9 +178,10 @@ class Video(SQLModel, table=True):
 
 
 # 视频源类型
-class VideoSourceType(StrEnum):
-    MP4 = "video/mp4" # 1
-    HLS = "application/x-mpegURL" # 2
+class VideoSourceType(IntEnum):
+    HLS = 1
+    MP4 = 2
+
 
 # 视频清晰度
 class VideoQuality(StrEnum):
@@ -192,7 +193,16 @@ class VideoQuality(StrEnum):
 
 class VideoSource(SQLModel, table=True):
     __tablename__ = f"{TABLE_PREFIX}video_source"
-    __table_args__ = {'comment': '视频源表，存储视频不同码率、清晰度资源地址，一条视频可对应多条源记录'}
+    __table_args__ = (
+        UniqueConstraint(
+            "video_id",
+            "type",
+            "quality",
+            name="uq_video_source_video_type_quality",
+        ),
+        {'comment': '视频源表，存储视频不同码率、清晰度资源地址，一条视频可对应多条源记录'},
+
+    )
 
     id: int = Field(
         None,
@@ -207,10 +217,9 @@ class VideoSource(SQLModel, table=True):
         nullable=False,
         index=True,
         description="关联视频ID",
-        sa_column_kwargs={"comment": "关联视频主表的业务雪花video_id"},
+        sa_column_kwargs={"comment": "关联视频主表的业务video_id"},
         max_length=36
     )
-
     url: str = Field(
         ...,
         max_length=128,
@@ -272,6 +281,7 @@ class VideoFeedQuery(BaseModel):
         le=20,
     )
 
+
 class VideoAuthor(SQLModel):
     account_id: str
     nickname: str | None = None
@@ -315,3 +325,73 @@ class VideoFeedResponse(SQLModel):
     items: list[VideoFeedItem]
     next_cursor: str | None = None
     has_more: bool = False
+
+
+class TranscodeVariant(BaseModel):
+    """
+    单个转码资源
+    """
+
+    quality: str = Field(
+        ...,
+        max_length=8,
+        description="清晰度，例如360p、480p、720p、1080p",
+    )
+    bitrate: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="实际视频码率，单位kbps",
+    )
+    size: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="资源大小，单位byte",
+    )
+    url: str = Field(
+        ...,
+        max_length=255,
+        description="资源相对路径",
+    )
+
+class TranscodeCompleteRequest(BaseModel):
+    """
+    视频转码完成回调
+    """
+    video_id: str = Field(
+        ...,
+        max_length=36,
+        description="业务视频ID",
+    )
+    transcode_id: str = Field(
+        ...,
+        max_length=64,
+        description="本次转码任务ID",
+    )
+    duration: float = Field(
+        ...,
+        ge=0,
+        description="视频时长，单位秒",
+    )
+    width: int = Field(
+        ...,
+        gt=0,
+        description="原始视频宽度",
+    )
+    height: int = Field(
+        ...,
+        gt=0,
+        description="原始视频高度",
+    )
+    variants: list[TranscodeVariant] = Field(
+        default_factory=list,
+        description="转码资源",
+    )
+
+
+class TranscodeFailedRequest(BaseModel):
+    video_id: str
+    transcode_id: str
+    # FFmpeg / 转码失败原因
+    detail: str
+    # 可选：错误类型，例如 ffmpeg / probe / publish / callback
+    type: Optional[str] = None
