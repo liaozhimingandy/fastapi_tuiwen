@@ -11,6 +11,11 @@
     因此读取接口必须带 created_at 区间条件, 否则会把往年(乃至已焚毁)的历史数据一起返回。
     时间带的划分见 current_snap_session()。
 
+    NOTE: 23:00 / 06:00 是**请求方所在时区**的墙钟时间, 不是固定的 UTC 或北京时间。
+          客户端通过 ``X-Timezone`` 头上报 IANA 时区名, 东京用户在东京时间 23:00 看到开闸,
+          纽约用户在纽约时间 23:00 看到开闸。头缺失或非法时回退到业务时区
+          (settings.TIME_ZONE), 保持老客户端与 curl 调试的行为不变。
+
 分层位置:
     API → SnapService → SnapDAO → PostgreSQL
 """
@@ -24,7 +29,7 @@ from src.tuiwen import get_settings
 from src.tuiwen.dal.base import PageResult
 from src.tuiwen.dal.snap import SnapDAO
 from src.tuiwen.model.snap import Snap
-from src.tuiwen.utils.datetime_utils import business_now, to_business_tz
+from src.tuiwen.utils.datetime_utils import resolve_timezone, to_utc, utcnow
 
 # =========================================================
 # 「天亮即焚」场次窗口常量
@@ -39,11 +44,14 @@ SNAP_SESSION_BURN_HOUR = get_settings().SNAP_SESSION_BURN_HOUR
 SNAP_LATEST_LIMIT = 10
 
 
-def current_snap_session(now: datetime | None = None) -> tuple[datetime, datetime] | None:
+def current_snap_session(
+        now: datetime | None = None,
+        tz_name: str | None = None,
+) -> tuple[datetime, datetime] | None:
     """
     计算「当前时刻所处场次」的时间窗, 返回左闭右开区间 (start, end)。
 
-    划分规则(把跨零点的一段连续夜晚视作同一场):
+    划分规则(把跨零点的一段连续夜晚视作同一场, 时刻取请求方时区的墙钟):
         1. now >= 23:00        → (今天 23:00, 明天 06:00)  当晚场次进行中
         2. now <  06:00        → (昨天 23:00, 今天 06:00)  仍是昨夜那一场
         3. 06:00 <= now < 23:00 → None                     白天, 无有效场次
@@ -53,23 +61,28 @@ def current_snap_session(now: datetime | None = None) -> tuple[datetime, datetim
 
     Args:
         now: 用于计算窗口的基准时间; 默认取当前时刻。
-             传入 naive 值会先按 UTC 补齐(与库里的口径一致), 再换算到业务时区。
+             传入 naive 值会先按 UTC 补齐(与库里的口径一致), 再换算到目标时区。
+        tz_name: 请求方所在时区的 IANA 名(来自 ``X-Timezone`` 头), 如 ``America/New_York``。
+                 为空或非法时回退到业务时区 settings.TIME_ZONE。
 
     Returns:
         tuple[datetime, datetime] | None: (开闸时间, 焚毁时间); 白天非场次时间返回 None
 
-    NOTE: 「23:00 / 06:00」是**业务时区**(settings.TIME_ZONE, 默认 Asia/Shanghai)的墙钟时间,
-          不是 UTC —— 场次规则面向的是本地用户"晚上刷到天亮"这个行为。
-          因此窗口按业务时区构造(tz-aware), 再与 UTC 存储的 created_at 比较;
-          两个 aware 时间比较的是同一瞬间, 不需要手动换算。
+    NOTE: 「23:00 / 06:00」是**目标时区的墙钟时间**, 不是 UTC。
+          场次规则面向的是用户"本地的晚上刷到天亮"这个行为, 所以窗口按请求方时区构造
+          (tz-aware), 再与 UTC 存储的 created_at 比较; 两个 aware 时间比较的是同一瞬间,
+          不需要手动换算。
+    NOTE: 按客户端时区计算意味着**不同地区用户看到的场次窗口不同** —— 这是刻意的:
+          若固定按 Asia/Shanghai, 纽约用户会在当地下午看到"开放中", 而他自己那边的
+          23:00 反而是关闭的, 前端倒计时也就永远是错的。
     """
-    tz = pytz.timezone(get_settings().TIME_ZONE)
+    tz = resolve_timezone(tz_name)
 
     def at(day: date, hour: int) -> datetime:
-        """把「业务时区的某天某点」变成 aware 时间(用 localize, 避免 DST 边界算错)。"""
+        """把「目标时区的某天某点」变成 aware 时间(用 localize, 避免 DST 边界算错)。"""
         return tz.localize(datetime.combine(day, time(hour=hour)))
 
-    now = to_business_tz(now) if now is not None else business_now()
+    now = (to_utc(now) if now is not None else utcnow()).astimezone(tz)
     today = now.date()
 
     today_open = at(today, SNAP_SESSION_OPEN_HOUR)
@@ -113,17 +126,20 @@ class SnapService:
         await self.dao.write_db.refresh(instance)
         return instance
 
-    async def get_snaps_latest(self) -> PageResult[Snap]:
+    async def get_snaps_latest(self, tz_name: str | None = None) -> PageResult[Snap]:
         """
         获取当前场次内最新的 10 条快照(按主键倒序)
 
-        只返回 created_at 落在当前场次窗口(默认 23:00 ~ 次日 06:00)内的数据;
+        只返回 created_at 落在当前场次窗口(23:00 ~ 次日 06:00)内的数据;
         非场次时间(白天)一律返回空列表。
+
+        Args:
+            tz_name: 请求方时区 IANA 名; 为空/非法时按业务时区计算窗口
 
         Returns:
             PageResult[Snap]: 快照列表与总数; 非场次时间为空
         """
-        window = current_snap_session()
+        window = current_snap_session(tz_name=tz_name)
         if window is None:
             return _empty_page()
 
@@ -133,18 +149,19 @@ class SnapService:
             start=start, end=end, limit=SNAP_LATEST_LIMIT, order_by=Snap.id.desc()
         )
 
-    async def get_snaps(self, limit: int = 10, offset: int = 0) -> PageResult[Snap]:
+    async def get_snaps(self, limit: int = 10, offset: int = 0, tz_name: str | None = None) -> PageResult[Snap]:
         """
         分页获取当前场次内的快照列表
 
         Args:
             limit: 每页数量
             offset: 偏移量
+            tz_name: 请求方时区 IANA 名; 为空/非法时按业务时区计算窗口
 
         Returns:
             PageResult[Snap]: 快照列表与总数; 非场次时间为空
         """
-        window = current_snap_session()
+        window = current_snap_session(tz_name=tz_name)
         if window is None:
             return _empty_page()
 

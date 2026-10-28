@@ -22,7 +22,7 @@
     - 「按本地日历」判定的业务规则: 快照 23:00~06:00 场次、按年月分目录;
     - 运维排查时想按本地时间看日志。
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 
 import pytz
 
@@ -63,6 +63,37 @@ def to_utc(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def resolve_timezone(name: str | None) -> tzinfo:
+    """把 IANA 时区名解析成 tzinfo, 空值或非法值一律回退到业务时区。
+
+    用途: 客户端(浏览器)通过 ``X-Timezone`` 头上报自己的时区, 让「按本地日历判定」
+    的业务规则(快照场次)对全球用户都成立 —— 东京用户在东京时间 23:00 看到开闸,
+    纽约用户在纽约时间 23:00 看到开闸, 而不是统一按 Asia/Shanghai 的墙钟。
+
+    这个头**来自客户端, 不可信**: 传 ``Mars/Base``、空串、超长垃圾都会走到这里,
+    所以只做"尽力解析 + 兜底", 绝不向上抛异常(否则一个畸形请求就能让接口 500)。
+
+    Args:
+        name: IANA 时区名, 如 ``Asia/Shanghai``、``America/New_York``; 允许为 None
+
+    Returns:
+        tzinfo: 解析成功返回对应时区, 否则返回 settings.TIME_ZONE(默认 Asia/Shanghai)
+
+    Examples:
+        >>> resolve_timezone("America/New_York").utcoffset(datetime(2026, 1, 1)).total_seconds()
+        -18000.0
+    """
+    # 时区名最长也就 32 个字符(如 America/Argentina/ComodRivadavia),
+    # 放宽到 64; 更长的直接当垃圾丢掉, 不浪费一次 pytz 查找
+    cleaned = (name or "").strip()
+    if cleaned and len(cleaned) <= 64:
+        try:
+            return pytz.timezone(cleaned)
+        except pytz.UnknownTimeZoneError:
+            pass
+    return pytz.timezone(get_settings().TIME_ZONE)
 
 
 def to_business_tz(value: datetime | None) -> datetime | None:

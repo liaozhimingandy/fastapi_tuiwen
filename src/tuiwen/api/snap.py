@@ -23,6 +23,26 @@ from src.tuiwen.service.snap import SnapService
 router_public = APIRouter(prefix='/snaps', tags=[Tag.more])
 
 
+def _client_timezone(request: Request) -> str | None:
+    """
+    读取客户端上报的时区(浏览器 `Intl.DateTimeFormat().resolvedOptions().timeZone`)
+
+    「天亮即焚」的场次是按**用户本地墙钟** 23:00~06:00 判定的, 所以服务端必须知道
+    请求方在哪个时区, 否则全球用户只能统一按北京时间开闸。
+
+    Args:
+        request: 当前请求对象
+
+    Returns:
+        str | None: IANA 时区名(如 `America/New_York`); 未上报时为 None,
+                    由 service 层回退到业务时区
+
+    NOTE: 这个头来自客户端, 不可信; 校验与兜底在 `snap_service.resolve_timezone` 里做,
+          这里只负责取值, 不在这里抛异常。
+    """
+    return request.headers.get("x-timezone")
+
+
 @router_public.post("/", response_model=Snap, status_code=201, summary="天亮即焚提交")
 async def create_snap(
         payload: Annotated[SnapCreate, "内容"],
@@ -77,23 +97,25 @@ async def create_snap(
 
 
 @router_public.get("/latest/", response_model=PageResponse[Snap], summary="获取最新的十条数据")
-async def get_snaps_latest(svc: SnapService = Depends(get_snap_service)):
+async def get_snaps_latest(request: Request, svc: SnapService = Depends(get_snap_service)):
     """
     获取最新的 10 条快照(首页信息流)
 
     Args:
+        request: 请求对象, 从中取 `X-Timezone` 决定场次窗口按哪个时区计算
         svc: 快照业务服务
 
     Returns:
         PageResponse[Snap]: 快照列表与总数
     """
-    result = await svc.get_snaps_latest()
+    result = await svc.get_snaps_latest(tz_name=_client_timezone(request))
     return PageResponse(items=result.items, total=result.total)
 
 
 @router_public.get("/", summary="返回快照列表", response_model=PageResponse[Snap],
                    response_model_include={'items', 'total'})
-async def get_snaps(limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
+async def get_snaps(request: Request,
+                    limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
                     offset: Annotated[int, "偏移量, 从 0 开始"] = Query(0, ge=0),
                     svc: SnapService = Depends(get_snap_service)
                     ):
@@ -101,6 +123,7 @@ async def get_snaps(limit: Annotated[int, "返回多少条记录"] = Query(10, g
     分页获取快照列表
 
     Args:
+        request: 请求对象, 从中取 `X-Timezone` 决定场次窗口按哪个时区计算
         limit: 每页数量, 1~100
         offset: 偏移量, 从 0 开始
 
@@ -110,7 +133,7 @@ async def get_snaps(limit: Annotated[int, "返回多少条记录"] = Query(10, g
     NOTE: offset 原来默认是 1, 导致第一页永远跳过最新的一条; 语义也不是
           "最旧的那个 id"(那是游标), 这里统一成标准偏移量语义。
     """
-    result = await svc.get_snaps(limit=limit, offset=offset)
+    result = await svc.get_snaps(limit=limit, offset=offset, tz_name=_client_timezone(request))
     return PageResponse(items=result.items, total=result.total)
 
 
