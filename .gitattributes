@@ -1,0 +1,24 @@
+# 换行统一为 LF。
+# 理由: 本仓库在 Windows 上开发、在 Linux 上构建。若工作区按 CRLF 检出,
+# Dockerfile 的续行、.github/workflows/*.yml 里 `run: |` 的多行 shell
+# 都会带上 \r, 在 Linux 侧变成 "command not found" / "$'\r': command not found"
+# 这类与代码无关的失败。
+* text=auto eol=lf
+
+# 必须在 Windows 上运行的脚本仍用 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制文件不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.zip binary
+*.gz binary
+*.db binary
+*.sqlite3 binary
+*.pyc binary
