@@ -147,7 +147,14 @@ jobs:
         run: uvx ruff check . --output-format=github
 
       - name: 运行单元测试
-        run: uv run pytest tests -q --junitxml=pytest-unit.xml
+        run: |
+          set -o pipefail
+          if ! uv run pytest tests -q --junitxml=pytest-unit.xml > /tmp/pytest.log 2>&1; then
+            echo "::error title=单元测试失败::$(tail -c 600 /tmp/pytest.log | tr '\n' ' ')"
+            cat /tmp/pytest.log
+            exit 1
+          fi
+          tail -5 /tmp/pytest.log
 
       - name: 上传测试报告
         if: always()
@@ -240,7 +247,14 @@ jobs:
           exit 1
 
       - name: 运行端到端测试
-        run: uv run pytest test_main.py -q --junitxml=pytest-integration.xml
+        run: |
+          set -o pipefail
+          if ! uv run pytest test_main.py -q --junitxml=pytest-integration.xml > /tmp/pytest.log 2>&1; then
+            echo "::error title=端到端测试失败::$(tail -c 600 /tmp/pytest.log | tr '\n' ' ')"
+            cat /tmp/pytest.log
+            exit 1
+          fi
+          tail -5 /tmp/pytest.log
 
       - name: 上传测试报告
         if: always()

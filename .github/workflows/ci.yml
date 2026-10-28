@@ -83,14 +83,21 @@ jobs:
           BACKEND_CORS_ORIGINS: http://localhost
           VIDEO_ALLOW_SUFFIX: .mp4,.mov,.mkv
         run: |
-          uv run python -c "
+          set -o pipefail
+          if ! uv run python -c "
           import main
           schema = main.app.openapi()
           paths = schema['paths']
           print(f\"OpenAPI 路径数: {len(paths)}, 模型数: {len(schema.get('components', {}).get('schemas', {}))}\")
           assert len(paths) >= 30, '业务路由数量异常, 检查 api/router.py 的装配'
           assert '/api/v2/health-check/' in paths, '健康检查路由缺失'
-          "
+          " > /tmp/openapi.log 2>&1; then
+            # 失败原因同时写进 annotation, 不必登录也能在 check-run 里看到
+            echo "::error title=OpenAPI 生成失败::$(tail -c 600 /tmp/openapi.log | tr '\n' ' ')"
+            cat /tmp/openapi.log
+            exit 1
+          fi
+          cat /tmp/openapi.log
 
   # ---------------------------------------------------------------------------
   # 2) 单元测试：零外部依赖，给 PR 一个快速反馈
@@ -115,7 +122,14 @@ jobs:
         run: uv sync --frozen --no-install-project
 
       - name: 运行单元测试
-        run: uv run pytest tests -q --junitxml=pytest-unit.xml
+        run: |
+          set -o pipefail
+          if ! uv run pytest tests -q --junitxml=pytest-unit.xml > /tmp/pytest.log 2>&1; then
+            echo "::error title=单元测试失败::$(tail -c 600 /tmp/pytest.log | tr '\n' ' ')"
+            cat /tmp/pytest.log
+            exit 1
+          fi
+          tail -5 /tmp/pytest.log
 
       - name: 上传测试报告
         if: always()
@@ -213,7 +227,14 @@ jobs:
           exit 1
 
       - name: 运行端到端测试
-        run: uv run pytest test_main.py -q --junitxml=pytest-integration.xml
+        run: |
+          set -o pipefail
+          if ! uv run pytest test_main.py -q --junitxml=pytest-integration.xml > /tmp/pytest.log 2>&1; then
+            echo "::error title=端到端测试失败::$(tail -c 600 /tmp/pytest.log | tr '\n' ' ')"
+            cat /tmp/pytest.log
+            exit 1
+          fi
+          tail -5 /tmp/pytest.log
 
       - name: 上传测试报告
         if: always()

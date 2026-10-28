@@ -28,6 +28,10 @@ dependencies = [
 #   由 CI 的 integration 作业或本地 `pytest test_main.py` 显式指定。
 # =============================================================================
 [tool.pytest.ini_options]
+# 仓库不是可安装的包(src/ 只是源码根), 用例里 `from src.tuiwen...` 依赖
+# 仓库根目录在 sys.path 上; Windows 下用 `python -m pytest` 会隐式加上,
+# 但 CI 里 `uv run pytest` 走的是 console script, 不会加 —— 所以显式声明。
+pythonpath = ["."]
 testpaths = ["tests"]
 norecursedirs = [".venv", ".git", "static", "logs", "__pycache__"]
 addopts = "-ra"
