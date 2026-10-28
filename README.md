@@ -57,7 +57,8 @@ videos/<YYYYMM>/<video_id>/
 | Tag `vA.B` / `vA.B.C` | `A.B` / `A.B.C` | `sha-<7位>`、`latest`、`A.B`、`A` |
 | Tag `vA.Brc1`（预发布） | `A.Brc1` | `sha-<7位>`（不占 `latest`） |
 
-例：`docker pull <owner>/fastapi_tuiwen:0.3.6`、`:latest`、`:0.3`。
+例：`docker pull <DOCKER_USERNAME>/fastapi_tuiwen:0.3.6`、`:latest`、`:0.3`。
+命名空间取**登录成功的 Docker Hub 账号名**（不是 GitHub 用户名，两者常常不同），想换成别的路径就设变量 `DOCKER_REPOSITORY`（如 `org/fastapi_tuiwen`）。
 
 ### 需要配置的 Secrets / Variables
 

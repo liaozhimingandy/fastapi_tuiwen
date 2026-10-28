@@ -53,6 +53,10 @@ inputs:
     description: 覆盖镜像名的仓库变量（vars.DOCKER_REPOSITORY），可空
     required: false
     default: ''
+  hub_namespace:
+    description: Docker Hub 账号名（用于拼镜像名），可空；为空时退回 GitHub 所有者
+    required: false
+    default: ''
   aliyun_registry:
     description: 阿里云 ACR 域名（secrets.ALIYUN_REGISTRY）
     required: false
@@ -89,6 +93,7 @@ runs:
         PUSH_ALI: ${{ inputs.push_aliyun }}
         DEFAULT_IMAGE_NAME: ${{ inputs.default_image_name }}
         DOCKER_REPOSITORY: ${{ inputs.docker_repository }}
+        HUB_NAMESPACE: ${{ inputs.hub_namespace }}
         ALIYUN_REGISTRY: ${{ inputs.aliyun_registry }}
         ALIYUN_NAMESPACE: ${{ inputs.aliyun_namespace }}
         OWNER: ${{ github.repository_owner }}
@@ -100,7 +105,11 @@ runs:
           exit 1
         fi
 
-        HUB_IMAGE="${DOCKER_REPOSITORY:-${OWNER}/${DEFAULT_IMAGE_NAME}}"
+        # 镜像名的命名空间必须与「能推送的那个账号」一致：
+        # Docker Hub 账号名常常和 GitHub 用户名不同，用 GitHub 用户名拼出来的
+        # 路径不属于登录账号，推送会得到
+        #   push access denied, repository does not exist or may require authorization
+        HUB_IMAGE="${DOCKER_REPOSITORY:-${HUB_NAMESPACE:-${OWNER}}/${DEFAULT_IMAGE_NAME}}"
         ALI_IMAGE=""
         # ACR 命名空间是账号里自建的，不能用 github 用户名去猜：
         # 猜出来的路径一定不存在，推送只会得到 "repository does not exist"
