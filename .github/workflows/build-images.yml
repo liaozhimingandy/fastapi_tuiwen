@@ -304,13 +304,28 @@ jobs:
           username: ${{ secrets.ALIYUN_USERNAME || secrets.DOCKER_USERNAME }}
           password: ${{ secrets.ALIYUN_PASSWORD || secrets.DOCKER_PASSWORD }}
 
-      - name: 构建并推送
+      - name: 输出解析后的构建参数
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          TAGS: ${{ needs.meta.outputs.tags }}
+          PLATFORMS: ${{ needs.meta.outputs.platforms }}
+          SHOULD_PUSH: ${{ needs.meta.outputs.should_push }}
+          PUSH_HUB: ${{ needs.meta.outputs.push_hub }}
+          PUSH_ALI: ${{ needs.meta.outputs.push_aliyun }}
+        run: |
+          set -euo pipefail
+          echo "::notice title=构建参数::version=${VERSION} should_push=${SHOULD_PUSH} hub=${PUSH_HUB} aliyun=${PUSH_ALI} platforms=${PLATFORMS}"
+          printf 'tag: %s\n' ${TAGS}
+          printf '%s\n' "${TAGS}" > /tmp/tags.txt
+
+      # 有凭据: 用 buildx 一次构建、多仓库推送(支持多架构与 gha 缓存)
+      - name: 构建并推送（buildx）
+        if: needs.meta.outputs.should_push == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          push: ${{ needs.meta.outputs.should_push == 'true' }}
-          load: ${{ needs.meta.outputs.should_push != 'true' }}
+          push: true
           platforms: ${{ needs.meta.outputs.platforms }}
           tags: ${{ needs.meta.outputs.tags }}
           labels: |
@@ -322,6 +337,19 @@ jobs:
           cache-to: type=gha,scope=tuiwen-image,mode=max
           provenance: false
           sbom: false
+
+      # 没有凭据(或手动选择不推送): 只在本地产出镜像, 用经典构建器即可。
+      # 不用 buildx 的 load 导出 —— 那条路径依赖 docker exporter,
+      # 一旦导出配置不匹配就会在 1 秒内失败且错误只留在日志里。
+      - name: 仅本地构建（不使用 buildx 导出）
+        if: needs.meta.outputs.should_push != 'true'
+        run: |
+          set -euo pipefail
+          first_tag="$(head -1 /tmp/tags.txt)"
+          echo "本地构建标签: ${first_tag}"
+          docker build --file Dockerfile --tag "${first_tag}" .
+          docker image inspect "${first_tag}" >/dev/null
+          echo "本地镜像构建成功: ${first_tag}"
 
   # ---------------------------------------------------------------------------
   # 3) 推送后校验：镜像可拉取、平台正确、文件齐全（按实际推送的仓库分别校验）
