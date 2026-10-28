@@ -8,8 +8,9 @@
     先写 original<suffix>.tmp, fsync 落盘后再 os.replace 原子替换成正式文件名,
     避免「文件只写了一半」被当成有效产物; 任何异常都会清理临时文件。
 
-注意: base_dir 在实例化时就把年月拼进去, 是进程级固定值(见 Storage 的 get_storage 单例),
-      跨月不切换分区 —— 长期运行的容器需要按此预期排查文件落点。
+目录分区:
+    <base_dir>/<YYYYMM> 在首次读写时才创建(懒创建), 不在 import 阶段碰磁盘;
+    年月在访问时计算, 长期运行的进程跨月后自动切到新分区。
 """
 import asyncio
 import inspect
@@ -33,15 +34,27 @@ class LocalStorage(Storage):
     def __init__(self, base_dir: str, static_prefix: str = "/static/medias/videos", min_free_bytes: int = 10 * 1024**3):
         """
         Args:
-            base_dir: 磁盘根目录, 实例化时会自动拼上当前年月(YYYYMM)作为分区
+            base_dir: 磁盘根目录, 实际落盘位置是 <base_dir>/<YYYYMM>/<key>
             static_prefix: 对外 URL 前缀, 与 FastAPI 的 static mount 对应
             min_free_bytes: 最小剩余空间保护水位(默认 10GB), 写入前低于该值直接拒绝
         """
-        # NOTE: 年月在这里一次性算死, 跨月不会自动滚动到新分区
-        self.base_dir = Path(base_dir, self._get_ym())
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        # NOTE: 这里只记住根目录, 不创建任何目录。
+        #       storage 实例是模块级单例(core/storage/__init__.py), 若在 __init__ 里 mkdir,
+        #       "import 阶段就写磁盘" —— 在只读/无权限环境(如 CI runner 上没有 /app)
+        #       会直接抛 PermissionError 把导入打断, 连 OpenAPI 都生成不出来。
+        self._root = Path(base_dir)
         self.static_prefix = static_prefix
         self.min_free_bytes = min_free_bytes
+
+    @property
+    def base_dir(self) -> Path:
+        """当前年月分区目录(<root>/<YYYYMM>), 首次访问时才创建。
+
+        懒创建的另一个好处: 年月在访问时计算, 长期运行的进程跨月后会自然切到新分区。
+        """
+        d = self._root / self._get_ym()
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     @staticmethod
     def _open_file(path: Path, mode: Literal["rb", "wb"]) -> TextIO:
