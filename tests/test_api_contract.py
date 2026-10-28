@@ -30,7 +30,7 @@ def test_post_serializes_as_post_id():
 
 
 def test_comment_serializes_as_comment_id():
-    comment = Comment(content="hi", account_id=uuid.uuid7(), obj_id=uuid.uuid7())
+    comment = Comment(content="hi", account_id=uuid.uuid7(), target_id=uuid.uuid7())
     data = comment.model_dump(mode="json", by_alias=True)
 
     assert "comment_id" in data

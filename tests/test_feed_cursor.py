@@ -15,23 +15,23 @@ from src.tuiwen.common.feed_cursor import FeedCursor, VideoFeedCursor
 def test_roundtrip_preserves_fields():
     feed_id = uuid.uuid7()
     video_id = uuid.uuid7()
-    create_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    created_at = datetime.now(timezone.utc) - timedelta(minutes=5)
 
-    cursor = FeedCursor.encode(feed_id=feed_id, create_at=create_at, id=video_id)
+    cursor = FeedCursor.encode(feed_id=feed_id, created_at=created_at, id=video_id)
     decoded = FeedCursor.decode(cursor)
 
     assert isinstance(decoded, VideoFeedCursor)
     assert decoded.version == FeedCursor.VERSION
     assert decoded.feed_id == feed_id
     assert decoded.id == video_id
-    assert decoded.create_at == create_at
+    assert decoded.created_at == created_at
 
 
 def test_cursor_is_url_safe():
     """游标要能直接放进 query string: 不含 '=' 填充与 '+/'(标准 base64 字符)。"""
     cursor = FeedCursor.encode(
         feed_id=uuid.uuid7(),
-        create_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
         id=uuid.uuid7(),
     )
 
@@ -50,7 +50,7 @@ def test_invalid_cursor_raises_value_error(bad):
 def test_truncated_cursor_raises_value_error():
     cursor = FeedCursor.encode(
         feed_id=uuid.uuid7(),
-        create_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
         id=uuid.uuid7(),
     )
 

@@ -8,7 +8,7 @@
 
 「场次」口径(天亮即焚的核心业务规则):
     一场快照从当晚 23:00 开闸, 到次日 06:00 焚毁, 即时间窗为 [23:00, 次日 06:00)。
-    因此读取接口必须带 create_at 区间条件, 否则会把往年(乃至已焚毁)的历史数据一起返回。
+    因此读取接口必须带 created_at 区间条件, 否则会把往年(乃至已焚毁)的历史数据一起返回。
     时间带的划分见 current_snap_session()。
 
 分层位置:
@@ -49,12 +49,12 @@ def current_snap_session(now: datetime | None = None) -> tuple[datetime, datetim
 
     Args:
         now: 用于计算窗口的基准时间; 默认取 datetime.now()
-             (与 Snap.create_at 的 default_factory 同一时钟, 保证过滤条件与存量数据同口径)
+             (与 Snap.created_at 的 default_factory 同一时钟, 保证过滤条件与存量数据同口径)
 
     Returns:
         tuple[datetime, datetime] | None: (开闸时间, 焚毁时间); 白天非场次时间返回 None
 
-    NOTE: 窗口使用的是「应用本地时钟的 naive 时间」, 与 Snap.create_at 的写入方式一致
+    NOTE: 窗口使用的是「应用本地时钟的 naive 时间」, 与 Snap.created_at 的写入方式一致
           (模型里 default_factory=datetime.now 也是 naive 本地时间)。
           若容器时区与业务时区(Asia/Shanghai)不一致, 两者会一起偏移, 仍能自洽;
           但若要按固定时区取窗口, 需改为 datetime.now(pytz.timezone(get_settings().TIME_ZONE))。
@@ -106,7 +106,7 @@ class SnapService:
         """
         获取当前场次内最新的 10 条快照(按主键倒序)
 
-        只返回 create_at 落在当前场次窗口(默认 23:00 ~ 次日 06:00)内的数据;
+        只返回 created_at 落在当前场次窗口(默认 23:00 ~ 次日 06:00)内的数据;
         非场次时间(白天)一律返回空列表。
 
         Returns:

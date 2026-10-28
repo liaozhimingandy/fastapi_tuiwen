@@ -13,7 +13,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request, HTTPException, status
 
 from src.tuiwen.service.notice import NoticeService
 from src.tuiwen.core import Tag
@@ -22,8 +22,6 @@ from src.tuiwen.models import PageResponse
 from src.tuiwen.model.notice import Notice
 
 
-# NOTE: 本路由自带 /v2 前缀, 挂在 /api/v2 之下后实际路径为 /api/v2/notices/...
-#       与 post 等模块的 /api/v2/xxx 不一致
 router_notice = APIRouter(prefix="/notices", tags=[Tag.more])
 
 
@@ -75,22 +73,34 @@ async def get_system_notices(svc: NoticeService = Depends(get_notice_service),
 
 @router_notice.get("/accounts/{account_id}/", summary="返回指定用户的通知", response_model=PageResponse[Notice],
                    response_model_include={'items', 'total'})
-async def get_account_notices(account_id: Annotated[uuid.UUID, "用户id"], svc: NoticeService = Depends(get_notice_service),
+async def get_account_notices(account_id: Annotated[uuid.UUID, "用户id"],
+                              request: Annotated[Request, "请求对象"],
+                              svc: NoticeService = Depends(get_notice_service),
                               page: int = Query(default=1, ge=1), size: int = Query(default=20, ge=1, le=100), ):
     """
     分页获取某个用户收到的通知(按创建时间倒序)
 
     Args:
         account_id: 用户账户唯一标识
+        request: 请求对象, request.state.account_id 由认证依赖写入
         svc: 通知业务服务
         page: 页码, 从 1 开始
         size: 每页数量, 1~100
 
     Returns:
         PageResponse[Notice]: 通知列表与总数
+
+    Raises:
+        HTTPException: 403 —— 试图查看别人的通知
+
+    说明: 通知属于私密数据, 必须限定只能看自己的; 原实现任意登录用户
+          改一下路径里的 account_id 就能读到别人的通知。
     """
+    if request.state.account_id != account_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只能查看自己的通知")
+
     result = await svc.get_user_notices(account_id, limit=size, offset=(page - 1) * size)
-    return PageResponse(items=result.items, total=len(result.items))
+    return PageResponse(items=result.items, total=result.total)
 
 
 if __name__ == "__main__":

@@ -45,7 +45,7 @@ class VideoService:
     storage: Storage = storage
 
     @staticmethod
-    def _calc_orientation(width: int, height: int) -> int:
+    def _calc_orientation(width: int, height: int) -> VideoOrientation:
         """由宽高判定画面方向, 返回 VideoOrientation 枚举值。
 
         上传时源视频宽高未知, 因此在转码完成回调里按回调宽高写入 Video.orientation,
@@ -63,7 +63,7 @@ class VideoService:
         master playlist 落在视频根目录, 各清晰度在 <清晰度>/index.m3u8,
         播放器拿到 master 后自适应选码率。
         """
-        ym = video.create_at.strftime("%Y%m")
+        ym = video.created_at.strftime("%Y%m")
         return (
             f"{get_settings().VIDEO_STORAGE_URL_PREFIX}"
             f"{ym}/"
@@ -77,7 +77,7 @@ class VideoService:
 
         文件名与 VideoTranscoder.create_cover 的输出(cover.jpg)保持一致。
         """
-        ym = video.create_at.strftime("%Y%m")
+        ym = video.created_at.strftime("%Y%m")
         return (
             f"{get_settings().VIDEO_STORAGE_URL_PREFIX}"
             f"{ym}/"
@@ -336,7 +336,7 @@ class VideoService:
             # cursor 中的 feed_id 优先
             feed_id = decoded.feed_id
             videos = await self.dao.get_feed(
-                cursor_create_at=decoded.create_at,
+                cursor_create_at=decoded.created_at,
                 cursor_id=decoded.id,
                 limit=limit + 1,
             )
@@ -374,7 +374,7 @@ class VideoService:
 
             next_cursor = FeedCursor.encode(
                 feed_id=feed_id,
-                create_at=last_video.create_at,
+                created_at=last_video.created_at,
                 id=last_video.id,
             )
 
@@ -432,7 +432,7 @@ class VideoService:
         sources = [
             VideoSource(
                 video_id=video.id,
-                type=VideoSourceType.HLS,
+                source_type=VideoSourceType.HLS,
                 quality=item.quality,
                 url=item.url,
                 size=item.size,

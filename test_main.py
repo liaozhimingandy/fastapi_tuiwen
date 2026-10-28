@@ -110,8 +110,8 @@ class TestMain:
         data = {
             "mail": f"test-user{random.randint(1, 20000)}@test-user-ap.com",
             "password": TestMain.md5_hash.hexdigest(),
-            "nick_name": "test",
-            "gmt_birth": datetime.now(pytz.timezone('Asia/Shanghai')).strftime('%Y-%m-%d'),
+            "nickname": "test",
+            "birthday": datetime.now(pytz.timezone('Asia/Shanghai')).strftime('%Y-%m-%d'),
             "area_code": "CHN",
             "sex": 0,
             "avatar": ""
@@ -192,7 +192,7 @@ class TestMain:
     def test_put_account(self, test_register_and_login) -> None:
         """更新帐户信息"""
         data = {
-            "nick_name": "测试test",
+            "nickname": "测试test",
         }
         client = test_register_and_login.get('client')
         response = client.put(f"/accounts/{TestMain.account_id}/", json=data)
@@ -314,13 +314,11 @@ class TestMain:
         NOTE: comment_id 由客户端用 uuid4 生成, 而生产链路是 uuid7(时间有序, 支撑游标分页),
               测试数据与真实数据的时间序语义不一致
         """
+        # 评论者/主键/是否一级评论都由服务端补全, 请求体只需内容与目标对象
         data = {
-            "comment_id": str(uuid.uuid4()),
-            "is_root": False,
-            "parent_id": None,
             "content": "测试内容",
-            "account_id": TestMain.account_id,
-            "obj_id": str(uuid.uuid4())
+            "target_type": 1,
+            "target_id": str(uuid.uuid4())
         }
         client = test_register_and_login.get('client')
         r = client.post('/comments/', json=data)
@@ -347,10 +345,10 @@ class TestMain:
     # ==================== 点赞 ====================
     def test_create_like(self, test_register_and_login) -> None:
         """给帖子点赞"""
+        # 点赞人取令牌里的账户, 请求体只传目标对象
         data = {
-            "id": 0,
-            "obj_id": TestMain.post_id,
-            "account_id": TestMain.account_id
+            "target_id": TestMain.post_id,
+            "target_type": 1
         }
         client = test_register_and_login.get('client')
         r = client.post('/likes/', json=data)
@@ -394,23 +392,22 @@ class TestMain:
         account_id = test_register_and_login.get('account_id')
         # 被关注者主键在本仓库没有外键约束, 用合法 uuid 即可; 重点验证「重复关注返回 400」
         TestMain.followee_id = str(uuid.uuid7())
+        # 关注者取令牌里的账户, 请求体只传被关注者
         data = {
-            "id": 0,
-            "follower_id": account_id,
             "followee_id": TestMain.followee_id
         }
         client = test_register_and_login.get('client')
         r = client.post('/follows/', json=data)
         assert r.status_code == status.HTTP_201_CREATED, r.text
-        # 400
+        # 重复关注: 唯一索引冲突已转成 409
         r = client.post('/follows/', json=data)
-        assert r.status_code == status.HTTP_400_BAD_REQUEST
+        assert r.status_code == status.HTTP_409_CONFLICT
 
     def test_delete_follower(self, test_register_and_login) -> None:
         """删除关注"""
         client = test_register_and_login.get('client')
-        r = client.delete(
-            f'/follows/{test_register_and_login.get("account_id")}/{TestMain.followee_id}/')
+        # 路径里只带被关注者, 关注者取自令牌
+        r = client.delete(f'/follows/{TestMain.followee_id}/')
         assert r.status_code == status.HTTP_204_NO_CONTENT
 
     def test_get_follow_info_by_id(self, test_register_and_login) -> None:

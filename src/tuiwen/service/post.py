@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 
 from src.tuiwen.dal.post import PostDAO
-from src.tuiwen.model.post import Post
+from src.tuiwen.model.post import Post, RightStatusEnum
 
 
 @dataclass
@@ -51,32 +51,28 @@ class PostService:
             account_id: 当前登录账户ID, 仅作者本人可删除
 
         Returns:
-            bool: 是否删除到记录
-
-        NOTE: 恒返回 True —— 丢弃了 DAO 的 rowcount, 帖子不存在或不属于该 account_id
-              时同样是 True, 调用方无法区分(API 返回 204 掩盖了这一点)
+            bool: 是否删除到记录; False 表示帖子不存在或不属于该账户
         """
-        await self.dao.delete_by_id(post_id, account_id)
+        affected = await self.dao.delete_by_id(post_id, account_id)
         await self.dao.write_db.commit()
-        return True
+        return affected
 
-    async def update_post_right(self, post_id: uuid.UUID, account_id: uuid.UUID, right_status: int):
+    async def update_post_right(self, post_id: uuid.UUID, account_id: uuid.UUID,
+                                right_status: RightStatusEnum):
         """
         修改帖子可见性(公开/私密)
 
         Args:
             post_id: 帖子ID
             account_id: 当前登录账户ID, 仅作者本人可修改
-            right_status: 目标可见性枚举值
+            right_status: 目标可见性(必须是枚举成员)
 
         Returns:
             bool: 是否更新到记录(False 表示帖子不存在或不属于该账户)
-
-        NOTE: 恒返回 True —— 同上, DAO 的 rowcount 被丢弃
         """
-        await self.dao.update_post_right(post_id, account_id, right_status)
+        affected = await self.dao.update_post_right(post_id, account_id, right_status)
         await self.dao.write_db.commit()
-        return True
+        return affected
 
     async def get_posts_latest(self, account_id: uuid.UUID):
         """
@@ -122,23 +118,23 @@ class PostService:
         return await self.dao.get_account_posts(account_id=account_id, cursor=cursor, limit=limit,
                                                 viewer_account_id=viewer_account_id)
 
-    async def get_post(self, post_id: uuid.UUID):
+    async def get_post(self, post_id: uuid.UUID, viewer_account_id: uuid.UUID | None = None):
         """
         按 post_id 查询帖子(登录态下)
 
+        可见范围: 公开帖子 OR 自己发布的帖子; 别人的私密帖与不存在的帖子一样返回 None,
+        避免用 404/403 的差异去探测「某个 post_id 是否存在」。
+
         Args:
             post_id: 帖子ID
+            viewer_account_id: 当前登录账户ID
 
         Returns:
-            Post | None: 帖子实体
-
-        NOTE: 无任何可见性校验 —— 接口在受保护分组里(需登录), 但任何登录用户只要猜到
-              post_id 就能读到别人的私密帖(right_status=PRIVATE)。公开详情走的是
-              get_s_post, 这里若要收紧, 应改为 `post_id + account_id == 本人` 或
-              `right_status == PUBLIC` 的二选一条件
+            Post | None: 可见时返回实体, 否则 None
         """
-        # :todo 考虑后续如果是非本人的非公开帖子数据判断
-        return await self.dao.get_by_unique_field("post_id", post_id)
+        # NOTE: 字段名必须是 "id" —— 主键列已从 post_id 改名为 id(对外 JSON 仍是 post_id),
+        #       传旧名会被 _validate_field_names 拦成 ValueError(500)
+        return await self.dao.get_visible_post(post_id, viewer_account_id)
 
     async def get_s_post(self, post_id: uuid.UUID):
         """

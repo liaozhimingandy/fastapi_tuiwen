@@ -1,7 +1,7 @@
 """视频表 DAO。
 
 除通用 CRUD 外, 只放两类专属查询:
-    get_feed            —— 推荐流游标分页(按 create_at + id 双键倒序, 避免同一时间戳翻页丢数据)
+    get_feed            —— 推荐流游标分页(按 created_at + id 双键倒序, 避免同一时间戳翻页丢数据)
     complete_transcode  —— 转码完成后的落库(见方法内 NOTE)
 """
 import uuid
@@ -27,17 +27,17 @@ class VideoDAO(BaseDAO[Video]):
     ) -> list[Video]:
         """推荐流查询: 只取已转码成功且未删除的视频, 按时间倒序。
 
-        游标分页用 (create_at, id) 双键而非单纯 offset:
-            条件为 create_at < cursor_time OR (create_at == cursor_time AND id < cursor_id)
-        这样同一 create_at 上的多条记录不会在翻页时被跳过或重复。
+        游标分页用 (created_at, id) 双键而非单纯 offset:
+            条件为 created_at < cursor_time OR (created_at == cursor_time AND id < cursor_id)
+        这样同一 created_at 上的多条记录不会在翻页时被跳过或重复。
 
         Args:
-            cursor_create_at: 上一页最后一条的 create_at; None 表示第一页
+            cursor_create_at: 上一页最后一条的 created_at; None 表示第一页
             cursor_id: 上一页最后一条的主键 id(uuid7); 与 cursor_create_at 配对使用
             limit: 返回条数(调用方通常传 limit+1 用于判断 has_more)
 
         Returns:
-            list[Video]: 按 create_at desc, id desc 排序的视频列表
+            list[Video]: 按 created_at desc, id desc 排序的视频列表
         """
         statement = (
             select(Video)
@@ -50,9 +50,9 @@ class VideoDAO(BaseDAO[Video]):
         if cursor_create_at is not None:
             statement = statement.where(
                 or_(
-                    Video.create_at < cursor_create_at,
+                    Video.created_at < cursor_create_at,
                     and_(
-                        Video.create_at == cursor_create_at,
+                        Video.created_at == cursor_create_at,
                         Video.id < cursor_id,
                     ),
                 )
@@ -60,7 +60,7 @@ class VideoDAO(BaseDAO[Video]):
         statement = (
             statement
             .order_by(
-                Video.create_at.desc(),
+                Video.created_at.desc(),
                 Video.id.desc(),
             )
             .limit(limit)

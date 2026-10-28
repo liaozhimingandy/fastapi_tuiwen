@@ -20,11 +20,11 @@ from typing import Annotated
 from fastapi import APIRouter, status, UploadFile, HTTPException, Depends, Request
 from fastapi.params import Form, File, Query
 
-from src.tuiwen.dependencies import get_video_service
+from src.tuiwen.dependencies import get_video_service, get_optional_account_id
 from src.tuiwen.service.video import VideoService
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.model.video import Video, VideoFeedQuery, VideoFeedResponse, TranscodeCompleteRequest, \
-    TranscodeFailedRequest
+    TranscodeFailedRequest, VideoCategory
 from src.tuiwen.core import Settings
 from src.tuiwen.core import Tag
 from src.tuiwen.utils import allowed_file
@@ -36,13 +36,13 @@ router_upload = APIRouter(prefix="/videos", tags=[Tag.upload])
 
 @router_upload.post('/upload/', summary="视频", response_model=Video, status_code=status.HTTP_201_CREATED)
 async def upload_video(
-        request: Request,
         file: Annotated[UploadFile, File(description="视频文件，支持mp4等格式")],
         title: Annotated[str | None, Form(max_length=200)] = None,
         description: Annotated[str | None, Form()] = None,
-        category: Annotated[int | None, Form()] = None,
+        category: Annotated[VideoCategory | None, Form(description="时长分类 1短视频 2中视频 3长视频")] = None,
         video_md5: Annotated[str | None, Form()] = None,
         settings: Annotated[Settings, "全局的设置对象"] = Depends(get_settings),
+        uploader_account_id: Annotated[uuid.UUID | None, "上传者(可选认证)"] = Depends(get_optional_account_id),
         svc: VideoService = Depends(get_video_service)):
     """
     上传视频文件
@@ -54,10 +54,10 @@ async def upload_video(
 
     Args:
         file: multipart/form-data 视频文件
-        request: 请求对象，携带登录账号信息(公开路由, 未登录时上传者记为空)
         title/description/category: 视频元信息, 均可选
         video_md5: 前端预计算的 MD5, 仅用于「秒传」预检查, 不作为入库依据
         settings: 全局配置对象，文件大小、后缀白名单
+        uploader_account_id: 上传者账户ID; 本路由免登录, 带合法令牌才有值
         svc: 视频业务服务
 
     Returns:
@@ -82,11 +82,6 @@ async def upload_video(
         raise HTTPException(status_code=400, detail=f"不支持的文件格式，允许：{allow_suffix}")
 
     try:
-        # 公开路由: 未登录时 request.state 上没有 account_id
-        raw_account_id = getattr(request.state, "account_id", None)
-        uploader_account_id = (
-            raw_account_id if isinstance(raw_account_id, uuid.UUID) else uuid.UUID(raw_account_id)
-        ) if raw_account_id else None
         return await svc.upload(file, uploader_account_id=uploader_account_id, title=title,
                                 description=description, video_md5=video_md5,
                                 category=category, max_size=MAX_SIZE)

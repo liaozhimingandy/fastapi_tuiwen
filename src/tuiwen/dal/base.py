@@ -246,7 +246,7 @@ class BaseDAO(ABC, Generic[T]):
 
         example:
             with dao.use_master():
-                account = await dao.get_by_unique_field("account_id", account_id)
+                account = await dao.get_by_unique_field("id", account_id)
         """
         previous = self.force_master
         self.force_master = True
@@ -363,7 +363,7 @@ class BaseDAO(ABC, Generic[T]):
         返回值对 DML 是 CursorResult, 可通过 .rowcount 取影响行数。
 
         example:
-            stmt = delete(Like).where(Like.obj_id == obj_id, Like.account_id == account_id)
+            stmt = delete(Like).where(Like.target_id == target_id, Like.account_id == account_id)
             affected = (await self.exec_write(stmt, "delete_like")).rowcount
         """
         return await self._execute(self.write_db, stmt, op)
@@ -390,7 +390,7 @@ class BaseDAO(ABC, Generic[T]):
         根据【单个唯一索引字段】查询单条记录，走读库。
 
         Args:
-            field_name: 模型字段名，如 "post_id"、"comment_id"、"account_id"
+            field_name: 模型字段名，如 "id"、"account_id"、"file_md5"
             value: 字段值
 
         Returns:
@@ -412,7 +412,7 @@ class BaseDAO(ABC, Generic[T]):
         """
         多字段等值联合查询，用于【联合唯一索引】，最多返回一条，走读库。
 
-        example: get_by_fields(obj_id="xxx", account_id=123, obj_type=1)
+        example: get_by_fields(target_id="xxx", account_id=123, target_type=1)
 
         Returns:
             T | None: 命中返回实体, 否则 None
@@ -457,7 +457,7 @@ class BaseDAO(ABC, Generic[T]):
         Args:
             limit: 返回条数, 会被 _safe_page 收敛到 [1, MAX_LIMIT]
             offset: 偏移量, 负数按 0 处理
-            order_by: 排序表达式, 如 desc(User.create_at) / User.id.desc(); 为 None 时不排序
+            order_by: 排序表达式, 如 desc(User.created_at) / User.id.desc(); 为 None 时不排序
                       (注意: 不要写 -User.id, SQLAlchemy 会把它编译成算术取负 `ORDER BY -id`,
                        而不是降序; 对字符/时间列是错误语义, 且用不上索引)
             **filters: 等值过滤条件
@@ -612,7 +612,7 @@ class BaseDAO(ABC, Generic[T]):
         根据【业务唯一字段】删除一条记录（业务唯一键，不是主键 id）。
 
         Args:
-            field_name: 模型字段名，例如 "post_id" / "comment_id"
+            field_name: 模型字段名，例如 "id" / "mail"
             value: 字段对应值
 
         Returns:
@@ -634,7 +634,7 @@ class BaseDAO(ABC, Generic[T]):
         """
         多字段等值条件删除，适合联合唯一键。
 
-        example: await dao.delete_by_fields(obj_id="xxx", account_id=123, obj_type=1)
+        example: await dao.delete_by_fields(target_id="xxx", account_id=123, target_type=1)
 
         Args:
             **kwargs: 等值过滤条件, 至少一个

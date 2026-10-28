@@ -5,7 +5,7 @@
     1. 通用 CRUD 由 BaseDAO 提供
     2. 补充快照点赞数自增
     3. 补充「按创建时间区间分页」—— 基类 page()/get_list()/count() 只支持等值过滤,
-       而「天亮即焚」需要 create_at 的区间条件, 只能在本层用显式 where 实现
+       而「天亮即焚」需要 created_at 的区间条件, 只能在本层用显式 where 实现
 
 分层位置:
     SnapService → SnapDAO → PostgreSQL
@@ -40,7 +40,7 @@ class SnapDAO(BaseDAO[Snap]):
             order_by: Any = None,
     ) -> list[Snap]:
         """
-        按 create_at 左闭右开区间 [start, end) 查询快照列表
+        按 created_at 左闭右开区间 [start, end) 查询快照列表
 
         Args:
             start: 区间起点(含)
@@ -54,7 +54,7 @@ class SnapDAO(BaseDAO[Snap]):
             list[Snap]: 快照列表, 无匹配返回空列表
         """
         limit, offset = self._safe_page(limit, offset)
-        statement = select(Snap).where(Snap.create_at >= start, Snap.create_at < end)
+        statement = select(Snap).where(Snap.created_at >= start, Snap.created_at < end)
         if order_by is not None:
             statement = statement.order_by(order_by)
         statement = statement.limit(limit).offset(offset)
@@ -62,7 +62,7 @@ class SnapDAO(BaseDAO[Snap]):
 
     async def count_by_time_range(self, *, start: datetime, end: datetime) -> int:
         """
-        统计 create_at 落在 [start, end) 内的快照数量(与列表条件必须完全一致)
+        统计 created_at 落在 [start, end) 内的快照数量(与列表条件必须完全一致)
 
         Args:
             start: 区间起点(含)
@@ -72,7 +72,7 @@ class SnapDAO(BaseDAO[Snap]):
             int: 记录数, 无匹配返回 0
         """
         statement = (select(func.count()).select_from(Snap)
-                     .where(Snap.create_at >= start, Snap.create_at < end))
+                     .where(Snap.created_at >= start, Snap.created_at < end))
         # select(func.count()) 是 SelectOfScalar, ScalarResult 上只能用 first() 取标量
         value = await self._execute_scalar(self._get_read_session(), statement, "count_by_time_range")
         return int(value or 0)
@@ -87,7 +87,7 @@ class SnapDAO(BaseDAO[Snap]):
             order_by: Any = None,
     ) -> PageResult[Snap]:
         """
-        按 create_at 左闭右开区间 [start, end) 分页, 返回当前页数据 + 区间内总数
+        按 created_at 左闭右开区间 [start, end) 分页, 返回当前页数据 + 区间内总数
 
         与基类 page() 的差别仅在过滤条件: 这里用时间区间而不是等值条件,
         其余的 limit/offset 收敛、总数口径、事务行为都与基类保持一致。
@@ -112,7 +112,7 @@ class SnapDAO(BaseDAO[Snap]):
         """
         快照点赞数原子自增 1
 
-        使用 SQL 层 like = like + 1 表达式, 依赖数据库行锁保证并发安全,
+        使用 SQL 层 like_count = like_count + 1 表达式, 依赖数据库行锁保证并发安全,
         避免「读-改-写」导致的更新丢失。
 
         Args:
@@ -127,8 +127,8 @@ class SnapDAO(BaseDAO[Snap]):
             事务上只执行不提交, 由上层统一 commit。
         """
         statement = (update(Snap).where(Snap.id == pk)
-                     .values(like=Snap.like + 1)
-                     .returning(Snap.like))
+                     .values(like_count=Snap.like_count + 1)
+                     .returning(Snap.like_count))
         # RETURNING 的结果是行集合, Row 的每一列对应 returning() 里的字段
         rows = (await self.exec_write(statement, "inc_snap_like_count")).all()
         return rows[0][0] if rows else None

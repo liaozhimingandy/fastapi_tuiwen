@@ -63,13 +63,13 @@ class CommentService:
         await self.dao.write_db.commit()
         return True
 
-    async def get(self, obj_id, obj_type, limit, cursor=None) -> PageResult[Comment]:
+    async def get(self, target_id, target_type, limit, cursor=None) -> PageResult[Comment]:
         """
         分页查询某目标对象下的评论(游标分页)
 
         Args:
-            obj_id: 目标对象ID(如帖子)
-            obj_type: 目标对象类型枚举
+            target_id: 目标对象ID(如帖子)
+            target_type: 目标对象类型枚举
             limit: 每页数量
             cursor: 游标, 上一页最旧一条的 comment_id; 为 None 表示查第一页
 
@@ -79,4 +79,4 @@ class CommentService:
         说明: 原实现把 UUID 类型的游标当成 offset 传给基类 page(), 基类做 int(offset)
               时会直接抛 TypeError; 这里改用 DAO 的游标分页查询。
         """
-        return await self.dao.get_comments_page(obj_id=obj_id, obj_type=obj_type, limit=limit, cursor=cursor)
+        return await self.dao.get_comments_page(target_id=target_id, target_type=target_type, limit=limit, cursor=cursor)

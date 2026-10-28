@@ -13,7 +13,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, status, Request, Body, Depends, Path, Query, Response
+from fastapi import APIRouter, status, Request, Body, Depends, Path, Query, Response, HTTPException
 
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_post_service
@@ -34,8 +34,8 @@ async def create_post(post: Annotated[PostCreate, Body(..., description="帖子�
     发布一条帖子
 
     Args:
-        post: 帖子入参(标题/正文/可见性等)
-        request: 请求对象, 用于提取来源 IP
+        post: 帖子入参(内容/可见性等)
+        request: 请求对象, 用于提取来源 IP 与当前登录账户
         svc: 帖子业务服务
 
     Returns:
@@ -43,32 +43,43 @@ async def create_post(post: Annotated[PostCreate, Body(..., description="帖子�
 
     说明:
         post_id 使用 uuid7(时间有序), 由服务端生成;
-        from_ip 由服务端从请求中提取, 不接受客户端传入。
+        account_id(作者)与 from_ip 都由服务端从请求上下文取, 不接受客户端传入。
     """
-    post_data = post.model_dump(exclude={"from_ip"})
+    post_data = post.model_dump()
     # 提取ip地址
     client_ip = None
     if request.client:
         client_ip = request.client.host
-    instance = Post(**post_data, from_ip=client_ip, id=uuid.uuid7())
+    # 作者必须是令牌里的账户, 否则客户端可以在请求体里冒充他人发帖
+    instance = Post(**post_data, account_id=request.state.account_id,
+                    from_ip=client_ip, id=uuid.uuid7())
     result = await svc.create(instance)
     return result
 
 
 @router_post.get("/{post_id}/", summary="返回指定的帖子", response_model=Post)
 async def get_post(post_id: Annotated[uuid.UUID, "帖子唯一标识"],
+                   request: Annotated[Request, "请求对象"],
                    svc: PostService = Depends(get_post_service)):
     """
     查询指定帖子(需登录)
 
+    可见范围: 公开帖子 + 自己发布的帖子; 别人的私密帖按「不存在」处理。
+
     Args:
         post_id: 帖子唯一标识
+        request: 请求对象, request.state.account_id 由认证依赖写入
         svc: 帖子业务服务
 
     Returns:
-        Post | None: 帖子实体, 不存在时返回 None
+        Post: 帖子实体
+
+    Raises:
+        HTTPException: 404 —— 帖子不存在或当前用户无权查看
     """
-    instance = await svc.get_post(post_id)
+    instance = await svc.get_post(post_id, request.state.account_id)
+    if instance is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="帖子不存在")
     return instance
 
 
@@ -112,7 +123,7 @@ async def get_posts_latest(request: Annotated[Request, "请求对象"],
 
 @router_post.get("/accounts/{account_id}/", summary="返回指定用户的所有帖子", response_model=PageResponse[Post],
                  response_model_include={'items', 'total'})
-async def get_account_posts(account_id: Annotated[str, Path(..., description="用户ID")],
+async def get_account_posts(account_id: Annotated[uuid.UUID, Path(..., description="用户ID")],
                             request: Annotated[Request, "请求对象"],
                             limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100,
                                                                             description="每页数量(1-100)"),
@@ -183,11 +194,14 @@ async def update_post_right(post_id: Annotated[uuid.UUID, "帖子ID"],
 
     Returns:
         Response: 205 Reset Content
+
+    Raises:
+        HTTPException: 404 —— 帖子不存在或不属于当前用户
     """
-    # Service/DAO 期望的是 int 枚举值, 这里取模型字段而不是整个模型对象
-    await svc.update_post_right(post_id, request.state.account_id, post_right.right_status)
-    # 事务出口: DAO 只执行 UPDATE, 由 API 层统一提交
-    await svc.dao.commit()
+    # 传枚举成员而不是整个模型: 列类型已换成 IntEnumType, 写库时按枚举成员转换
+    affected = await svc.update_post_right(post_id, request.state.account_id, post_right.right_status)
+    if not affected:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="帖子不存在或无权修改")
 
     return Response(status_code=status.HTTP_205_RESET_CONTENT)
 
@@ -205,9 +219,12 @@ async def delete_post(request: Annotated[Request, "请求对象"],
         svc: 帖子业务服务
 
     Returns:
-        bool: 是否删除了记录(204 无响应体)
+        Response: 204 No Content
+
+    Raises:
+        HTTPException: 404 —— 帖子不存在或不属于当前用户
     """
     affected = await svc.delete_by_post_id(post_id, request.state.account_id)
-    # 事务出口: DAO 只执行 DELETE, 由 API 层统一提交
-    await svc.dao.commit()
-    return affected
+    if not affected:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="帖子不存在或无权删除")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

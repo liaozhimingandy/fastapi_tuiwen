@@ -26,7 +26,7 @@ class Follow(SQLModel, table=True):
                                    sa_column_kwargs={'comment': '关注者账户主键'})
     followee_id: uuid.UUID = Field(..., index=True, description='被关注者账户主键',
                                    sa_column_kwargs={'comment': '被关注者账户主键'})
-    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False,
                                                    server_default=text("NOW()")))
@@ -37,31 +37,30 @@ class Follow(SQLModel, table=True):
         {'comment': '关注'},
     )
 
-    @field_serializer('create_at')
+    @field_serializer('created_at')
     def serialize_datetime(self, value):
         return convert_to_timezone(value)
 
 
 class FollowCreate(SQLModel):
-    """关注入参 DTO: 只承载关注关系的两个端点。
+    """关注入参 DTO: 只需要「关注谁」。
 
     NOTE: 入参不要直接用表模型 Follow —— SQLModel 表模型构造时不校验字段类型,
           FastAPI 把 JSON 校验成表模型后, 字符串会原样留在 UUID 字段上,
           直到 model_dump()/写库时才以告警或隐式转换的形式暴露。
-          用独立 DTO 可以在 API 边界就把非法 uuid 拦成 422。
+    NOTE: follower_id(关注者)由服务端从令牌取, 不接受客户端传入 ——
+          否则任何登录用户都能替别人建立关注关系。
     """
 
-    follower_id: uuid.UUID = Field(..., description='关注者账户主键')
     followee_id: uuid.UUID = Field(..., description='被关注者账户主键')
 
 
 class FollowCountModel(SQLModel):
     """关注主页统计响应: 粉丝数/关注数/是否已关注/获赞数。
 
-    NOTE: 用的是 pydantic 的 BaseModel(非表模型, 只做响应载体), 能用;
-          但项目里其它响应模型统一走 SQLModel, 建议对齐
+    NOTE: 继承 SQLModel(非表模型), 只做响应载体 —— SQLModel 本身即 pydantic BaseModel 子类。
     """
     follower_count: int = Field(0, description='粉丝数')
     followee_count: int = Field(0, description='关注的数量')
-    is_following: bool = Field(False, description='是否正在关注')
+    is_following: bool = Field(False, description='当前浏览者是否已关注该账户')
     like_count: int = Field(0, description='获赞数量')

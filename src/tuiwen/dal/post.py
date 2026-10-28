@@ -41,14 +41,15 @@ class PostDAO(BaseDAO[Post]):
         result = await self.exec_write(statement, "delete_by_id")
         return bool(result.rowcount)
 
-    async def update_post_right(self, post_id: uuid.UUID, account_id: uuid.UUID, right_status: int) -> bool:
+    async def update_post_right(self, post_id: uuid.UUID, account_id: uuid.UUID,
+                                right_status: RightStatusEnum) -> bool:
         """
         更新帖子可见性状态(公开/私密)
 
         Args:
             post_id: 帖子ID
             account_id: 作者账户ID(归属校验)
-            right_status: 目标可见性枚举值
+            right_status: 目标可见性(枚举成员, 由 IntEnumType 负责落库转换)
 
         Returns:
             bool: True 表示更新到记录; False 表示帖子不存在或不属于该作者
@@ -80,10 +81,10 @@ class PostDAO(BaseDAO[Post]):
         statement = (select(Post)
                      .where(or_(Post.right_status == RightStatusEnum.PUBLIC, Post.account_id == account_id))
                      # 排序统一用 .desc() 显式表达:
-                     #   - 传字符串 "-create_at" 会在编译期抛 CompileError;
-                     #   - 写 -Post.create_at 也不是 DESC, SQLAlchemy 会编译成算术取负
-                     #     `ORDER BY -create_at`, 对时间/字符串列属于错误语义且用不上索引
-                     .order_by(Post.create_at.desc())
+                     #   - 传字符串 "-created_at" 会在编译期抛 CompileError;
+                     #   - 写 -Post.created_at 也不是 DESC, SQLAlchemy 会编译成算术取负
+                     #     `ORDER BY -created_at`, 对时间/字符串列属于错误语义且用不上索引
+                     .order_by(Post.created_at.desc())
                      .limit(limit))
         return list((await self.exec_read(statement, "get_posts_latest")).all())
 
@@ -159,3 +160,25 @@ class PostDAO(BaseDAO[Post]):
         """
         statement = select(Post).where(Post.id == post_id, Post.right_status == RightStatusEnum.PUBLIC)
         return (await self.exec_read(statement, "get_s_post")).first()
+
+    async def get_visible_post(self, post_id: uuid.UUID, viewer_account_id: uuid.UUID | None = None) -> Post | None:
+        """
+        按主键查询单条帖子, 并应用可见性过滤
+
+        之前详情接口直接按主键取, 任何登录用户猜到 post_id 就能读到别人的私密帖;
+        这里把「公开 OR 本人」条件下推到 SQL, 从数据层保证不可见即查不到。
+
+        Args:
+            post_id: 帖子主键ID
+            viewer_account_id: 当前登录账户ID; 为 None 时只看公开帖子
+
+        Returns:
+            Post | None: 可见时返回实体, 不存在或不可见时返回 None
+        """
+        statement = select(Post).where(Post.id == post_id)
+        if viewer_account_id is None:
+            statement = statement.where(Post.right_status == RightStatusEnum.PUBLIC)
+        else:
+            statement = statement.where(
+                or_(Post.right_status == RightStatusEnum.PUBLIC, Post.account_id == viewer_account_id))
+        return (await self.exec_read(statement, "get_visible_post")).first()

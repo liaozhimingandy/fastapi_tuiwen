@@ -169,7 +169,7 @@ def create_default_users():
     DEFAULT_PASSWORD = md5_hash.hexdigest()
     # 统一默认信息（所有账号都一样）
     DEFAULT_NICK_NAME = "系统用户"
-    DEFAULT_GMT_BIRTH = "2026-09-01"
+    DEFAULT_BIRTHDAY = "2026-09-01"
     DEFAULT_AREA_CODE = "CHN"
     DEFAULT_SEX = 0
     DEFAULT_AVATAR = None
@@ -600,8 +600,8 @@ def create_default_users():
             "mail": f"{username}@alsoapp.com",
             "password": DEFAULT_PASSWORD,
             "username": username,
-            "nick_name": DEFAULT_NICK_NAME,
-            "gmt_birth": DEFAULT_GMT_BIRTH,
+            "nickname": DEFAULT_NICK_NAME,
+            "birthday": DEFAULT_BIRTHDAY,
             "area_code": DEFAULT_AREA_CODE,
             "sex": DEFAULT_SEX,
             "avatar": DEFAULT_AVATAR,

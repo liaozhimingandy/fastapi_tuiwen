@@ -23,7 +23,7 @@ class NoticeService:
 
     async def get_system_notices(self, limit: int = 10, offset: int = 0):
         """
-        分页查询系统公告(type=SYSTEM)
+        分页查询系统公告(notice_type=SYSTEM)
 
         Args:
             limit: 每页数量
@@ -32,10 +32,11 @@ class NoticeService:
         Returns:
             PageResult[Notice]: 公告列表与总数
 
-        NOTE: 未过滤 is_deleted —— 模型上已有软删除标记, 但查询没有带上,
-              被"删除"的公告仍会出现在列表里; 同一处的 get_user_notices 也有这个问题
+        说明: 必须带上 is_deleted=False —— 模型上有软删除标记, 过滤条件漏掉
+              会让"已删除"的公告继续出现在列表里。
         """
-        return await self.dao.page(type=NoticeType.SYSTEM, limit=limit, offset=offset)
+        return await self.dao.page(notice_type=NoticeType.SYSTEM, is_deleted=False,
+                                   limit=limit, offset=offset, order_by=desc(Notice.created_at))
 
     async def get_user_notices(self, account_id: uuid.UUID, limit: int = 10, offset: int = 0):
         """
@@ -49,10 +50,10 @@ class NoticeService:
         Returns:
             PageResult[Notice]: 通知列表与总数
 
-        NOTE: 同样未过滤 is_deleted
         NOTE: 广播类公告(account_id 为空)不会出现在这里 —— 按当前条件用户只能看到
               定向发给自己的通知; 若产品上要求"公告对所有用户可见", 条件需改成
               `account_id == account_id OR account_id IS NULL`, 但 base.page() 只支持
               等值过滤, 得补一个专用查询
         """
-        return await self.dao.page(account_id=account_id, limit=limit, offset=offset, order_by=desc(Notice.create_at))
+        return await self.dao.page(account_id=account_id, is_deleted=False,
+                                   limit=limit, offset=offset, order_by=desc(Notice.created_at))

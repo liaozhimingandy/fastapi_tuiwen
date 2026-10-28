@@ -30,7 +30,7 @@ from src.tuiwen.dependencies import get_account_service, get_current_user, oauth
 from src.tuiwen.service.account import AccountService
 from src.tuiwen.model.oauth import RefreshToken, AccessToken, CodeVerify, TurnstileVerifyToken, UpdateCredential
 from src.tuiwen.model.account import AccountInfo, AccountCreate, Account, AccountPublicCommon, AccountPasswordChange, \
-    AccountPasswordReset, AccountPublic
+    AccountPasswordReset
 from src.tuiwen.core import Tag
 from src.tuiwen.models import PageResponse
 from src.tuiwen.utils.mail_service import send_reset_pwd_mail
@@ -112,7 +112,7 @@ async def test_oauth_admin(
 async def health_check() -> dict[str, Any]:
     """服务存活探针, 返回固定 ok 与当前北京时间, 供 LB / K8s 探活使用。"""
     current_time = convert_to_cst_time(datetime.now())
-    return {"message": "ok", "create_at": current_time}
+    return {"message": "ok", "timestamp": current_time}
 
 
 @router_public.get("/", tags=["root"], summary="根路径", include_in_schema=False)
@@ -161,7 +161,7 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
                        404: {"description": "no such account"}
                    })
 async def get_account(account_id: Annotated[uuid.UUID, "账户ID"],
-                      svc: AccountService = Depends(get_account_service)) -> AccountPublic:
+                      svc: AccountService = Depends(get_account_service)) -> AccountInfo:
     """
     按账户ID查询公开的账号信息(免登录)
 
@@ -170,7 +170,7 @@ async def get_account(account_id: Annotated[uuid.UUID, "账户ID"],
         svc: 账号业务服务
 
     Returns:
-        AccountPublic: 账号公开信息; 不存在时返回 404
+        AccountInfo: 账号公开信息; 不存在时返回 404
     """
     instance = await svc.get_account(account_id)
     if not instance:
@@ -199,16 +199,17 @@ async def update_account(account_id: Annotated[uuid.UUID, "账户ID"],
         AccountInfo: 更新后的账号信息
     """
     try:
-        # 越权保护: 只允许修改自己的账户
-        assert user.id == account_id, '请不要跨账户操作'
+        # 越权保护: 只允许修改自己的账户。
+        # NOTE: 这里原来写的是 `assert user.id == account_id`, 而 assert 在 python -O
+        #       下会被整体去掉, 鉴权随之失效 —— 鉴权判断一律用显式 if。
+        if user.id != account_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请不要跨账户操作")
         return await svc.update_account(account_id, account)
-    except AssertionError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except BizError as e:
         raise HTTPException(status_code=e.code, detail=e.message)
 
 
-@router_account.get("/accounts/search/{keyword}/", summary="通过关键词搜索账户", response_model=PageResponse[AccountPublic],
+@router_account.get("/accounts/search/{keyword}/", summary="通过关键词搜索账户", response_model=PageResponse[AccountInfo],
                     tags=[Tag.account])
 async def search(keyword: Annotated[str, "关键词"], *, svc: AccountService = Depends(get_account_service),
                  offset: Annotated[int, "偏移量"] = 0,

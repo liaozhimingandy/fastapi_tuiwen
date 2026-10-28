@@ -10,14 +10,16 @@
     @Desc: 账户模型: 注册入参 / 数据库表 / 公开信息 / 密码相关模型
 =================================================
 """
-import os, uuid
-from datetime import datetime, timezone, date, UTC
+import uuid
+from datetime import datetime, timezone, date
 from enum import IntEnum
 from typing import Optional
 
 from pydantic import AliasChoices, EmailStr, field_validator, field_serializer
 from sqlalchemy import DateTime, SMALLINT, Column, JSON, BigInteger, Identity, func, UUID
 from sqlmodel import SQLModel, Field, text
+
+from src.tuiwen.model.types import IntEnumType
 
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import convert_to_timezone
@@ -34,15 +36,6 @@ def uuid_generator(size: int = 7):
 def salt_default():
     """盐默认生成"""
     return get_random_salt(6)
-
-
-def userid_default():
-    """(已废弃) 历史用户ID生成器: 前缀 + 7 位随机串, 形如 twid_x1a2b3c。
-
-    账户表主键已统一改为 uuid7(见 Account.id), 不再需要独立的 business id 列,
-    本函数仅被历史 DTO 默认工厂引用, 新代码请勿使用。
-    """
-    return f'{os.getenv("PREFIX_ID", "twid_")}{uuid_generator(7)}'
 
 
 def app_id_default():
@@ -71,8 +64,8 @@ class SexEnum(IntEnum):
 class AccountPublicCommon(SQLModel):
     """账户公共字段DTO：用户名/昵称/性别/头像/简介，供注册入参和公开信息模型继承"""
     username: Optional[str] = Field(None, max_length=32, description="用户名")
-    nick_name: Optional[str] = Field(None, max_length=30, description="昵称")
-    gmt_birth: Optional[date] = Field(None, description="出生日期")
+    nickname: Optional[str] = Field(None, max_length=30, description="昵称")
+    birthday: Optional[date] = Field(None, description="出生日期")
     area_code: str = Field(default="CHN", max_length=3, description="区域代码")
     sex: SexEnum = Field(default=SexEnum.UnKnown, ge=0, description="性别")
     avatar: Optional[str] = Field(None, max_length=200, description="头像链接")
@@ -90,26 +83,18 @@ class AccountCreate(AccountPublicCommon, AccountLogin):
     pass
 
 
-class AccountPublic(AccountPublicCommon):
-    """对外返回的账户公开信息(响应模型, 不含密码/盐等敏感字段)。
-
-    NOTE: 目前 api/account.py 的响应模型已统一改用 AccountInfo(多了 mail/mobile/状态开关),
-          本模型暂无引用, 保留或删除待定夺
-    """
-    id: uuid.UUID = Field(..., description="用户ID (uuid7)", serialization_alias="account_id",
-                          validation_alias=AliasChoices("id", "account_id"))
-
-
 class AccountInfo(AccountPublicCommon):
     """账号信息响应模型(不含密码/盐), api/account.py 各接口的 response_model。
 
     继承 SQLModel 自带 from_attributes, 可直接从 ORM 实例(Account)转换;
-    比老版 AccountPublic 多暴露 mail/mobile 与三个状态开关, 仍不包含 password/salt。
+    比 AccountPublicCommon 多暴露 id/mail/mobile 与三个状态开关, 仍不包含 password/salt。
     """
     id: uuid.UUID = Field(..., description="用户ID (uuid7)", serialization_alias="account_id",
                           validation_alias=AliasChoices("id", "account_id"))
     mail: Optional[EmailStr] = Field(None, max_length=64, description="电子邮箱")
     mobile: Optional[str] = Field(None, max_length=32, description="电话号码")
+    # 三列在库里都是 NOT NULL DEFAULT true, 这里保持非 Optional ——
+    # 若旧库存在 NULL, 响应校验会直接 500, 需要先把历史数据刷成 true
     is_active: bool = Field(default=True, description="账户状态")
     allow_beep: bool = Field(default=True, description="是否允许提示音")
     allow_vibration: bool = Field(default=True, description="是否允许震动提示")
@@ -140,44 +125,50 @@ class Account(SQLModel, table=True):
         serialization_alias="account_id",
         validation_alias=AliasChoices("id", "account_id"),
     )
-    username: str = Field(None, index=True, max_length=32, description='用户名',
-                          sa_column_kwargs={'comment': '用户名'}, unique=True)
-    nick_name: str | None = Field(None, max_length=30, description='昵称', sa_column_kwargs={'comment': '昵称'})
+    # username/password/salt 在 Service 落库前一定会被赋值, 但 Python 侧允许为 None
+    # (注册时先构造实例, 再用主键 hex 兜底 username), 因此注解写成可选, 不要写
+    # `str` + `Field(None)` 这种"类型非空却默认 None"的自相矛盾写法
+    username: str | None = Field(None, index=True, max_length=32, description='用户名',
+                                 sa_column_kwargs={'comment': '用户名'}, unique=True)
+    nickname: str | None = Field(None, max_length=30, description='昵称', sa_column_kwargs={'comment': '昵称'})
     mail: EmailStr | None = Field(None, index=True, max_length=64, description='电子邮箱',
                                   sa_column_kwargs={'comment': '电子邮箱'}, unique=True)
     mobile: str | None = Field(None, index=True, max_length=32, description='电话号码',
                                sa_column_kwargs={'comment': '电话号码'}, unique=True)
-    gmt_birth: date | None = Field(None, description='出生日期', sa_column_kwargs={'comment': '出生日期'})
+    birthday: date | None = Field(None, description='出生日期', sa_column_kwargs={'comment': '出生日期'})
     area_code: str = Field(default='CHN', max_length=3, description='区域代码',
                            sa_column_kwargs={'comment': '区域代码'})
-    sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=SMALLINT, ge=0, description='性别',
+    sex: SexEnum = Field(default=SexEnum.UnKnown, sa_type=IntEnumType(SexEnum), ge=0, description='性别',
                          sa_column_kwargs={'comment': '性别'})
     avatar: str | None = Field(None, max_length=200, description='头像链接', sa_column_kwargs={'comment': '头像链接'})
     bio: str | None = Field(None, max_length=256, description='用户自我简介',
                             sa_column_kwargs={'comment': '用户自我简介'})
     user_type: int = Field(default=1, sa_type=SMALLINT, ge=1, description='账户类型',
                            sa_column_kwargs={'comment': '账户类型'})
-    password: str = Field(None, max_length=64, min_length=64, description='用户密码;经过MD5计算加密',
-                          sa_column_kwargs={'comment': '用户密码'})
-    salt: str = Field(default=None, max_length=8, description='盐', sa_column_kwargs={'comment': '盐'})
+    password: str | None = Field(None, max_length=64, min_length=64, description='用户密码;经过MD5计算加密',
+                                 sa_column_kwargs={'comment': '用户密码'})
+    salt: str | None = Field(default=None, max_length=8, description='盐', sa_column_kwargs={'comment': '盐'})
     allow_add_friend: bool | None = Field(default=True, description='允许添加好友',
                                           sa_column_kwargs={'comment': '允许添加好友'})
     im_id: str | None = Field(None, max_length=64, description='im ID', sa_column_kwargs={'comment': 'im ID'},
                               unique=True, index=True)
-    extra: dict | None = Field(default={}, description='个性化配置信息', max_length=1024,
+    # 可变默认值必须用 default_factory, 否则所有实例共享同一个 dict
+    extra: dict | None = Field(default_factory=dict, description='个性化配置信息', max_length=1024,
                                sa_column_kwargs={'comment': '存储用户自定义配置信息'},
                                sa_type=JSON)
-    is_active: bool | None = Field(default=True, description='账户状态', sa_column_kwargs={'comment': '账户状态'})
-    allow_beep: bool | None = Field(default=True, description='是否允许提示音',
-                                    sa_column_kwargs={'comment': '是否允许提示音'})
-    allow_vibration: bool | None = Field(default=True, description='是否允许震动提示',
-                                         sa_column_kwargs={'comment': '是否允许震动提示'})
+    # 三列都用 bool(非空) + server_default: 语义上账户要么启用要么停用, 不存在"未知"
+    is_active: bool = Field(default=True, description='账户状态',
+                            sa_column_kwargs={'comment': '账户状态', 'server_default': text("true")})
+    allow_beep: bool = Field(default=True, description='是否允许提示音',
+                             sa_column_kwargs={'comment': '是否允许提示音', 'server_default': text("true")})
+    allow_vibration: bool = Field(default=True, description='是否允许震动提示',
+                                  sa_column_kwargs={'comment': '是否允许震动提示', 'server_default': text("true")})
 
-    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                 sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                  comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                 )
-    update_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
+    updated_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
                                 sa_column=Column(
                                     DateTime(timezone=True),
                                     server_default=func.now(),
@@ -186,17 +177,17 @@ class Account(SQLModel, table=True):
                                     comment="最后更新时间"
                                 ))
 
-    @field_serializer('create_at', 'update_at')
+    @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value):
         return convert_to_timezone(value)
 
-    # NOTE: mail 的统一转小写校验随 AccountBase 一起被删掉了 —— 老版会在落库前把邮箱
-    #       normalize 成小写, 现在只有 username 做小写归一; Service 层注册查重是
-    #       case-insensitive 的, 但登录按 mail 精确匹配, 大小写不一致会登不上
-
     @field_validator("username", "mail", mode="before")
     def username_to_lower(cls, v: Optional[str]) -> Optional[str]:
-        """落库前把用户名统一转小写并去首尾空白, 保证唯一性按小写语义生效。"""
+        """落库前把用户名/邮箱统一转小写并去首尾空白。
+
+        NOTE: 邮箱也必须归一 —— 注册查重是 case-insensitive 的, 而登录按 mail 精确匹配,
+              大小写不一致会导致"注册成功但登录不上"。
+        """
         if v is None:
             return None
         return v.strip().lower()
@@ -242,15 +233,15 @@ class App(SQLModel, table=False):
     app_en_name: str | None = Field(None, max_length=64, description='应用英文名称',
                                     sa_column_kwargs={'comment': '应用英文名称'})
     is_active: bool = Field(default=True, description='激活状态', sa_column_kwargs={'comment': '激活状态'})
-    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                 sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                  comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                 )
-    update_at: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
+    updated_at: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
                                 sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now,
                                                  comment='最后修改时间')
                                 )
 
-    @field_serializer('create_at', 'update_at')
+    @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value):
         return convert_to_timezone(value)

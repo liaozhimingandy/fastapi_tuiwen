@@ -24,7 +24,7 @@ router_public = APIRouter(prefix='/snaps', tags=[Tag.more])
 
 
 @router_public.post("/", response_model=Snap, status_code=201, summary="天亮即焚提交")
-async def creat_snaps(
+async def create_snap(
         payload: Annotated[SnapCreate, "内容"],
         request: Annotated[Request, "请求对象"],
         svc: SnapService = Depends(get_snap_service),
@@ -91,10 +91,10 @@ async def get_snaps_latest(svc: SnapService = Depends(get_snap_service)):
     return PageResponse(items=result.items, total=result.total)
 
 
-@router_public.get("/", summary="返回帖子", response_model=PageResponse[Snap],
+@router_public.get("/", summary="返回快照列表", response_model=PageResponse[Snap],
                    response_model_include={'items', 'total'})
 async def get_snaps(limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
-                    offset: Annotated[int | None, "数据最旧的那个id"] = Query(1, ge=0),
+                    offset: Annotated[int, "偏移量, 从 0 开始"] = Query(0, ge=0),
                     svc: SnapService = Depends(get_snap_service)
                     ):
     """
@@ -103,17 +103,20 @@ async def get_snaps(limit: Annotated[int, "返回多少条记录"] = Query(10, g
     Args:
         limit: 每页数量, 1~100
         offset: 偏移量, 从 0 开始
-        svc: 快照业务服务
 
     Returns:
         PageResponse[Snap]: 快照列表与总数
+
+    NOTE: offset 原来默认是 1, 导致第一页永远跳过最新的一条; 语义也不是
+          "最旧的那个 id"(那是游标), 这里统一成标准偏移量语义。
     """
     result = await svc.get_snaps(limit=limit, offset=offset)
     return PageResponse(items=result.items, total=result.total)
 
 
-@router_public.get("/{pk}/like/", summary="帖子点赞")
-async def snaps_like(pk: Annotated[int, '帖子id'], svc: SnapService = Depends(get_snap_service)):
+# 点赞是写操作, 必须用 POST: 原来用 GET 既不符合语义, 也会被浏览器/网关预取命中
+@router_public.post("/{pk}/like/", summary="快照点赞")
+async def snap_like(pk: Annotated[int, '快照主键id'], svc: SnapService = Depends(get_snap_service)):
     """
     给指定快照点赞(次数 +1)
 
@@ -122,7 +125,7 @@ async def snaps_like(pk: Annotated[int, '帖子id'], svc: SnapService = Depends(
         svc: 快照业务服务
 
     Returns:
-        dict: success=是否成功, like=最新点赞数
+        dict: success=是否成功, like_count=最新点赞数
     """
     _count = await svc.inc_snaps_like(pk)
-    return {"success": True, "like": _count}
+    return {"success": True, "like_count": _count}

@@ -7,7 +7,7 @@
 
 接口清单:
     POST   /api/v2/follows/                              关注
-    DELETE /api/v2/follows/{follower_id}/{followee_id}/  取消关注
+    DELETE /api/v2/follows/{followee_id}/                取消关注(关注者取自令牌)
     GET    /api/v2/follows/{account_id}/count/           关注数/粉丝数/获赞数统计
 
 分层位置:
@@ -27,44 +27,50 @@ router_follow = APIRouter(prefix="/follows", tags=["follow"])
 
 
 @router_follow.post('/', summary="关注", response_model=Follow, status_code=status.HTTP_201_CREATED)
-async def follow(follow: Annotated[FollowCreate, Body(..., description="关注信息")],
+async def follow(payload: Annotated[FollowCreate, Body(..., description="关注信息")],
+                 request: Annotated[Request, "请求对象"],
                  svc: FollowService = Depends(get_follow_service)) -> Follow:
     """
     建立关注关系
 
     Args:
-        follow: 关注关系入参, 核心字段为 follower_id(关注者)与 followee_id(被关注者)
+        payload: 关注入参, 只需 followee_id(被关注者)
+        request: 请求对象, request.state.account_id 由认证依赖写入(关注者)
         svc: 关注业务服务
 
     Returns:
         Follow: 落库后的关注记录
+
+    Raises:
+        HTTPException: 400 —— 关注自己; 409 —— 已经关注过
     """
-    # 主键 id 与创建时间由数据库/模型负责生成, 不接受客户端传入
-    follow_data = follow.model_dump()
-    # NOTE: SQLModel 表模型用 `Follow(**data)` 构造时不做类型校验,
-    #       这里用 model_validate 保证 UUID 字段真的是 uuid.UUID 实例
-    instance = Follow.model_validate(follow_data)
+    # 关注者取自令牌, 不接受客户端传入
+    instance = Follow(follower_id=request.state.account_id, followee_id=payload.followee_id)
     try:
         return await svc.create(instance)
     except BizError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=e.code, detail=e.message)
 
 
-@router_follow.delete('/{follower_id}/{followee_id}/', summary="取消关注", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_follow(follower_id: Annotated[uuid.UUID, "追随者ID"], followee_id: Annotated[uuid.UUID, "被关注者ID"],
+@router_follow.delete('/{followee_id}/', summary="取消关注", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_follow(followee_id: Annotated[uuid.UUID, "被关注者ID"],
+                        request: Annotated[Request, "请求对象"],
                         svc: FollowService = Depends(get_follow_service)):
     """
     取消关注关系(硬删除)
 
     Args:
-        follower_id: 关注者账户ID
         followee_id: 被关注者账户ID
+        request: 请求对象, request.state.account_id 由认证依赖写入(关注者)
         svc: 关注业务服务
 
     Returns:
         bool: 是否删除了记录(204 无响应体)
+
+    NOTE: 路径里不再接收 follower_id —— 原来任何人都能按 (follower_id, followee_id)
+          删掉别人之间的关注关系。关注者只能是自己。
     """
-    affected = await svc.delete(follower_id=follower_id, followee_id=followee_id)
+    affected = await svc.delete(follower_id=request.state.account_id, followee_id=followee_id)
     # 事务出口: DELETE 由 DAO 执行但不提交, 这里统一提交
     await svc.dao.commit()
     return affected
@@ -79,7 +85,8 @@ async def get_follow_info_by_id(account_id: Annotated[uuid.UUID, "账户ID"], re
 
     - **account_id**: 平台账号唯一标识
     """
-    result = await svc.get_follow_info_by_id(account_id)
+    # viewer(当前登录用户)用于判断"我是否已关注该账户", 不再误用自关注记录
+    result = await svc.get_follow_info_by_id(account_id, viewer_id=request.state.account_id)
 
     # 展开为强类型响应模型, 避免直接暴露内部字典结构
     return FollowCountModel(**result)

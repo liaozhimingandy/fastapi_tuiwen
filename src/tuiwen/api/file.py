@@ -6,7 +6,7 @@
     2. 交由 UploadService 落盘 + 记录引用(相同 MD5 直接复用, 避免重复存储)
 
 接口清单:
-    POST /api/v2/v2/upload/image/  图片上传
+    POST /api/v2/upload/image/  图片上传
 
 分层位置:
     API → UploadService → UploadDAO → PostgreSQL (+ 本地存储)
@@ -37,15 +37,12 @@ async def upload_image(file: Annotated[UploadFile, "图片文件"],
 
     Args:
         file: multipart/form-data 中的文件字段
+        request: 请求对象, request.state.account_id 由认证依赖写入(上传者)
         settings: 全局配置对象, 提供允许的图片后缀白名单
         svc: 上传业务服务
 
     Returns:
-        FileBase: image_url(可访问地址) + image_md5(内容指纹, 用于前端去重/秒传判断)
-        :param svc:
-        :param settings:
-        :param file:
-        :param request:
+        File: 落库后的文件记录(url 可访问地址 / file_md5 内容指纹, 供前端去重与秒传判断)
     """
     # 检查文件类型
     if not allowed_file(file, file_type=settings.ALLOWED_IMAGE_FORMATS.split(",")):

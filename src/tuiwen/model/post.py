@@ -14,6 +14,7 @@ from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Numeric, Id
 from sqlalchemy.dialects.postgresql import INET
 from sqlmodel import SQLModel, Field, Index, text
 
+from src.tuiwen.model.types import IntEnumType
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import convert_to_timezone
 
@@ -63,17 +64,19 @@ class FromDeviceEnum(IntEnum):
 class PostCreate(SQLModel):
     """发帖入参模型 = 内容/来源/位置等业务字段。
 
-    NOTE: 帖子主键 id 由服务端统一生成(uuid7, 见 Post.id), 不在请求体透传。
+    NOTE: 帖子主键与作者一律由服务端确定, 不在请求体透传:
+          - id       : 服务端生成 uuid7(见 Post.id)
+          - account_id: 从认证令牌取(request.state.account_id)
+          - from_ip  : 从请求上下文取
+          原先把 account_id 放在入参里, 客户端可以直接替别人发帖。
     """
     content: dict = Field(default_factory=dict, max_length=1024, description="帖子JSON内容")
     post_type: PostType = Field(default=PostType.POST, ge=0, description="内容类型")
-    from_ip: Optional[IPv4Address | IPv6Address] = Field(default=None, description="来源IP")
     from_device: FromDeviceEnum = Field(default=FromDeviceEnum.UNKNOWN, ge=0, description="来源设备类型")
     location: Optional[str] = Field(default=None, max_length=64, description="位置文本")
     is_top: bool = Field(default=False, description="是否置顶")
     latitude: Optional[Decimal] = Field(default=None, ge=-90, le=90, description="纬度")
     longitude: Optional[Decimal] = Field(default=None, ge=-180, le=180, description="经度")
-    account_id: uuid.UUID = Field(..., description="用户ID(帖子作者主键)")
     right_status: RightStatusEnum = Field(default=RightStatusEnum.PUBLIC, ge=0, description="权限状态")
 
 
@@ -82,7 +85,7 @@ class Post(SQLModel, table=True):
     帖子模型
 
     数据库表 tw_post: 在入参字段之上补充自增主键 id、状态与创建/更新时间;
-    create_at/update_at 序列化时统一转配置时区(Asia/Shanghai)。
+    created_at/updated_at 序列化时统一转配置时区(Asia/Shanghai)。
     """
 
     __tablename__ = f"{TABLE_PREFIX}post"  # 表名
@@ -101,14 +104,16 @@ class Post(SQLModel, table=True):
     content: dict = Field(default={}, description='json内容', max_length=1024,
                           sa_column_kwargs={'comment': '内容'},
                           sa_type=JSON)
-    post_type: PostType = Field(PostType.POST.value, index=True, description="类型",
+    # 默认值必须写枚举成员而不是 .value: 写 PostType.POST.value 会得到一个 int,
+    # 序列化时 pydantic 会告警 "Expected `enum` - serialized value may not be as expected"
+    post_type: PostType = Field(PostType.POST, index=True, description="类型",
                                 sa_column_kwargs={'comment': '内容类型'},
-                                sa_type=SMALLINT, nullable=False, ge=0)
+                                sa_type=IntEnumType(PostType), nullable=False, ge=0)
     from_ip: Optional[IPv4Address | IPv6Address] = Field(None, description='来源ip', sa_type=INET(),
                                                          sa_column_kwargs={'comment': '来源ip'})
     from_device: FromDeviceEnum = Field(FromDeviceEnum.UNKNOWN, description='来源设备类型',
                                         sa_column_kwargs={'comment': '来源设备类型'},
-                                        sa_type=SMALLINT, ge=0)
+                                        sa_type=IntEnumType(FromDeviceEnum), ge=0)
     location: str | None = Field(None, max_length=64, description='位置', sa_column_kwargs={'comment': '位置'})
     is_top: bool = Field(default=False, description='是否置顶', sa_column_kwargs={'comment': '是否置顶'})
     # NOTE: latitude=纬度(南北向, ±90), longitude=经度(东西向, ±180), 描述勿写反
@@ -120,15 +125,15 @@ class Post(SQLModel, table=True):
                             sa_column_kwargs={'comment': '用户ID(作者主键)'})
     right_status: RightStatusEnum = Field(default=RightStatusEnum.PUBLIC, description='权限状态',
                                           sa_column_kwargs={'comment': '权限状态'},
-                                          sa_type=SMALLINT, ge=0)
+                                          sa_type=IntEnumType(RightStatusEnum), ge=0)
     status: int | None = Field(default=1, description='帖子状态', ge=0,sa_type=SMALLINT, sa_column_kwargs={'comment': '帖子状态'})
     # NOTE: status 目前无任何 Service/DAL 引用, 若用于软删除需先在查询里加过滤条件,
     #       否则列表接口仍会把"已删除"的帖子查出来
-    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False,
                                                    server_default=text("NOW()")))
-    update_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
+    updated_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
                                 sa_column=Column(
                                     DateTime(timezone=True),
                                     server_default=func.now(),
@@ -137,7 +142,7 @@ class Post(SQLModel, table=True):
                                     comment="最后更新时间"
                                 ))
 
-    @field_serializer('create_at', 'update_at')
+    @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value):
         return convert_to_timezone(value)
 

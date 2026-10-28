@@ -14,12 +14,13 @@ import uuid
 from enum import IntEnum
 
 from pydantic import field_serializer
-from sqlalchemy import Column, DateTime, text, JSON, BigInteger, SmallInteger, Identity, func, UUID
+from sqlalchemy import Column, DateTime, text, JSON, BigInteger, Identity, func, UUID
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from typing import Optional
 
 from src.tuiwen import get_settings
+from src.tuiwen.model.types import IntEnumType
 from src.tuiwen.utils.utils import convert_to_timezone
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
@@ -68,39 +69,45 @@ class Notice(SQLModel, table=True):
     # 触发者（点赞/评论/关注的人，系统通知为 None）
     trigger_account_id: Optional[uuid.UUID] = Field(nullable=True, default=None, index=True,
                                            sa_column_kwargs={'comment': '触发者账户主键，系统通知为None'})
-    type: NoticeType | None = Field(default=NoticeType.SYSTEM, nullable=False, ge=0, sa_type=SmallInteger,
-                             index=True, sa_column_kwargs={
+    # 字段名用 notice_type 而不是裸 type: `type` 是 Python 内置名, 也是 SQL 保留字,
+    # 在 ORM 表达式与手写 SQL 里都容易歧义
+    notice_type: NoticeType = Field(default=NoticeType.SYSTEM, nullable=False, ge=0, sa_type=IntEnumType(NoticeType),
+                                    index=True, sa_column_kwargs={
             'comment': '通知类型 system系统/like点赞/comment评论/follow关注/mention@'})
     # 关联内容：帖子 / 评论 / 用户 / 其他
-    target_type: Optional[NoticeTargetType] = Field(default=None, index=True, sa_type=SmallInteger,
-                                       sa_column_kwargs={'comment': '关联资源类型 post帖子/comment评论/user用户'})
+    target_type: Optional[NoticeTargetType] = Field(default=None, index=True, sa_type=IntEnumType(NoticeTargetType),
+                                                    sa_column_kwargs={'comment': '关联资源类型 post帖子/comment评论/user用户'})
     target_scope: NoticeTargetScope = Field(
-        default=1,
-        sa_type=SmallInteger,
+        default=NoticeTargetScope.ALL,
+        sa_type=IntEnumType(NoticeTargetScope),
         gt=0,
         index=True,
         sa_column_kwargs={'comment': '推送范围 all全部/new新用户/vip付费用户'}
     )
     target_id: Optional[uuid.UUID] = Field(default=None, nullable=True,
-                                     index=True, sa_column_kwargs={'comment': '内容主键(帖子/评论/用户)'})
+                                           index=True, sa_column_kwargs={'comment': '内容主键(帖子/评论/用户)'})
 
     # 标题、内容
-    title: Optional[str] = Field(..., max_length=256, description='标题', sa_column_kwargs={'comment': '标题'})
+    # NOTE: 点赞/评论/关注类通知不一定有标题, 因此 title 可空;
+    #       原写法 `Optional[str] = Field(...)` 是"类型可空但参数必填", 自相矛盾
+    title: Optional[str] = Field(default=None, max_length=256, description='标题',
+                                 sa_column_kwargs={'comment': '标题'})
     content: dict = Field(..., description='内容', sa_type=JSON, sa_column_kwargs={'comment': '内容'})
 
     # 扩展字段（存头像、昵称、预览文本，避免联表查询）
     extra: Optional[dict] = Field(default=None, sa_type=JSON, nullable=True,
                                   sa_column_kwargs={'comment': '冗余扩展信息：头像、昵称、预览图'})
-    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                   comment="创建日期时间", nullable=False,
                                                   server_default=text("NOW()")))
+    # 布尔列, 注释不要再写成 0/1
     is_deleted: bool = Field(
         default=False,
-        sa_column_kwargs={'comment': '是否已删除 0否 1是'}
+        sa_column_kwargs={'comment': '是否已删除: false正常 / true已删除', "server_default": text("false")}
     )
     # 更新时间
-    update_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
+    updated_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
                                 sa_column=Column(
                                     DateTime(timezone=True),
                                     server_default=func.now(),
@@ -109,6 +116,6 @@ class Notice(SQLModel, table=True):
                                     comment="最后更新时间"
                                 ))
 
-    @field_serializer('create_at', 'update_at')
+    @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value):
         return convert_to_timezone(value)

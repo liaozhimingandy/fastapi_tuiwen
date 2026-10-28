@@ -8,11 +8,12 @@ from enum import IntEnum
 from ipaddress import IPv4Address, IPv6Address
 from typing import Optional
 
-from sqlalchemy import BigInteger, JSON, SMALLINT, Identity
+from sqlalchemy import BigInteger, JSON, Identity
 from sqlmodel import SQLModel, Field, Column, DateTime, text
 from sqlalchemy.dialects.postgresql import INET
 from pydantic import field_serializer
 
+from src.tuiwen.model.types import IntEnumType
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import convert_to_timezone
 TABLE_PREFIX = get_settings().TABLE_PREFIX
@@ -45,7 +46,9 @@ class Snap(SQLModel, table=True):
     - content: JSON 内容体
     - emotion: 情绪标签编号(见 EmotionTagEnum)
     - alias_name: 当晚匿名临时代号(必填)
-    - like: 点赞数冗余字段, 由 DAL 用 SQL 原子自增维护
+    - like_count: 点赞数冗余字段, 由 DAL 用 SQL 原子自增维护。
+      字段名不能叫 like —— LIKE 是 SQL 保留字, 手写 SQL 时必须加引号,
+      在 ORM 表达式里也容易和 `.like()` 运算符混淆
     - from_ip: 来源 IP(INET 类型)
     """
     __tablename__ = f"{TABLE_PREFIX}snap"
@@ -53,33 +56,31 @@ class Snap(SQLModel, table=True):
 
     id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
                     sa_column_args=[Identity(always=False)])
-    content: dict | None = Field(default={}, description='json内容', max_length=1024,
+    # 默认值必须用 default_factory: 直接写 default={} 会让所有实例共享同一个 dict
+    content: dict | None = Field(default_factory=dict, description='json内容', max_length=1024,
                                  sa_column_kwargs={'comment': '内容'}, sa_type=JSON)
-    emotion: int | None = Field(default=0, sa_type=SMALLINT, ge=0, le=255,
-                            sa_column_kwargs={'comment': '情绪标签'}, description="情绪标签编号 1失眠...")
+    emotion: EmotionTagEnum | None = Field(default=EmotionTagEnum.NONE, sa_type=IntEnumType(EmotionTagEnum), ge=0, le=255,
+                                           sa_column_kwargs={'comment': '情绪标签 0未选 1失眠 ... 15期待'},
+                                           description="情绪标签编号, 取值见 EmotionTagEnum")
     topic: str | None = Field(default=None, max_length=64, description="话题编号", sa_column_kwargs={'comment': '话题编号'})
     alias_name: str = Field(..., max_length=32, description="当晚临时代号", sa_column_kwargs={'comment': '当晚临时代号'})
-    like: int = Field(default=0, description="点赞数量", sa_column_kwargs={'comment': '点赞数量'})
+    like_count: int = Field(default=0, description="点赞数量", sa_column_kwargs={'comment': '点赞数量'})
     from_ip: Optional[IPv4Address | IPv6Address] = Field(None, description='来源ip', sa_type=INET(), sa_column_kwargs={'comment': '来源ip'})
     is_top: bool = Field(default=False, description="是否置顶", sa_column_kwargs={'comment': '是否置顶'})
-    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                 sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                  comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                 )
 
-    @field_serializer('create_at')
+    @field_serializer('created_at')
     def serialize_datetime(self, value):
         return convert_to_timezone(value)
 
 
 class SnapCreate(SQLModel):
-    """发布天亮即焚的入参模型(仅业务字段, 不含 IP/点赞数等服务端字段)。
-
-    NOTE: emotion 的 description 只列举到 6, 而 EmotionTagEnum 一共有 15 个情绪标签,
-          两处枚举说明不同步, 以 EmotionTagEnum 为准
-    """
+    """发布天亮即焚的入参模型(仅业务字段, 不含 IP/点赞数等服务端字段)。"""
     content: dict = Field(..., max_length=512, description='内容')
-    emotion: int | None = Field(default=None, description="情绪标签编号 1失眠 2委屈 3心动 4放空 5吐槽 6开心")
+    emotion: EmotionTagEnum | None = Field(default=None, description="情绪标签编号, 取值见 EmotionTagEnum")
     topic: str | None = Field(default=None, description="话题编号")
     alias_name: str = Field(..., max_length=32, description="当晚临时代号")
 

@@ -154,7 +154,7 @@ class AccountService:
 
         # 排除被更新字段
         forbidden_fields = {"account_id", "username", "mail", "mobile", "id", "password", "salt", "is_active",
-                            "user_type", "im_id", "create_at", "update_at"}
+                            "user_type", "im_id", "created_at", "updated_at"}
 
         account_data = account.model_dump(exclude_unset=True, exclude=forbidden_fields)
         instance = await self.dao.partial_update(instance.id, account_data)
@@ -442,12 +442,12 @@ class AccountService:
             instance = await self.dao.get_by_unique_field("id", account_id)
             # 用户名统一小写存储, 避免大小写造成重复账号
             # 用 partial_update(Core UPDATE) 而不是 dao.update() 整对象覆盖, 原因有二:
-            #   1. dao.update() 内部走 write_db.merge(), merge 会把所有列(含 update_at 的旧值)
-            #      一并写进 SET, 列的 onupdate=func.now() 因此不触发, update_at 不会刷新;
+            #   1. dao.update() 内部走 write_db.merge(), merge 会把所有列(含 updated_at 的旧值)
+            #      一并写进 SET, 列的 onupdate=func.now() 因此不触发, updated_at 不会刷新;
             #   2. 只更新 username 一列, 也与本服务其它更新路径(update_account /
             #      reset_password / change_password)的写法保持一致。
-            # 原实现写的是 `instance.create_at = datetime.now(UTC)`: 既改错了字段
-            # (覆盖了创建时间, 且 update_at 反而不动), 又是应用时钟, 与 DB 时钟口径不一致
+            # 原实现写的是 `instance.created_at = datetime.now(UTC)`: 既改错了字段
+            # (覆盖了创建时间, 且 updated_at 反而不动), 又是应用时钟, 与 DB 时钟口径不一致
             instance = await self.dao.partial_update(
                 instance.id, {"username": new_val.strip().lower()}
             )

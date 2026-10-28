@@ -34,6 +34,31 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/oauth/authorize/password/", scop
     "admin": "write access and read access"
 })
 
+# 公开路由(免登录)用: auto_error=False 让"没带令牌"时参数为 None 而不是 401
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/oauth/authorize/password/", auto_error=False)
+
+
+async def get_optional_account_id(
+        token: Annotated[str | None, Depends(oauth2_scheme_optional)],
+) -> uuid.UUID | None:
+    """可选认证: 带合法令牌就返回账户ID, 没带或非法一律返回 None。
+
+    用于「允许匿名、但登录后要记录归属」的公开接口(如视频上传)。
+    这些路由挂在无认证依赖的 router_public 上, request.state 里不会有 account_id ——
+    原实现直接用 request.state.account_id, 结果上传者永远是 None, 作者信息丢失。
+
+    NOTE: 令牌非法时静默降级为匿名, 不抛 401 —— 公开接口不应因一个坏令牌而不可用。
+    """
+    if not token:
+        return None
+    payload = verify_jwt_token(token, grant_type="access_token")
+    if "message" in payload:
+        return None
+    try:
+        return uuid.UUID(str(payload["account_id"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
 async def check_authentication(request: Request, token: Annotated[str, Depends(oauth2_scheme)]):
     """
     检查令牌是否有效
@@ -337,9 +362,10 @@ def get_upload_service(dao = Depends(get_upload_dao)):
     from src.tuiwen.service.file import FileService
     return FileService(dao=dao)
 
-def get_follow_service(dao = Depends(get_follow_dao)):
+def get_follow_service(dao = Depends(get_follow_dao), like_dao = Depends(get_like_dao)):
     from src.tuiwen.service.follow import FollowService
-    return FollowService(dao=dao)
+    # like_dao 只用于统计「获赞数」, 点赞数据不在关注表里
+    return FollowService(dao=dao, like_dao=like_dao)
 
 def get_account_service(dao = Depends(get_account_dao)):
     from src.tuiwen.service.account import AccountService

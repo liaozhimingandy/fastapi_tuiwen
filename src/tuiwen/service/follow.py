@@ -11,8 +11,11 @@
 
 from dataclasses import dataclass
 
+from sqlalchemy.exc import IntegrityError
+
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dal.follow import FollowDAO
+from src.tuiwen.dal.like import LikeDAO
 
 
 @dataclass
@@ -20,10 +23,14 @@ class FollowService:
     """关注业务服务。
 
     使用 dataclass 便于依赖注入时直接以 dao 关键字构造
-    (get_follow_service 里是 FollowService(dao=dao))。
+    (get_follow_service 里是 FollowService(dao=dao, like_dao=like_dao))。
+
+    like_dao 用于统计「获赞数」—— 点赞数据在 tw_like 表, 不归 FollowDAO 管;
+    为 None 时不查库(仅单测里手动构造服务时会省略)。
     """
 
     dao: FollowDAO
+    like_dao: LikeDAO | None = None
 
     async def create(self, obj):
         """
@@ -35,18 +42,23 @@ class FollowService:
         Returns:
             Follow: 落库后的实体(未 commit)
 
-        NOTE: 没有校验 follower_id != followee_id —— 目前允许用户关注自己,
-              自关注会直接污染 get_follow_info_by_id 的 is_following 口径
-        NOTE: 用 `except Exception` 把 DAO/DB 异常一律转成 400 BizError, 会把唯一索引冲突
-              和真正的数据库故障混为一谈(后者本该是 5xx), 排查时建议区分对待
+        Raises:
+            BizError: 400 —— 关注自己; 409 —— 已经关注过(唯一索引冲突)
+
+        说明: 只把唯一索引冲突转成业务异常, 其它数据库故障继续向上抛(保持 5xx 语义),
+              原实现用 `except Exception` 会把真正的库故障也压成 400。
         """
+        if obj.follower_id == obj.followee_id:
+            raise BizError(code=400, message="不能关注自己")
+
         try:
             instance = await self.dao.create(obj)
             await self.dao.write_db.commit()
             await self.dao.write_db.refresh(instance)
             return instance
-        except Exception as e:
-            raise BizError(code=400, message=str(e))
+        except IntegrityError:
+            await self.dao.write_db.rollback()
+            raise BizError(code=409, message="已经关注过了")
 
     async def delete(self, follower_id, followee_id, ):
         """
@@ -57,45 +69,47 @@ class FollowService:
             followee_id: 被关注者账户ID
 
         Returns:
-            bool: 是否删除到记录
+            bool: 是否删除到记录(没关注过时为 False)
 
-        NOTE: 恒返回 True —— 丢弃了 DAO 的 rowcount, 没关注过也返回成功
+        NOTE: 原实现丢弃了 DAO 的 rowcount, 恒返回 True。
         """
-        await self.dao.delete_by_fields(follower_id=follower_id, followee_id=followee_id)
+        affected = await self.dao.delete_by_fields(follower_id=follower_id, followee_id=followee_id)
         await self.dao.write_db.commit()
-        return True
+        return bool(affected)
 
-    async def get_follow_info_by_id(self, account_id):
+    async def get_follow_info_by_id(self, account_id, viewer_id=None):
         """
         聚合指定账户的关注相关统计
 
         Args:
             account_id: 账户ID
+            viewer_id: 当前浏览者账户ID; 传入时据此判断"我是否已关注该账户"
 
         Returns:
             dict: 四个统计字段
                 - follower_count: 粉丝数(谁关注了我)
                 - followee_count: 正在关注数(我关注了谁)
-                - is_following  : 我是否关注了我自己(当前实现为自关注判断)
-                - like_count    : 获赞数(暂未实现, 恒为 0)
+                - is_following  : 浏览者是否已关注该账户
+                - like_count    : 获赞数(该账户的帖子 + 评论被点赞的合计)
 
-        NOTE: is_following 的统计条件为 follower_id==followee_id==account_id,
-              实际只会命中「自己关注自己」的记录, 若要表达「我是否已关注对方」
-              需要额外传入目标账户ID
-        NOTE: 上面这个 count 是 int(0/1), 而 api/follow.py 用 FollowCountModel 的
-              `is_following: bool` 承接, 靠 pydantic 隐式转换; 一旦自关注记录不止一条
-              (count>=2)就会校验失败。改成 bool(...) 或直接 `exists()` 更稳
-        NOTE: like_count 硬编码 0, 获赞数尚未实现 —— 若前端已展示该字段, 需补聚合查询
-              (tw_post.like 的 sum, 或专门的计数表)
+        NOTE: 原实现的 is_following 统计条件是 follower_id==followee_id==account_id,
+              只会命中「自己关注自己」的记录, 与本字段语义无关; 现在改为按
+              (viewer_id → account_id) 判断, 未传 viewer_id 时恒为 False。
+        NOTE: like_count 原先硬编码 0(前端拿到的是假值), 现改为由 LikeDAO 实时聚合;
+              未注入 like_dao 时返回 0。
         """
         # 粉丝数
         follower_count = await self.dao.count(followee_id=account_id)
         # 正在关注数
         followee_count = await self.dao.count(follower_id=account_id)
-        # 是否正在关注
-        is_following = await self.dao.count(follower_id=account_id, followee_id=account_id)
-        # 获赞数量
+        # 浏览者是否已关注该账户
+        is_following = False
+        if viewer_id is not None:
+            is_following = await self.dao.exists(follower_id=viewer_id, followee_id=account_id)
+        # 获赞数(帖子 + 评论)
         like_count = 0
+        if self.like_dao is not None:
+            like_count = await self.like_dao.count_likes_received(account_id)
 
         return {"follower_count": follower_count, "followee_count": followee_count,
-                "is_following": is_following, "like_count": like_count}
+                "is_following": bool(is_following), "like_count": like_count}

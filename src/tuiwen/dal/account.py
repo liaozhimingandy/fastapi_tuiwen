@@ -46,7 +46,7 @@ class AccountDAO(BaseDAO[Account]):
     async def search(self, keyword: str, offset: int = 0, limit: int = 10) -> list[Account]:
         cleaned = keyword.strip().lower()
         stmt = select(Account).where(
-            or_(Account.username.contains(cleaned), Account.nick_name.contains(cleaned))).offset(offset).limit(limit)
+            or_(Account.username.contains(cleaned), Account.nickname.contains(cleaned))).offset(offset).limit(limit)
 
         # 使用读库会话
         result = await self._execute(self._get_read_session(), stmt, op="search")

@@ -6,8 +6,9 @@ from pydantic import AliasChoices, field_serializer, BaseModel
 
 from sqlalchemy.sql.functions import func
 from sqlmodel import SQLModel, Field, text
-from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Identity, Boolean, UniqueConstraint, UUID
+from sqlalchemy import DateTime, JSON, Column, BigInteger, Identity, Boolean, UniqueConstraint, UUID
 
+from src.tuiwen.model.types import IntEnumType
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import convert_to_timezone
 
@@ -103,18 +104,21 @@ class Video(SQLModel, table=True):
         sa_column_kwargs={"comment": "视频简介描述文本"}
     )
 
-    orientation: Optional[int] = Field(
+    # NOTE: 三个字段都已存在对应枚举, 注解却写成 int —— 既丢掉了类型提示,
+    #       OpenAPI 里也看不出取值范围。这里统一改用枚举类型。
+    orientation: VideoOrientation | None = Field(
         None,
         description="视频画面方向：0未知，1横屏，2竖屏",
+        sa_type=IntEnumType(VideoOrientation),
         sa_column_kwargs={"comment": "视频画面方向：0未知，1横屏，2竖屏"}
     )
 
-    category: Optional[int] = Field(
+    category: VideoCategory | None = Field(
         None,
         ge=0,
-        description="视频长短分类 0短视频，1长视频",
-        sa_column_kwargs={"comment": "视频长短分类：0短视频，1长视频"},
-        sa_type=SMALLINT
+        description="视频时长分类：1短视频 2中视频 3长视频",
+        sa_column_kwargs={"comment": "视频时长分类：1短视频 2中视频 3长视频"},
+        sa_type=IntEnumType(VideoCategory)
     )
 
     account_id: Optional[uuid.UUID] = Field(
@@ -129,10 +133,10 @@ class Video(SQLModel, table=True):
         sa_column_kwargs={"comment": "原始文件MD5，用于重复上传校验、秒传"},
         index=True  # 加索引！查询md5必须建索引
     )
-    transcode_status: int = Field(
+    transcode_status: VideoTranscodeStatus = Field(
         default=VideoTranscodeStatus.PENDING,
         sa_column_kwargs={"comment": "转码状态：0待转码 1转码中 2成功 3失败"},
-        sa_type=SMALLINT,
+        sa_type=IntEnumType(VideoTranscodeStatus),
     )
     transcode_msg: Optional[str] = Field(None, max_length=128, sa_column_kwargs={"comment": "转码失败原因"})
     # 本次转码任务ID: 由转码服务在提交任务时回填, 回调接口用它区分「当前任务」与「过期任务」。
@@ -159,7 +163,7 @@ class Video(SQLModel, table=True):
         sa_column_kwargs={"comment": "软删除标记：false正常，true逻辑删除", "server_default": text("false")},
     )
 
-    create_at: datetime = Field(
+    created_at: datetime = Field(
         ...,
         default_factory=datetime.now,
         description='记录创建时间',
@@ -172,7 +176,7 @@ class Video(SQLModel, table=True):
         )
     )
 
-    update_at: datetime = Field(
+    updated_at: datetime = Field(
         ...,
         default_factory=datetime.now,
         description='记录最后更新时间',
@@ -185,9 +189,9 @@ class Video(SQLModel, table=True):
         )
     )
 
-    @field_serializer('create_at')
+    @field_serializer('created_at')
     def serialize_datetime(self, value):
-        """出参时把 create_at 统一转换到配置时区(默认 Asia/Shanghai)。"""
+        """出参时把 created_at 统一转换到配置时区(默认 Asia/Shanghai)。"""
         return convert_to_timezone(value)
 
 
@@ -200,24 +204,29 @@ class VideoSourceType(IntEnum):
 
 # 视频清晰度
 class VideoQuality(StrEnum):
-    """清晰度标识, 需与转码器输出的档位名(360p/720p/1080p)保持可映射。"""
-    Q_360 = "360"
-    Q_720 = "720"
-    Q_1080 = "1080"
+    """清晰度标识。
+
+    NOTE: 取值必须与转码器实际回传/落库的档位名一致 —— 原来写的是 "360"/"720",
+          而 TranscodeVariant 的文档与转码器约定是 "360p"/"720p", 两者对不上。
+    """
+    Q_360 = "360p"
+    Q_480 = "480p"
+    Q_720 = "720p"
+    Q_1080 = "1080p"
     ADAPTIVE = "adaptive"  # 自适应码率
 
 
 class VideoSource(SQLModel, table=True):
     """视频源表: 一条视频 × 一种类型 × 一档清晰度 = 一行。
 
-    唯一约束 (video_id, type, quality) 保证回调重复写入不会产生重复源;
+    唯一约束 (video_id, source_type, quality) 保证回调重复写入不会产生重复源;
     url 存的是相对路径/资源标识, 对外访问地址由 Service 拼前缀生成。
     """
     __tablename__ = f"{TABLE_PREFIX}video_source"
     __table_args__ = (
         UniqueConstraint(
             "video_id",
-            "type",
+            "source_type",
             "quality",
             name="uq_video_source_video_type_quality",
         ),
@@ -242,44 +251,45 @@ class VideoSource(SQLModel, table=True):
     )
     url: str = Field(
         ...,
-        max_length=128,
+        max_length=255,
         nullable=False,
         description="视频源资源地址",
         sa_column_kwargs={"comment": "CDN资源地址，支持HLS/MP4等"}
     )
 
-    type: int = Field(
+    # 字段名用 source_type: 裸 `type` 与内置名/保留字冲突, 且容易被误读成"表的类型"
+    source_type: VideoSourceType = Field(
         ...,
-        nullable=True,
+        nullable=False,
         description="资源类型：1 HLS，2 MP4",
         sa_column_kwargs={"comment": "资源类型：1 HLS分片，2 MP4文件"},
-        sa_type=SMALLINT,
+        sa_type=IntEnumType(VideoSourceType),
         gt=0
     )
 
-    quality: str = Field(
+    quality: VideoQuality = Field(
         ...,
         max_length=8,
-        nullable=True,
+        nullable=False,
         description="清晰度标识",
         sa_column_kwargs={"comment": "清晰度标识，例如1080p、720p、480p、360p"}
     )
 
-    size: int = Field(
-        ...,
-        nullable=True,
+    # 下面三列原来写的是 `Field(..., nullable=True)` —— 「必填」与「可空」自相矛盾。
+    # 实际语义是转码器可能不上报, 因此改成可选且默认 None。
+    size: int | None = Field(
+        None,
         description="文件大小，字节",
         sa_column_kwargs={"comment": "资源文件大小，单位：字节(byte)"}
     )
 
-    bitrate: int = Field(
-        ...,
-        nullable=True,
+    bitrate: int | None = Field(
+        None,
         description="码率，单位kbps",
         sa_column_kwargs={"comment": "视频码率，单位：kbps"}
     )
 
-    create_at: datetime = Field(
+    created_at: datetime = Field(
         default_factory=datetime.now,
         description='记录创建日期时间',
         sa_column=Column(
@@ -337,7 +347,7 @@ class VideoFeedItem(SQLModel):
     width: int | None = None
     height: int | None = None
     duration: int | None = None
-    orientation: int | None = None
+    orientation: VideoOrientation | None = None
     title: str | None = None
     description: str | None = None
     author: VideoAuthor | None = None
@@ -431,4 +441,5 @@ class TranscodeFailedRequest(BaseModel):
     # FFmpeg / 转码失败原因
     detail: str
     # 可选：错误类型，例如 ffmpeg / probe / publish / callback
-    type: Optional[str] = None
+    # 字段名用 error_type: `type` 与内置名/保留字冲突, 语义也太宽
+    error_type: Optional[str] = None

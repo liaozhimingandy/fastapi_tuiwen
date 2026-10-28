@@ -13,64 +13,68 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, status, Request, Depends
+from fastapi import APIRouter, status, Request, Depends, HTTPException
 
+from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_like_service
-from src.tuiwen.model.like import Like, LikeCountModel
+from src.tuiwen.model.like import Like, LikeCreate, LikeCountModel
 from src.tuiwen.service.like import LikeService
 
 router_like = APIRouter(prefix="/likes", tags=[Tag.like])
 
 
 @router_like.post('/', summary="点赞", response_model=Like, status_code=status.HTTP_201_CREATED)
-async def create_like(payload: Annotated[Like, "赞的输入对象"],
+async def create_like(payload: Annotated[LikeCreate, "赞的输入对象"],
+                      request: Annotated[Request, "请求对象"],
                       svc: LikeService = Depends(get_like_service)):
     """
     对目标对象(目前仅帖子)点赞
 
     Args:
-        payload: 点赞入参, 含 obj_id(目标对象ID) / obj_type(目标对象类型)
+        payload: 点赞入参, 含 target_id(目标对象ID) / target_type(目标对象类型)
+        request: 请求对象, request.state.account_id 由认证依赖写入
         svc: 点赞业务服务
 
     Returns:
         Like: 落库后的点赞记录
     """
-    instance = Like(
-        **payload.model_dump(exclude={})
-    )
-    result = await svc.create(instance)
-    return result
+    # 点赞人取自令牌, 不接受客户端传入; 重复点赞由联合唯一索引兜底并转成 409
+    instance = Like(**payload.model_dump(), account_id=request.state.account_id)
+    try:
+        return await svc.create(instance)
+    except BizError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
-@router_like.delete('/{obj_id}/', summary='取消赞', status_code=status.HTTP_204_NO_CONTENT)
-async def delete_like(obj_id: Annotated[uuid.UUID, "对象ID"], request: Annotated[Request, "请求对象"],
+@router_like.delete('/{target_id}/', summary='取消赞', status_code=status.HTTP_204_NO_CONTENT)
+async def delete_like(target_id: Annotated[uuid.UUID, "对象ID"], request: Annotated[Request, "请求对象"],
                       svc: LikeService = Depends(get_like_service)):
     """
     取消当前登录用户对某对象的点赞
 
     Args:
-        obj_id: 目标对象 ID
+        target_id: 目标对象 ID
         request: 请求对象, request.state.account_id 由认证依赖写入
         svc: 点赞业务服务
 
     Returns:
         bool: 是否取消到记录(204 无响应体)
     """
-    affected = await svc.delete_like(obj_id, request.state.account_id)
+    affected = await svc.delete_like(target_id, request.state.account_id)
     # 事务出口: DELETE 由 DAO 执行但不提交, 这里统一提交
     await svc.dao.commit()
     return affected
 
 
-@router_like.get('/{obj_id}/count/', summary="获取指定帖子的点赞数", response_model=LikeCountModel)
-async def get_like_count(obj_id: Annotated[uuid.UUID, "对象id"], request: Annotated[Request, "请求对象"],
+@router_like.get('/{target_id}/count/', summary="获取指定帖子的点赞数", response_model=LikeCountModel)
+async def get_like_count(target_id: Annotated[uuid.UUID, "对象id"], request: Annotated[Request, "请求对象"],
                          svc: LikeService = Depends(get_like_service)) -> LikeCountModel:
     """
     查询某对象的点赞总数, 以及当前登录用户是否已点赞
 
     Args:
-        obj_id: 目标对象 ID
+        target_id: 目标对象 ID
         request: 请求对象, request.state.account_id 由认证依赖写入
         svc: 点赞业务服务
 
@@ -78,5 +82,5 @@ async def get_like_count(obj_id: Annotated[uuid.UUID, "对象id"], request: Anno
         LikeCountModel: count=点赞总数, is_liked=当前用户是否已点赞
     """
     # Service/DAO 返回的是 dict, 不是对象, 必须用下标访问
-    result = await svc.get_like_count(obj_id, request.state.account_id)
+    result = await svc.get_like_count(target_id, request.state.account_id)
     return LikeCountModel(count=result["like_count"], is_liked=result["is_liked"])

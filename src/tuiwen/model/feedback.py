@@ -1,12 +1,14 @@
 """用户反馈模型: 反馈表(tw_feedback)、创建/管理端入参与响应模型。"""
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import IntEnum
 from ipaddress import IPv4Address, IPv6Address
-from typing import Optional, List
+from typing import Optional
 
-from sqlalchemy import BigInteger, JSON, SMALLINT, Identity, UUID
+from sqlalchemy import BigInteger, JSON, Identity, UUID
 from sqlmodel import SQLModel, Field, Column, DateTime, text
+
+from src.tuiwen.model.types import IntEnumType
 from sqlalchemy.dialects.postgresql import INET
 from pydantic import field_serializer
 
@@ -77,7 +79,7 @@ class FeedbackCreate(SQLModel):
     level: FeedbackLevel = Field(default=FeedbackLevel.NORMAL, description="严重等级：1低 2普通 3高")
     contact: Optional[str] = Field(None, max_length=128, description="联系方式(手机号/邮箱)")
     page_path: Optional[str] = Field(None, description="问题发生页面路由")
-    image_urls: List[str] = Field(default_factory=list, description="截图图片链接列表")
+    image_urls: list[str] = Field(default_factory=list, description="截图图片链接列表")
     app_version: Optional[str] = Field(None, description="应用版本号")
     allow_reply: bool = Field(default=True, description="是否允许后台回复联系用户")
 
@@ -93,7 +95,7 @@ class Feedback(SQLModel, table=True):
     在此之上补充三类字段:
     - 服务端补全: account_id / user_agent / from_ip(来自请求上下文, 前端不传)
     - 管理端: status / admin_reply / handle_user_id(后台处理流转用)
-    - 时间: create_at / update_at
+    - 时间: created_at / updated_at
     """
 
     __tablename__ = f"{TABLE_PREFIX}feedback"
@@ -103,18 +105,19 @@ class Feedback(SQLModel, table=True):
                     sa_column_args=[Identity(always=False)])
     content: str = Field(..., description="反馈详细内容", max_length=2000, sa_column_kwargs={'comment': '反馈详细内容'})
     title: Optional[str] = Field(None, description="反馈标题", max_length=256, sa_column_kwargs={'comment': '反馈标题'})
-    feedback_type: Optional[FeedbackType] = Field(default=FeedbackType.OTHER, sa_type=SMALLINT,
+    feedback_type: Optional[FeedbackType] = Field(default=FeedbackType.OTHER, sa_type=IntEnumType(FeedbackType),
                                                   description="反馈类型 1建议 2bug 3投诉 4其他",
                                                   sa_column_kwargs={'comment': '反馈类型 1建议 2bug 3投诉 4其他'})
-    level: Optional[FeedbackLevel] = Field(default=FeedbackLevel.NORMAL, sa_type=SMALLINT,
+    level: Optional[FeedbackLevel] = Field(default=FeedbackLevel.NORMAL, sa_type=IntEnumType(FeedbackLevel),
                                            description="严重等级 1低 2普通 3高",
                                            sa_column_kwargs={'comment': '严重等级 1低 2普通 3高'})
     contact: Optional[str] = Field(None, description="联系方式(手机号/邮箱)", max_length=128,
                                    sa_column_kwargs={'comment': '联系方式'})
     page_path: Optional[str] = Field(None, description="问题发生页面路由",
                                      sa_column_kwargs={'comment': '问题发生页面路由'})
-    image_urls: Optional[List[str]] = Field(default_factory=list, sa_type=JSON, description="截图图片链接列表",
-                                            sa_column_kwargs={'comment': '截图图片链接列表'})
+    # 截图链接列表: 列本身非空(默认空数组), 不要写 Optional[List[str]] + default_factory
+    image_urls: list[str] = Field(default_factory=list, sa_type=JSON, description="截图图片链接列表",
+                                  sa_column_kwargs={'comment': '截图图片链接列表'})
     app_version: Optional[str] = Field(None, description="应用版本号", sa_column_kwargs={'comment': '应用版本号'})
     allow_reply: Optional[bool] = Field(default=True, description="是否允许后台回复联系用户",
                                         sa_column_kwargs={'comment': '是否允许后台回复联系用户'})
@@ -124,19 +127,22 @@ class Feedback(SQLModel, table=True):
     user_agent: Optional[str] = Field(None, max_length=1024, description="客户端UA", sa_column_kwargs={'comment': '客户端UA'})
     from_ip: Optional[IPv4Address | IPv6Address] = Field(None, description='来源ip', sa_type=INET(), sa_column_kwargs={'comment': '来源ip'})
     # 后台管理字段
-    status: FeedbackStatus = Field(default=FeedbackStatus.PENDING, sa_type=SMALLINT, description="状态:0已关闭 1待处理 2处理中 3已完成", sa_column_kwargs={'comment': '状态:0已关闭 1待处理 2处理中 3已完成'})
+    status: FeedbackStatus = Field(default=FeedbackStatus.PENDING, sa_type=IntEnumType(FeedbackStatus), description="状态:0已关闭 1待处理 2处理中 3已完成", sa_column_kwargs={'comment': '状态:0已关闭 1待处理 2处理中 3已完成'})
     admin_reply: Optional[str] = Field(default=None, max_length=1024, description="管理员回复内容", sa_column_kwargs={'comment': '管理员回复内容'})
     handle_user_id: Optional[uuid.UUID] = Field(default=None, description="处理管理员主键", sa_column_kwargs={'comment': '处理管理员主键'})
-    create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
+    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                   )
-    update_at: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
-                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                    onupdate=datetime.now, comment='最后修改时间')
-                                   )
+    # 与其它表的 updated_at 保持一致: NOT NULL + 由数据库生成/刷新
+    updated_at: datetime = Field(..., default_factory=datetime.now, description='最后修改时间',
+                                 sa_column=Column(DateTime(timezone=True), default=datetime.now,
+                                                  onupdate=datetime.now, nullable=False,
+                                                  server_default=text("NOW()"),
+                                                  comment='最后修改时间')
+                                 )
 
-    @field_serializer('create_at', 'update_at')
+    @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value):
         return convert_to_timezone(value)
 
@@ -150,18 +156,20 @@ class FeedbackResponse(SQLModel):
     title: Optional[str]
     content: str
     feedback_type: Optional[FeedbackType]
-    level: FeedbackLevel
+    # level 在表里是可空的(客户端没传时由默认值填充, 但历史数据可能为 NULL),
+    # 响应模型若声明成必填, 遇到 NULL 会直接 500
+    level: Optional[FeedbackLevel] = None
     contact: Optional[str]
     page_path: Optional[str]
-    image_urls: List[str]
+    image_urls: list[str] = Field(default_factory=list)
     app_version: Optional[str]
-    allow_reply: bool
+    allow_reply: bool = True
     status: FeedbackStatus
     admin_reply: Optional[str]
     handle_user_id: Optional[uuid.UUID]
     user_agent: Optional[str]
-    create_at: datetime
-    update_at: datetime
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 

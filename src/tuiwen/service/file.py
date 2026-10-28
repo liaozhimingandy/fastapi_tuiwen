@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from src.tuiwen.dal.file import FileDAO
 from src.tuiwen.core import get_settings
-from src.tuiwen.model.file import File
+from src.tuiwen.model.file import File, FileType, FileStatus
 
 
 @dataclass
@@ -70,22 +70,20 @@ class FileService:
 
         settings = get_settings()
 
-        # 根据 mime 判断落盘子目录 image / video / audio / doc
-        # NOTE: 原实现在这里同时算了一个字符串 file_type("image"/"video"/...), 但下面组装
-        #       File 时写的是字面量 file_type=1, 那个变量从未被读取(死代码), 已删除。
-        #       若确实要区分类别, 应给 model/file.py 的 file_type 定一套 int 枚举并在这里映射,
-        #       否则该列永远是 1, 与字段 description("image/video/audio/doc") 不符
+        # 根据 mime 判断大类与落盘子目录 image / video / audio / doc。
+        # 原来这里把 file_type 写死成 1(图片), 而该服务其实也接视频/音频/文档,
+        # 导致 tw_file.file_type 永远是 1 —— 现在按 mime 映射到 FileType。
         # NOTE: 默认值里的连字符必须是 ASCII '-'。原写法 "application/octet‑stream" 用的是
         #       U+2011(non-breaking hyphen), 不是合法 MIME 类型
         mime_type = file.content_type or "application/octet-stream"
         if mime_type.startswith("image/"):
-            sub_dir = "images"
+            sub_dir, file_type = "images", FileType.IMAGE
         elif mime_type.startswith("video/"):
-            sub_dir = "videos"
+            sub_dir, file_type = "videos", FileType.VIDEO
         elif mime_type.startswith("audio/"):
-            sub_dir = "audios"
+            sub_dir, file_type = "audios", FileType.AUDIO
         else:
-            sub_dir = "docs"
+            sub_dir, file_type = "docs", FileType.DOC
 
         upload_dir = f"{settings.STORAGE_LOCAL_ROOT}/{sub_dir}"
         if not os.path.exists(upload_dir):
@@ -110,7 +108,7 @@ class FileService:
         # 组装ORM实体，extra留空；图片宽高/视频时长后续异步回填
         new_file = File(
             account_id=uploader_account_id,
-            file_type=1,
+            file_type=file_type,
             url=url,
             storage_key=storage_key,
             file_md5=file_md5,
@@ -118,7 +116,7 @@ class FileService:
             original_name=original_name,
             file_size=file_size,
             extra={},
-            status=1,  # 0=临时文件，绑定帖子后改为1正式
+            status=FileStatus.ACTIVE,  # 0=临时文件，绑定帖子后改为1正式
         )
 
         instance = await self.dao.create(new_file)
