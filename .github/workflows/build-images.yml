@@ -17,10 +17,12 @@ name: Build Images
 #
 # 凭据（配了哪个就推哪个，两个都没配则只本地构建、不报错）：
 #   Docker Hub  : secrets.DOCKERHUB_USERNAME + secrets.DOCKERHUB_TOKEN
-#   阿里云 ACR  : secrets.ALIYUN_REGISTRY + secrets.ALIYUN_NAMESPACE(vars)
+#   阿里云 ACR  : secrets.ALIYUN_REGISTRY + vars.ALIYUN_NAMESPACE（必填）
 #                 + secrets.ALIYUN_USERNAME|secrets.DOCKER_USERNAME
 #                 + secrets.ALIYUN_PASSWORD|secrets.DOCKER_PASSWORD
 #                 （后两者是对旧工作流命名的兼容，历史仓库里配的是这两个）
+#                 vars.ALIYUN_NAMESPACE 是 ACR 账号里自建的命名空间，不能用
+#                 github 用户名猜；缺了它就不推阿里云，只做本地构建
 # =============================================================================
 on:
   push:
@@ -201,8 +203,14 @@ jobs:
               echo "::notice title=跳过 Docker Hub::未配置 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN"
             fi
             if [ -n "${ALIYUN_REGISTRY:-}" ] && [ "${HAS_ALIYUN_CREDS}" = "true" ] && [ "${HAS_ALIYUN_SECRET}" = "true" ]; then
-              PUSH_ALI="true"
-              ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE:-${GITHUB_REPOSITORY_OWNER}}/${HUB_IMAGE##*/}"
+              # ACR 的命名空间是账号里自建的, 不能用 github 用户名去猜 ——
+              # 猜出来的路径一定不存在, 推送只会拿到 "repository does not exist"
+              if [ -z "${ALIYUN_NAMESPACE:-}" ]; then
+                echo "::warning title=跳过阿里云 ACR::已配置 ALIYUN_REGISTRY 与凭据, 但缺少仓库变量 ALIYUN_NAMESPACE(ACR 命名空间), 无法确定镜像路径"
+              else
+                PUSH_ALI="true"
+                ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE}/${HUB_IMAGE##*/}"
+              fi
             else
               echo "::notice title=跳过阿里云 ACR::未配置 ALIYUN_REGISTRY / ALIYUN_USERNAME / ALIYUN_PASSWORD"
             fi
@@ -340,7 +348,6 @@ jobs:
           # 兜底: 若 meta 的 output 再次丢失, 用凭据现场重建阿里云镜像名
           ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
           ALIYUN_NAMESPACE: ${{ vars.ALIYUN_NAMESPACE }}
-          OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
 
@@ -360,8 +367,13 @@ jobs:
             exit 1
           fi
           if [ "${PUSH_ALI}" = "true" ] && [ -z "${ALI_IMAGE}" ]; then
-            ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE:-${OWNER}}/${HUB_IMAGE##*/}"
-            echo "::warning title=阿里云镜像名兜底::meta 输出为空, 现场重建为 ${ALI_IMAGE}"
+            if [ -n "${ALIYUN_NAMESPACE}" ]; then
+              ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE}/${HUB_IMAGE##*/}"
+              echo "::warning title=阿里云镜像名兜底::meta 输出为空, 现场重建为 ${ALI_IMAGE}"
+            else
+              echo "::error title=缺少 ALIYUN_NAMESPACE::要推送阿里云, 但仓库变量 ALIYUN_NAMESPACE(ACR 命名空间) 为空"
+              exit 1
+            fi
           fi
 
           # 标签来自 meta 的多行 output, 这里统一去掉空行并落地成文件,
@@ -383,9 +395,11 @@ jobs:
           fi
 
           # 每个标签的仓库必须已登录, 否则 buildx 会在拉 oauth token 时 401。
-          # 没有域名和端口的第一段就是 docker.io 短名(如 owner/repo)
+          # 没有域名和端口的第一段就是 docker.io 短名(如 owner/repo)。
+          # 只在真的要推送时校验 —— 仅本地构建时标签只是本机名字, 与仓库无关
           while read -r t; do
             [ -z "${t}" ] && continue
+            [ "${SHOULD_PUSH}" = "true" ] || continue
             first="${t%%/*}"
             is_hub=false
             case "${first}" in
@@ -481,7 +495,6 @@ jobs:
           ALI_IMAGE_B64: ${{ needs.meta.outputs.aliyun_image_b64 }}
           ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
           ALIYUN_NAMESPACE: ${{ vars.ALIYUN_NAMESPACE }}
-          OWNER: ${{ github.repository_owner }}
           VERSION: ${{ needs.meta.outputs.version }}
           PUSH_HUB: ${{ needs.meta.outputs.push_hub }}
           PUSH_ALI: ${{ needs.meta.outputs.push_aliyun }}
@@ -492,8 +505,8 @@ jobs:
           if [ -z "${ALI_IMAGE}" ] && [ -n "${ALI_IMAGE_B64}" ]; then
             ALI_IMAGE="$(printf '%s' "${ALI_IMAGE_B64}" | base64 -d)"
           fi
-          if [ "${PUSH_ALI}" = "true" ] && [ -z "${ALI_IMAGE}" ]; then
-            ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE:-${OWNER}}/${HUB_IMAGE##*/}"
+          if [ "${PUSH_ALI}" = "true" ] && [ -z "${ALI_IMAGE}" ] && [ -n "${ALIYUN_NAMESPACE}" ]; then
+            ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE}/${HUB_IMAGE##*/}"
           fi
           check() {
             local ref="$1"
@@ -532,7 +545,6 @@ jobs:
           ALI_IMAGE_B64: ${{ needs.meta.outputs.aliyun_image_b64 }}
           ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
           ALIYUN_NAMESPACE: ${{ vars.ALIYUN_NAMESPACE }}
-          OWNER: ${{ github.repository_owner }}
           PUSH_HUB: ${{ needs.meta.outputs.push_hub }}
           PUSH_ALI: ${{ needs.meta.outputs.push_aliyun }}
           BUILD_TYPE: ${{ needs.meta.outputs.build_type }}
@@ -545,8 +557,8 @@ jobs:
           if [ -z "${ALI_IMAGE}" ] && [ -n "${ALI_IMAGE_B64}" ]; then
             ALI_IMAGE="$(printf '%s' "${ALI_IMAGE_B64}" | base64 -d)"
           fi
-          if [ "${PUSH_ALI}" = "true" ] && [ -z "${ALI_IMAGE}" ]; then
-            ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE:-${OWNER}}/${HUB_IMAGE##*/}"
+          if [ "${PUSH_ALI}" = "true" ] && [ -z "${ALI_IMAGE}" ] && [ -n "${ALIYUN_NAMESPACE}" ]; then
+            ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE}/${HUB_IMAGE##*/}"
           fi
           {
             echo "## 镜像构建报告"

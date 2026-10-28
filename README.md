@@ -71,7 +71,7 @@ videos/<YYYYMM>/<video_id>/
 | Secret | `ALIYUN_REGISTRY` | 例：`registry.cn-hangzhou.aliyuncs.com`（不配则跳过阿里云） |
 | Secret | `ALIYUN_USERNAME` | 阿里云 ACR 用户名；未配时回退到 `DOCKER_USERNAME` |
 | Secret | `ALIYUN_PASSWORD` | 阿里云 ACR 密码/访问凭证；未配时回退到 `DOCKER_PASSWORD` |
-| Variable | `ALIYUN_NAMESPACE` | 阿里云命名空间，默认 `<owner>` |
+| Variable | `ALIYUN_NAMESPACE` | 阿里云 ACR 命名空间（账号里自建的），**推送阿里云必填**；未配置时自动跳过阿里云、退回仅本地构建 |
 | Variable | `DOCKER_REPOSITORY` | 覆盖镜像名，默认 `<owner>/fastapi_tuiwen` |
 | Variable | `ENABLE_FLOATING_TAGS` | 是否滚动 `A.B` / `A` 浮动标签，默认 `true` |
 
