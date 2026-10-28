@@ -1,43 +1,28 @@
-# Include any files or directories that you don't want to be copied to your
-# container here (e.g., local build artifacts, temporary files, etc.).
-#
-# For more help, visit the .dockerignore file reference guide at
-# https://docs.docker.com/go/build-context-dockerignore/
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-**/.DS_Store
-**/__pycache__
-**/.venv
-**/.classpath
-**/.dockerignore
+# ===== 环境与密钥 =====
+# .env.production 仅含路径配置且已被跟踪; 新增含明文密钥的 env 文件一律不要提交
 .env.develop
-**/.git
-**/.gitignore
-**/.project
-**/.settings
-**/.toolstarget
-**/.vs
-**/.vscode
-**/*.*proj.user
-**/*.dbmdl
-**/*.jfm
-**/bin
-**/charts
-**/docker-compose*
-**/compose.y*ml
-**/Dockerfile*
-**/node_modules
-**/npm-debug.log
-**/obj
-**/secrets.dev.yaml
-**/values.dev.yaml
-LICENSE
-README.md
+.env*.local
+*.pem
+*.key
 
-## 补充
+# ===== 运行产物 =====
 static/*
-**/*.sqlite3
-.pdm-python
-**/logs/*
-.idea/*
+!static/swagger-ui-bundle.js
+!static/swagger-ui.css
+!static/redoc.standalone.js
+logs/*
+*.sqlite3
 
-.env.develop
+# ===== IDE / 系统 =====
+.idea/*
+.vscode/
+.DS_Store

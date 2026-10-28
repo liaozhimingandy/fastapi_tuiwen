@@ -1,0 +1,435 @@
+name: Build Images
+
+# =============================================================================
+# 镜像构建与推送：Docker Hub + 阿里云 ACR，两个仓库各自独立判断「是否已配置凭据」
+#
+# 与 CI / Release 的分工：
+#   CI            —— 只验证，绝不推送
+#   Release       —— 只创建 GitHub Release（测试 + 说明）
+#   Build Images  —— 只做镜像构建/推送（本文件），可单独重跑，不阻塞发布
+#
+# 触发与版本映射（版本号沿用 Django 发布模型，与 Git Tag 一一对应）：
+#   push main                → dev（不附 sha，不占 latest）
+#   push stable/A.B.x        → A.B 系列补丁构建（滚动 A.B / A 浮动标签）
+#   push tag vA.B / vA.B.C   → 正式发布（附 sha + latest + 浮动 A.B / A）
+#   push tag vA.Brc1 …       → 预发布（alpha/beta/rc，不占 latest）
+#   workflow_dispatch        → 可覆盖版本号；可直接选平台/是否推送
+#
+# 凭据（配了哪个就推哪个，两个都没配则只本地构建、不报错）：
+#   Docker Hub  : secrets.DOCKERHUB_USERNAME + secrets.DOCKERHUB_TOKEN
+#   阿里云 ACR  : secrets.ALIYUN_REGISTRY + secrets.ALIYUN_NAMESPACE(vars)
+#                 + secrets.ALIYUN_USERNAME|secrets.DOCKER_USERNAME
+#                 + secrets.ALIYUN_PASSWORD|secrets.DOCKER_PASSWORD
+#                 （后两者是对旧工作流命名的兼容，历史仓库里配的是这两个）
+# =============================================================================
+on:
+  push:
+    branches: [main, 'stable/**']
+    tags: ['v*']
+    # 分支推送只在代码/依赖/镜像定义变化时构建（tag 推送不受 path 过滤影响时更安全，
+    # 但 GitHub 对 tags+paths 同样生效，因此发版流程务必改动 VERSION 文件）
+    paths:
+      - 'src/**'
+      - 'main.py'
+      - 'VERSION'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/build-images.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '覆盖版本号（留空=dev；填 A.B 打稳定系列镜像）'
+        required: false
+        type: string
+      push:
+        description: '是否推送到镜像仓库'
+        required: false
+        type: boolean
+        default: true
+      platforms:
+        description: '目标平台（多架构用逗号分隔，如 linux/amd64,linux/arm64）'
+        required: false
+        type: string
+        default: 'linux/amd64'
+
+# 本工作流不写仓库内容，也不推 GHCR；两个外部仓库用各自的 token 登录
+permissions:
+  contents: read
+
+concurrency:
+  group: build-images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DEFAULT_IMAGE_NAME: fastapi_tuiwen
+  # 是否滚动 A.B / A 浮动标签（让 :0.3 始终指向该系列最新）
+  DEFAULT_FLOATING_TAGS: 'true'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1) 计算版本与标签（唯一决策点，后续作业只用 outputs）
+  # ---------------------------------------------------------------------------
+  meta:
+    name: 计算版本与镜像标签
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.calc.outputs.version }}
+      short_sha: ${{ steps.calc.outputs.short_sha }}
+      hub_image: ${{ steps.calc.outputs.hub_image }}
+      aliyun_image: ${{ steps.calc.outputs.aliyun_image }}
+      push_hub: ${{ steps.calc.outputs.push_hub }}
+      push_aliyun: ${{ steps.calc.outputs.push_aliyun }}
+      should_push: ${{ steps.calc.outputs.should_push }}
+      platforms: ${{ steps.calc.outputs.platforms }}
+      tags: ${{ steps.calc.outputs.tags }}
+      build_type: ${{ steps.calc.outputs.build_type }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 计算
+        id: calc
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PUSH: ${{ inputs.push }}
+          INPUT_PLATFORMS: ${{ inputs.platforms }}
+          DOCKER_REPOSITORY: ${{ vars.DOCKER_REPOSITORY }}
+          ENABLE_FLOATING_TAGS: ${{ vars.ENABLE_FLOATING_TAGS || env.DEFAULT_FLOATING_TAGS }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          # 只传「是否配置」，不把凭据值带进脚本（避免出现在日志/进程参数里）
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          HAS_DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+          ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
+          ALIYUN_NAMESPACE: ${{ vars.ALIYUN_NAMESPACE }}
+          HAS_ALIYUN_CREDS: ${{ secrets.ALIYUN_USERNAME != '' || secrets.DOCKER_USERNAME != '' }}
+          HAS_ALIYUN_SECRET: ${{ secrets.ALIYUN_PASSWORD != '' || secrets.DOCKER_PASSWORD != '' }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA::7}"
+          # 版本号规范：vA.B / vA.B.C / vA.B(a|b|rc)N，预发布也接受 v1.0-rc1 写法
+          SEMVER_RE='^v[0-9]+\.[0-9]+(\.[0-9]+)?(-?(a|b|rc)[0-9]+)?$'
+          SERIES_RE='^stable/([0-9]+\.[0-9]+)(\.x)?$'
+
+          VERSION=""
+          WANT_PUSH="false"
+          IS_DEV="false"
+          IS_RELEASE="false"
+          IS_PRERELEASE="false"
+          SERIES=""
+          LATEST="false"
+          BUILD_TYPE="跳过"
+          FLOATING="${ENABLE_FLOATING_TAGS:-true}"
+
+          if [ "${EVENT_NAME}" = "push" ] && [ "${REF_TYPE}" = "tag" ]; then
+            if ! [[ "${REF_NAME}" =~ ${SEMVER_RE} ]]; then
+              echo "::error::Tag ${REF_NAME} 不符合规范（vA.B / vA.B.C / vA.Brc1）"
+              exit 1
+            fi
+            VERSION="${REF_NAME#v}"
+            WANT_PUSH="true"
+            IS_RELEASE="true"
+            BUILD_TYPE="正式发布"
+            if [[ "${VERSION}" =~ (a|b|rc)[0-9]+$ ]]; then
+              IS_PRERELEASE="true"
+              BUILD_TYPE="预发布"
+            else
+              LATEST="true"
+              SERIES=$(echo "${VERSION}" | cut -d. -f1,2)
+            fi
+          elif [ "${EVENT_NAME}" = "push" ] && [ "${REF_TYPE}" = "branch" ]; then
+            if [[ "${REF_NAME}" =~ ${SERIES_RE} ]]; then
+              SERIES="${BASH_REMATCH[1]}"
+              VERSION="${SERIES}"
+              WANT_PUSH="true"
+              BUILD_TYPE="稳定系列(${SERIES})"
+            elif [ "${REF_NAME}" = "main" ]; then
+              VERSION="dev"
+              WANT_PUSH="true"
+              IS_DEV="true"
+              BUILD_TYPE="开发构建"
+            else
+              BUILD_TYPE="未匹配分支, 不构建"
+            fi
+          elif [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            VERSION="${INPUT_VERSION:-dev}"
+            WANT_PUSH="${INPUT_PUSH:-true}"
+            BUILD_TYPE="手动构建"
+            [ "${VERSION}" = "dev" ] && IS_DEV="true"
+            # 手动填 A.B 视为稳定系列构建（滚动 A.B / A，不占 latest）
+            if [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+$ ]]; then
+              SERIES="${VERSION}"
+            elif [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              LATEST="true"
+              SERIES=$(echo "${VERSION}" | cut -d. -f1,2)
+            fi
+          fi
+
+          # ---- 两个仓库分别判断能否推送 ----
+          HUB_IMAGE="${DOCKER_REPOSITORY:-${GITHUB_REPOSITORY_OWNER}/${DEFAULT_IMAGE_NAME}}"
+          ALI_IMAGE=""
+          PUSH_HUB="false"
+          PUSH_ALI="false"
+          if [ "${WANT_PUSH}" = "true" ]; then
+            if [ -n "${DOCKERHUB_USER:-}" ] && [ "${HAS_DOCKERHUB_TOKEN}" = "true" ]; then
+              PUSH_HUB="true"
+            else
+              echo "::notice title=跳过 Docker Hub::未配置 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN"
+            fi
+            if [ -n "${ALIYUN_REGISTRY:-}" ] && [ "${HAS_ALIYUN_CREDS}" = "true" ] && [ "${HAS_ALIYUN_SECRET}" = "true" ]; then
+              PUSH_ALI="true"
+              ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE:-${GITHUB_REPOSITORY_OWNER}}/${HUB_IMAGE##*/}"
+            else
+              echo "::notice title=跳过阿里云 ACR::未配置 ALIYUN_REGISTRY / ALIYUN_USERNAME / ALIYUN_PASSWORD"
+            fi
+          fi
+          SHOULD_PUSH="false"
+          if [ "${PUSH_HUB}" = "true" ] || [ "${PUSH_ALI}" = "true" ]; then
+            SHOULD_PUSH="true"
+          elif [ "${WANT_PUSH}" = "true" ]; then
+            BUILD_TYPE="${BUILD_TYPE}（无凭据, 仅本地构建）"
+          fi
+
+          # 生成某个仓库的标签行
+          tag_lines() {
+            local image="$1"
+            [ -z "${image}" ] && return 0
+            printf '%s\n' "${image}:${VERSION}"
+            # dev 不附 sha，避免每次提交堆积无用标签
+            [ "${IS_DEV}" != "true" ] && printf '%s\n' "${image}:sha-${SHORT_SHA}"
+            [ "${LATEST}" = "true" ] && printf '%s\n' "${image}:latest"
+            if [ "${FLOATING}" = "true" ] && [ -n "${SERIES}" ]; then
+              printf '%s\n' "${image}:${SERIES}"
+              printf '%s\n' "${image}:$(echo "${SERIES}" | cut -d. -f1)"
+            fi
+            return 0
+          }
+
+          ALL_TAGS="$(
+            {
+              [ "${PUSH_HUB}" = "true" ] && tag_lines "${HUB_IMAGE}"
+              [ "${PUSH_ALI}" = "true" ] && tag_lines "${ALI_IMAGE}"
+              true
+            } | awk 'NF && !seen[$0]++'
+          )"
+          # 不推送时仍需要一个本地标签用于 load 到 docker
+          [ -z "${ALL_TAGS}" ] && ALL_TAGS="${HUB_IMAGE}:${VERSION}"
+
+          PLATFORMS="${INPUT_PLATFORMS:-linux/amd64}"
+          # 不推送时走 load 到本地(docker exporter 不支持多平台), 强制单平台
+          if [ "${SHOULD_PUSH}" != "true" ]; then PLATFORMS="linux/amd64"; fi
+
+          {
+            echo "version=${VERSION}"
+            echo "short_sha=${SHORT_SHA}"
+            echo "hub_image=${HUB_IMAGE}"
+            echo "aliyun_image=${ALI_IMAGE}"
+            echo "push_hub=${PUSH_HUB}"
+            echo "push_aliyun=${PUSH_ALI}"
+            echo "should_push=${SHOULD_PUSH}"
+            echo "platforms=${PLATFORMS}"
+            echo "build_type=${BUILD_TYPE}"
+            echo "tags<<TAGS_EOF"
+            printf '%s\n' "${ALL_TAGS}"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          # 版本号一致性检查：main.py 的版本来自 VERSION 文件，tag 与之不符会导致
+          # 文档页显示的版本和镜像标签对不上
+          FILE_VERSION="$(tr -d '\r\n' < VERSION)"
+          if [ "${IS_RELEASE}" = "true" ] && [ "${IS_PRERELEASE}" != "true" ] && [ "${FILE_VERSION}" != "${VERSION}" ]; then
+            echo "::warning title=VERSION 与 Tag 不一致::VERSION=${FILE_VERSION}, Tag=${VERSION}"
+          fi
+
+          {
+            echo "### 镜像构建计划"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| 事件 | \`${EVENT_NAME}\` |"
+            echo "| 引用 | \`${REF_TYPE}:${REF_NAME}\` |"
+            echo "| 类型 | ${BUILD_TYPE} |"
+            echo "| 版本 | \`${VERSION}\` |"
+            echo "| 平台 | \`${PLATFORMS}\` |"
+            echo "| Docker Hub | \`${HUB_IMAGE}\` @ ${PUSH_HUB} |"
+            echo "| 阿里云 ACR | ${ALI_IMAGE:-未配置} @ ${PUSH_ALI} |"
+            echo ""
+            echo '```'
+            printf '%s\n' "${ALL_TAGS}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # 2) 构建并推送（一次构建，产出同时打上 Docker Hub 与阿里云 ACR 的标签）
+  # ---------------------------------------------------------------------------
+  build:
+    name: 构建并推送镜像
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 配置 QEMU（多架构时需要）
+        if: contains(needs.meta.outputs.platforms, 'arm')
+        uses: docker/setup-qemu-action@v3
+
+      - name: 配置 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 Docker Hub
+        if: needs.meta.outputs.push_hub == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 登录阿里云 ACR
+        if: needs.meta.outputs.push_aliyun == 'true'
+        uses: docker/login-action@v3
+        with:
+          # 兼容旧工作流的命名: 老仓库里 DOCKER_USERNAME/DOCKER_PASSWORD 存的是阿里云凭据
+          registry: ${{ secrets.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME || secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD || secrets.DOCKER_PASSWORD }}
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ needs.meta.outputs.should_push == 'true' }}
+          load: ${{ needs.meta.outputs.should_push != 'true' }}
+          platforms: ${{ needs.meta.outputs.platforms }}
+          tags: ${{ needs.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=fastapi_tuiwen
+            org.opencontainers.image.version=${{ needs.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=tuiwen-image
+          cache-to: type=gha,scope=tuiwen-image,mode=max
+          provenance: false
+          sbom: false
+
+  # ---------------------------------------------------------------------------
+  # 3) 推送后校验：镜像可拉取、平台正确、文件齐全（按实际推送的仓库分别校验）
+  # ---------------------------------------------------------------------------
+  verify:
+    name: 推送后校验
+    needs: [meta, build]
+    if: needs.meta.outputs.should_push == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 配置 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 Docker Hub
+        if: needs.meta.outputs.push_hub == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 登录阿里云 ACR
+        if: needs.meta.outputs.push_aliyun == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME || secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD || secrets.DOCKER_PASSWORD }}
+
+      - name: 校验镜像可拉取
+        env:
+          HUB_IMAGE: ${{ needs.meta.outputs.hub_image }}
+          ALI_IMAGE: ${{ needs.meta.outputs.aliyun_image }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          PUSH_HUB: ${{ needs.meta.outputs.push_hub }}
+          PUSH_ALI: ${{ needs.meta.outputs.push_aliyun }}
+          PLATFORMS: ${{ needs.meta.outputs.platforms }}
+        run: |
+          set -euo pipefail
+          check() {
+            local ref="$1"
+            echo "--- 校验 ${ref}"
+            docker buildx imagetools inspect "${ref}"
+            # 单平台时才在本机拉起来检查文件；多架构交给部署侧验证
+            if [ "${PLATFORMS}" = "linux/amd64" ]; then
+              docker pull "${ref}"
+              docker run --rm --entrypoint sh "${ref}" -c 'test -f /app/VERSION && test -d /app/src/tuiwen && test -f /app/main.py'
+              got=$(docker run --rm --entrypoint cat "${ref}" /app/VERSION | tr -d '\r\n')
+              echo "镜像内 VERSION: ${got}"
+              if [ "${VERSION}" != "dev" ] && [ "${got}" != "${VERSION}" ]; then
+                echo "::warning title=版本文件不一致::镜像内 VERSION=${got}, 标签=${VERSION}"
+              fi
+            fi
+          }
+          [ "${PUSH_HUB}" = "true" ] && check "${HUB_IMAGE}:${VERSION}"
+          [ "${PUSH_ALI}" = "true" ] && check "${ALI_IMAGE}:${VERSION}"
+          echo "镜像校验通过"
+
+  # ---------------------------------------------------------------------------
+  # 4) 汇总
+  # ---------------------------------------------------------------------------
+  report:
+    name: 构建报告
+    needs: [meta, build, verify]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 写入摘要
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          HUB_IMAGE: ${{ needs.meta.outputs.hub_image }}
+          ALI_IMAGE: ${{ needs.meta.outputs.aliyun_image }}
+          PUSH_HUB: ${{ needs.meta.outputs.push_hub }}
+          PUSH_ALI: ${{ needs.meta.outputs.push_aliyun }}
+          BUILD_TYPE: ${{ needs.meta.outputs.build_type }}
+          R_META: ${{ needs.meta.result }}
+          R_BUILD: ${{ needs.build.result }}
+          R_VERIFY: ${{ needs.verify.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## 镜像构建报告"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| 类型 | ${BUILD_TYPE} |"
+            echo "| 版本 | \`${VERSION}\` |"
+            [ "${PUSH_HUB}" = "true" ] && echo "| Docker Hub | \`${HUB_IMAGE}:${VERSION}\` |"
+            [ "${PUSH_ALI}" = "true" ] && echo "| 阿里云 ACR | \`${ALI_IMAGE}:${VERSION}\` |"
+            echo "| 已推送仓库 | hub=${PUSH_HUB} / aliyun=${PUSH_ALI} |"
+            echo ""
+            echo "| 阶段 | 结果 |"
+            echo "| --- | --- |"
+            echo "| 版本计算 | ${R_META} |"
+            echo "| 构建推送 | ${R_BUILD} |"
+            echo "| 推送后校验 | ${R_VERIFY} |"
+            echo ""
+            echo "> 部署建议固定 digest 或具体版本号，不要长期依赖 \`latest\`。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for entry in "版本计算:${R_META}" "构建推送:${R_BUILD}"; do
+            name="${entry%%:*}"
+            result="${entry##*:}"
+            if [ "${result}" = "failure" ] || [ "${result}" = "cancelled" ]; then
+              echo "::error title=镜像构建失败::${name}(${result})"
+              exit 1
+            fi
+          done
+          echo "镜像流程结束"

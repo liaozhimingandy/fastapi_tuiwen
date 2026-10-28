@@ -10,6 +10,13 @@ __pycache__/*
 .env.develop
 ./docker-compose.yml
 ./static/medias/*
-logs/*
 tuiwen.sqlite3
+# 测试代码与 CI 配置不进运行镜像（CI 在宿主机跑测试，镜像只留运行期所需文件）
+# 注意：这里写目录名而不是 `目录/*`，否则空目录仍会被 COPY 进镜像
 test_main.py
+tests
+.github
+.pytest_cache
+.ruff_cache
+# 日志由应用运行时生成，不预置空目录
+logs

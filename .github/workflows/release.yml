@@ -1,0 +1,387 @@
+name: Release
+
+# =============================================================================
+# 版本发布：只在规范 Tag 上创建 GitHub Release（含自动生成的变更说明）
+#
+# 分工：
+#   本文件        —— 发布前置校验 + 全量测试 + 创建 GitHub Release
+#   build-images  —— 镜像构建/推送（同一次 tag 推送并行触发）
+#   ci            —— PR/分支阶段的质量关卡
+#
+# 版本号规范（Django 发布模型，与 build-images.yml 保持一致）：
+#   vA.B            功能发布     → 正式 Release，镜像滚 latest
+#   vA.B.C          补丁发布     → 正式 Release，镜像滚 latest
+#   vA.Brc1 / vA.B-rc1  预发布   → prerelease，镜像不占 latest
+#
+# 发布步骤：
+#   1) 改 VERSION 文件（main.py 从这里读版本号，文档页与镜像标签都以它为准）
+#   2) 提交并推送 main
+#   3) git tag -a v0.4.0 -m "v0.4.0" && git push origin v0.4.0
+# =============================================================================
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 Tag（须已存在，如 v0.3.6；留空则用当前引用）'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.14'
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  POSTGRES_DB: tuiwen_ci
+  # Redis 用 services 里的无密码实例（见 ci.yml 同名说明）
+  APP_SECRET_KEY: ci-secret-key-for-testing-only-not-for-production
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1) 发布前置校验：Tag 规范 + VERSION 文件一致
+  # ---------------------------------------------------------------------------
+  meta:
+    name: 校验版本号
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+      is_prerelease: ${{ steps.check.outputs.is_prerelease }}
+      release_type: ${{ steps.check.outputs.release_type }}
+      short_sha: ${{ steps.check.outputs.short_sha }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0   # 生成 Release 说明需要完整历史与 tag
+
+      - name: 校验
+        id: check
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          SEMVER_RE='^v[0-9]+\.[0-9]+(\.[0-9]+)?(-?(a|b|rc)[0-9]+)?$'
+
+          TAG="${INPUT_TAG:-${REF_NAME}}"
+          if ! [[ "${TAG}" =~ ${SEMVER_RE} ]]; then
+            echo "::error::Tag '${TAG}' 不符合规范（v0.4.0 / v0.4.0rc1）"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          IS_PRERELEASE="false"
+          RELEASE_TYPE="功能/补丁发布"
+          if [[ "${VERSION}" =~ (a|b|rc)[0-9]+$ ]]; then
+            IS_PRERELEASE="true"
+            RELEASE_TYPE="预发布（alpha/beta/rc）"
+          fi
+
+          # VERSION 文件是应用版本号的唯一来源，正式发布必须与 Tag 完全一致；
+          # 预发布允许 VERSION 写成基线版本(如 VERSION=0.4.0 对应 Tag=v0.4.0rc1)
+          FILE_VERSION="$(tr -d '\r\n' < VERSION)"
+          if [ "${FILE_VERSION}" != "${VERSION}" ]; then
+            if [ "${IS_PRERELEASE}" = "true" ] && [[ "${VERSION}" == "${FILE_VERSION}"* ]]; then
+              echo "::notice title=预发布基线::VERSION=${FILE_VERSION} 作为 ${VERSION} 的基线"
+            else
+              echo "::error::VERSION 文件(${FILE_VERSION}) 与 Tag(${VERSION}) 不一致，请先改 VERSION 并提交"
+              exit 1
+            fi
+          fi
+
+          {
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+            echo "is_prerelease=${IS_PRERELEASE}"
+            echo "release_type=${RELEASE_TYPE}"
+            echo "short_sha=${GITHUB_SHA::7}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### 发布校验"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| Tag | \`${TAG}\` |"
+            echo "| 版本 | \`${VERSION}\` |"
+            echo "| 类型 | ${RELEASE_TYPE} |"
+            echo "| VERSION 文件 | \`${FILE_VERSION}\` |"
+            echo "| 提交 | \`${GITHUB_SHA:0:7}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # 2) 发布前必须通过单元测试（离线，秒级）
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: 单元测试
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: 安装依赖
+        run: uv sync --frozen --no-install-project
+
+      - name: Ruff
+        run: uvx ruff check . --output-format=github
+
+      - name: 运行单元测试
+        run: uv run pytest tests -q --junitxml=pytest-unit.xml
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-release-unit-${{ needs.meta.outputs.version }}
+          path: pytest-unit.xml
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 3) 发布前必须通过端到端测试（真实 PG18 + Redis + MailDev）
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: 集成测试
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          # 注意: services 的 env 不支持 ${{ env.X }} 上下文, 必须写字面量
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tuiwen_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tuiwen_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      maildev:
+        image: maildev/maildev:2.2.1
+        ports:
+          - 1025:1025
+          - 1080:1080
+    env:
+      DOCKER_MODE: '1'
+      DEBUG: 'true'
+      SECRET_KEY: ${{ env.APP_SECRET_KEY }}
+      BACKEND_CORS_ORIGINS: http://localhost
+      VIDEO_ALLOW_SUFFIX: .mp4,.mov,.mkv
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: '5432'
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+      STORAGE_LOCAL_ROOT: /tmp/tuiwen-static/medias
+      VIDEO_STORAGE_DIR: /tmp/tuiwen-static/medias/videos
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: 安装依赖
+        run: uv sync --frozen --no-install-project
+
+      - name: 准备静态目录
+        run: mkdir -p /tmp/tuiwen-static/medias/videos
+
+      - name: 等待 MailDev 就绪
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:1080/ >/dev/null 2>&1 \
+               || (echo > /dev/tcp/127.0.0.1/1025) >/dev/null 2>&1; then
+              echo "MailDev 已就绪（第 ${i} 次探测）"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::MailDev 在 30s 内未就绪"
+          exit 1
+
+      - name: 运行端到端测试
+        run: uv run pytest test_main.py -q --junitxml=pytest-integration.xml
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-release-integration-${{ needs.meta.outputs.version }}
+          path: pytest-integration.xml
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 4) 创建 GitHub Release（已存在则保持不可变、跳过）
+  # ---------------------------------------------------------------------------
+  github-release:
+    name: 创建 GitHub Release
+    needs: [meta, unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write      # 创建 Release 需要写权限
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.meta.outputs.tag }}
+      VERSION: ${{ needs.meta.outputs.version }}
+      IS_PRERELEASE: ${{ needs.meta.outputs.is_prerelease }}
+      IMAGE: ${{ vars.DOCKER_REPOSITORY || format('{0}/fastapi_tuiwen', github.repository_owner) }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: 创建 Release
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            echo "::notice title=Release 已存在::${TAG} 已发布，保持不可变，跳过创建"
+            exit 0
+          fi
+
+          # 变更清单取自 git log（不依赖 API 生成，输出稳定、可离线复核）；
+          # 上一个 tag 不存在（首个版本）时退回最近 20 条提交
+          PREV_TAG="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          if [ -n "${PREV_TAG}" ]; then
+            CHANGES="$(git log --no-merges --pretty='- %s' "${PREV_TAG}..${TAG}" | head -50 || true)"
+            COMPARE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${TAG}"
+          else
+            CHANGES="$(git log --no-merges --pretty='- %s' -20 "${TAG}" | head -50 || true)"
+            COMPARE=""
+          fi
+          [ -n "${CHANGES}" ] || CHANGES="- 无提交记录"
+
+          # 注意: heredoc 不加引号会展开变量, 因此正文里不要出现反引号(用缩进代码块)
+          cat > release-notes.md <<EOF
+          由 GitHub Actions 自动构建并发布。
+
+          ### 变更
+
+          ${CHANGES}
+
+          ### 镜像
+
+              docker pull ${IMAGE}:${VERSION}
+              docker pull ${IMAGE}:latest
+
+          阿里云 ACR 同名仓库同步推送（若已配置 ALIYUN_REGISTRY）。
+
+          ### 升级提示
+
+          部署前请确认数据库已升级到 PostgreSQL 18（主键使用 uuidv7() 默认值），并按需执行迁移脚本。
+          EOF
+
+          if [ -n "${COMPARE}" ]; then
+            printf '\n完整对比：%s\n' "${COMPARE}" >> release-notes.md
+          fi
+          if [ "${IS_PRERELEASE}" = "true" ]; then
+            printf '\n> 预发布版本（alpha/beta/rc），仅供测试，请勿用于生产。\n' >> release-notes.md
+          fi
+
+          PRERELEASE_ARGS=()
+          if [ "${IS_PRERELEASE}" = "true" ]; then
+            PRERELEASE_ARGS+=(--prerelease)
+          fi
+
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            ${PRERELEASE_ARGS[@]+"${PRERELEASE_ARGS[@]}"}
+
+  # ---------------------------------------------------------------------------
+  # 5) 发布报告
+  # ---------------------------------------------------------------------------
+  report:
+    name: 发布报告
+    needs: [meta, unit-tests, integration-tests, github-release]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 写入摘要并判定结果
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          RELEASE_TYPE: ${{ needs.meta.outputs.release_type }}
+          R_META: ${{ needs.meta.result }}
+          R_UNIT: ${{ needs.unit-tests.result }}
+          R_INTEGRATION: ${{ needs.integration-tests.result }}
+          R_RELEASE: ${{ needs.github-release.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## 发布报告 · ${VERSION}"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| Tag | \`${TAG}\` |"
+            echo "| 类型 | ${RELEASE_TYPE} |"
+            echo "| 镜像 | 由 \`Build Images\` 工作流构建（同一 tag 并行触发） |"
+            echo ""
+            echo "| 阶段 | 结果 |"
+            echo "| --- | --- |"
+            echo "| 版本校验 | ${R_META} |"
+            echo "| 单元测试 | ${R_UNIT} |"
+            echo "| 集成测试 | ${R_INTEGRATION} |"
+            echo "| GitHub Release | ${R_RELEASE} |"
+            echo ""
+            echo "> 只有全部阶段为 success 时，本次发布才算完成。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          failed=""
+          for entry in "版本校验:${R_META}" "单元测试:${R_UNIT}" \
+                       "集成测试:${R_INTEGRATION}" "GitHub Release:${R_RELEASE}"; do
+            name="${entry%%:*}"
+            result="${entry##*:}"
+            if [ "${result}" != "success" ] && [ "${result}" != "skipped" ]; then
+              failed="${failed} ${name}(${result})"
+            fi
+          done
+          if [ -n "${failed}" ]; then
+            echo "::error title=发布未完成::${failed}"
+            exit 1
+          fi
+          echo "发布流程完成"

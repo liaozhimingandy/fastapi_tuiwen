@@ -1,0 +1,396 @@
+name: CI
+
+# =============================================================================
+# 持续集成：只验证，不推送任何镜像/制品（镜像推送见 build-images.yml，发布见 release.yml）
+#
+# 四层关卡，越靠前越快，失败越早暴露：
+#   1) static-checks      ruff(未定义名/语法) + compileall + OpenAPI 可生成
+#   2) unit-tests         tests/ 离线用例（不依赖 PG/Redis/SMTP）
+#   3) integration-tests  test_main.py 端到端（PG18 + Redis + MailDev 真实依赖）
+#   4) docker-build       镜像可构建、可启动、健康检查可达
+#
+# 触发：PR（含 draft 转正）、main/develop 推送、手动
+# =============================================================================
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main, develop]
+    # 纯文档 / 静态资源变更不必跑全套
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'static/**'
+  workflow_dispatch:
+
+# 最小权限：本工作流不写仓库、不登录镜像仓库，因此不需要任何 secrets
+permissions:
+  contents: read
+
+# 同一 PR / 同一分支只保留最新一次运行
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.14'
+  # 集成测试与容器冒烟共用的一次性依赖凭据，仅在本次 runner 内有效
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  POSTGRES_DB: tuiwen_ci
+  # Redis 用 services 里的无密码实例：init_redis() 会在 ping 失败时终止启动，
+  # 而 services 的 options 无法给 redis 传 --requirepass，所以这里必须留空不传密码
+  APP_SECRET_KEY: ci-secret-key-for-testing-only-not-for-production
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1) 静态检查：最快，先拦住"改名后忘改引用"这类低级错误
+  # ---------------------------------------------------------------------------
+  static-checks:
+    name: 静态检查（ruff / 语法 / OpenAPI）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: 安装依赖（严格按 uv.lock）
+        run: uv sync --frozen --no-install-project
+
+      # 只跑"一定是 bug"的规则(F 系列 + 语法)，不参与风格争论，见 pyproject [tool.ruff]
+      - name: Ruff 静态检查
+        run: uvx ruff check . --output-format=github
+
+      # 逐文件编译，能抓出 ruff 覆盖不到的语法错误(如被截断的多行字符串)
+      - name: 编译全部源码
+        run: uv run python -m compileall -q main.py src tests test_main.py
+
+      # 任一接口的出入参模型写错(如引用了已删除的字段)，openapi() 会直接抛异常
+      - name: 校验 OpenAPI 可生成
+        env:
+          DOCKER_MODE: '1'
+          DEBUG: 'true'
+          SECRET_KEY: ${{ env.APP_SECRET_KEY }}
+          BACKEND_CORS_ORIGINS: http://localhost
+          VIDEO_ALLOW_SUFFIX: .mp4,.mov,.mkv
+        run: |
+          uv run python -c "
+          import main
+          schema = main.app.openapi()
+          paths = schema['paths']
+          print(f\"OpenAPI 路径数: {len(paths)}, 模型数: {len(schema.get('components', {}).get('schemas', {}))}\")
+          assert len(paths) >= 30, '业务路由数量异常, 检查 api/router.py 的装配'
+          assert '/api/v2/health-check/' in paths, '健康检查路由缺失'
+          "
+
+  # ---------------------------------------------------------------------------
+  # 2) 单元测试：零外部依赖，给 PR 一个快速反馈
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: 单元测试（离线）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: 安装依赖
+        run: uv sync --frozen --no-install-project
+
+      - name: 运行单元测试
+        run: uv run pytest tests -q --junitxml=pytest-unit.xml
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-unit-${{ github.run_attempt }}
+          path: pytest-unit.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 3) 集成测试：真实 PostgreSQL 18 + Redis + MailDev
+  #    应用 lifespan 会 init_db() 建表(uuidv7() 需 PG18)，空库即可跑
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: 集成测试（PG18 + Redis）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        # uuidv7() 是 PostgreSQL 18 内置函数，镜像版本不能降级
+        image: postgres:18-alpine
+        env:
+          # 注意: services 的 env 不支持 ${{ env.X }} 上下文, 必须写字面量
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tuiwen_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tuiwen_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      maildev:
+        # 注册 / 找回密码会真的发信；DEBUG 模式指向 MailDev 的 1025 端口
+        image: maildev/maildev:2.2.1
+        ports:
+          - 1025:1025
+          - 1080:1080
+    env:
+      DOCKER_MODE: '1'
+      DEBUG: 'true'
+      SECRET_KEY: ${{ env.APP_SECRET_KEY }}
+      BACKEND_CORS_ORIGINS: http://localhost
+      VIDEO_ALLOW_SUFFIX: .mp4,.mov,.mkv
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: '5432'
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+      # 上传落盘目录指向临时路径，避免污染工作区
+      STORAGE_LOCAL_ROOT: /tmp/tuiwen-static/medias
+      VIDEO_STORAGE_DIR: /tmp/tuiwen-static/medias/videos
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: 安装依赖
+        run: uv sync --frozen --no-install-project
+
+      - name: 准备静态目录
+        run: mkdir -p /tmp/tuiwen-static/medias/videos
+
+      - name: 等待 MailDev 就绪
+        # services 未声明 healthcheck 时 GitHub 不等待容器内进程真正可用，
+        # 注册/找回密码要真的连 SMTP，先探到端口再跑用例
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:1080/ >/dev/null 2>&1 \
+               || (echo > /dev/tcp/127.0.0.1/1025) >/dev/null 2>&1; then
+              echo "MailDev 已就绪（第 ${i} 次探测）"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::MailDev 在 30s 内未就绪"
+          exit 1
+
+      - name: 运行端到端测试
+        run: uv run pytest test_main.py -q --junitxml=pytest-integration.xml
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-integration-${{ github.run_attempt }}
+          path: pytest-integration.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 4) 镜像构建与启动冒烟：PR 阶段只构建、不推送
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: 镜像构建与启动冒烟
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          # 注意: services 的 env 不支持 ${{ env.X }} 上下文, 必须写字面量
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tuiwen_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tuiwen_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 配置 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建镜像（不推送）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: fastapi-tuiwen:ci
+          cache-from: type=gha,scope=tuiwen-image
+          cache-to: type=gha,scope=tuiwen-image,mode=max
+          # load:true 时必须关闭 attestation，否则 docker exporter 报 manifest list 错误
+          provenance: false
+          sbom: false
+
+      - name: 启动容器并探活
+        run: |
+          set -euo pipefail
+          # host 网络：容器可直接访问 runner 上暴露的 PG / Redis 服务容器
+          docker run -d --name tuiwen-smoke --network host \
+            -e DOCKER_MODE=1 \
+            -e DEBUG=true \
+            -e SECRET_KEY="${APP_SECRET_KEY}" \
+            -e BACKEND_CORS_ORIGINS=http://localhost \
+            -e VIDEO_ALLOW_SUFFIX=.mp4,.mov,.mkv \
+            -e POSTGRES_HOST=127.0.0.1 \
+            -e POSTGRES_PORT=5432 \
+            -e POSTGRES_USER="${POSTGRES_USER}" \
+            -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
+            -e POSTGRES_DB="${POSTGRES_DB}" \
+            -e REDIS_HOST=127.0.0.1 \
+            -e REDIS_PORT=6379 \
+            -e STORAGE_LOCAL_ROOT=/tmp/medias \
+            -e VIDEO_STORAGE_DIR=/tmp/medias/videos \
+            fastapi-tuiwen:ci
+
+          ok=0
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/api/v2/health-check/ -o /tmp/health.json 2>/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "${ok}" != "1" ]; then
+            echo "::error::容器启动失败或健康检查不可达"
+            docker logs tuiwen-smoke || true
+            exit 1
+          fi
+          cat /tmp/health.json
+          grep -q '"ok"' /tmp/health.json
+
+      - name: 校验镜像内容
+        run: |
+          set -euo pipefail
+          # 镜像必须带上 VERSION（应用版本号来源）与业务代码
+          docker run --rm --entrypoint sh fastapi-tuiwen:ci -c 'test -f /app/VERSION && test -d /app/src/tuiwen'
+          # 不应把测试文件 / 运行日志打进镜像
+          docker run --rm --entrypoint sh fastapi-tuiwen:ci -c '
+            test ! -f /app/test_main.py || { echo "::error::镜像不应包含 test_main.py"; exit 1; }
+            test ! -d /app/tests || { echo "::error::镜像不应包含 tests/"; exit 1; }
+            test ! -d /app/logs || { echo "::error::镜像不应包含 logs/"; exit 1; }
+          '
+          echo "镜像内容校验通过"
+
+      - name: 记录镜像体积
+        if: always()
+        run: |
+          human=$(docker images fastapi-tuiwen:ci --format '{{.Size}}' || echo unknown)
+          {
+            echo ""
+            echo "| 镜像 | 体积 |"
+            echo "| --- | --- |"
+            echo "| fastapi-tuiwen:ci | ${human} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 收集容器日志
+        if: always()
+        run: docker logs tuiwen-smoke 2>&1 | tail -60 || true
+
+  # ---------------------------------------------------------------------------
+  # 5) 汇总：任一环节失败则整体失败
+  # ---------------------------------------------------------------------------
+  report:
+    name: CI 汇总
+    needs: [static-checks, unit-tests, integration-tests, docker-build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 写入摘要并判定结果
+        env:
+          R_STATIC: ${{ needs.static-checks.result }}
+          R_UNIT: ${{ needs.unit-tests.result }}
+          R_INTEGRATION: ${{ needs.integration-tests.result }}
+          R_DOCKER: ${{ needs.docker-build.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## fastapi_tuiwen CI"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| 事件 | \`${GITHUB_EVENT_NAME}\` |"
+            echo "| 分支 / 引用 | \`${GITHUB_REF_NAME}\` |"
+            echo "| 提交 | \`${GITHUB_SHA:0:7}\` |"
+            echo ""
+            echo "| 阶段 | 结果 |"
+            echo "| --- | --- |"
+            echo "| 静态检查 | ${R_STATIC} |"
+            echo "| 单元测试 | ${R_UNIT} |"
+            echo "| 集成测试 | ${R_INTEGRATION} |"
+            echo "| 镜像构建 | ${R_DOCKER} |"
+            echo ""
+            echo "> 通过条件：全部 success。本流程不推送镜像；发布见 \`Release\` 与 \`Build Images\`。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          failed=""
+          for entry in "静态检查:${R_STATIC}" "单元测试:${R_UNIT}" \
+                       "集成测试:${R_INTEGRATION}" "镜像构建:${R_DOCKER}"; do
+            name="${entry%%:*}"
+            result="${entry##*:}"
+            if [ "${result}" != "success" ]; then
+              failed="${failed} ${name}(${result})"
+            fi
+          done
+          if [ -n "${failed}" ]; then
+            echo "::error title=CI 未通过::${failed}"
+            exit 1
+          fi
+          echo "全部检查通过"

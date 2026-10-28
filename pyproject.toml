@@ -7,7 +7,6 @@ requires-python = ">=3.14.2"
 
 dependencies = [
     "asyncpg>=0.31.0",
-    "depends",
     "fastapi[all]>=0.141.1",
     "loguru>=0.7.3",
     "pillow>=12.3.0",
@@ -19,6 +18,30 @@ dependencies = [
     "redis>=8.1.0",
     "setuptools>=83.0.0",
     "sqlmodel>=0.0.39",
-    "uuid",
     "uvicorn>=0.52.0",
 ]
+
+# =============================================================================
+# 测试配置
+#   默认只收集 tests/ 下的离线用例(无外部依赖, 秒级跑完);
+#   端到端用例在根目录 test_main.py, 需要 PostgreSQL / Redis / MailDev,
+#   由 CI 的 integration 作业或本地 `pytest test_main.py` 显式指定。
+# =============================================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".venv", ".git", "static", "logs", "__pycache__"]
+addopts = "-ra"
+
+# =============================================================================
+# 静态检查(ruff)
+#   只启用「一定是 bug」的规则: 未定义名称/语法错误, 不参与风格争论;
+#   未使用变量与未使用导入对当前演进中的代码噪声太大, 先关掉。
+# =============================================================================
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+exclude = [".venv", "static", "logs", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["F", "E9"]
+ignore = ["F401", "F841"]
