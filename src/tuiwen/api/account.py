@@ -17,6 +17,7 @@
 异常约定:
     Service 层抛 BizError(业务异常), API 层统一转换为 HTTPException。
 """
+import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -69,7 +70,7 @@ async def authorize(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 
 @router_public.get("/oauth/refresh-token/{account_id}/refresh_token/", summary="使用刷新令牌进行更新获取权限令牌",
                     tags=[Tag.oauth], response_model=AccessToken)
-async def refresh_token(account_id: Annotated[str, "账户ID"],
+async def refresh_token(account_id: Annotated[uuid.UUID, "账户ID"],
                         token: Annotated[str, "刷新令牌"] = Depends(oauth2_scheme),
                         svc: AccountService = Depends(get_account_service)):
     """
@@ -94,14 +95,14 @@ async def refresh_token(account_id: Annotated[str, "账户ID"],
 @router_account.get("/oauth/test-oauth/", summary="测试接口(基础权限)")
 async def test_oauth(user: Annotated[Account, "账户信息"] = Depends(get_current_user)) -> Any:
     """连通性自测: 需要有效的 access_token(basic 权限)。"""
-    return {"message": f"hello word, 欢迎您,{user.account_id}"}
+    return {"message": f"hello word, 欢迎您,{user.id}"}
 
 
 @router_account.get("/oauth/test-oauth-admin/", summary="测试接口(需要更高权限)")
 async def test_oauth_admin(
         user: Annotated[Account, "认证的用户信息"] = Security(get_current_user, scopes=['admin'])) -> Any:
     """权限自测: 令牌中必须包含 admin scope, 否则返回 401。"""
-    return {"message": f"hello word, 欢迎您,{user.account_id}"}
+    return {"message": f"hello word, 欢迎您,{user.id}"}
 
 
 # =========================================================
@@ -159,7 +160,7 @@ async def register(account: Annotated[AccountCreate, Body(..., description="用�
                    responses={
                        404: {"description": "no such account"}
                    })
-async def get_account(account_id: Annotated[str, "账户ID"],
+async def get_account(account_id: Annotated[uuid.UUID, "账户ID"],
                       svc: AccountService = Depends(get_account_service)) -> AccountPublic:
     """
     按账户ID查询公开的账号信息(免登录)
@@ -178,7 +179,7 @@ async def get_account(account_id: Annotated[str, "账户ID"],
 
 
 @router_account.put("/accounts/{account_id}/", summary="更新账户基本信息", response_model=AccountInfo, tags=[Tag.account])
-async def update_account(account_id: Annotated[str, "账户ID"],
+async def update_account(account_id: Annotated[uuid.UUID, "账户ID"],
                          account: Annotated[AccountPublicCommon, Body(..., description="更新的账户信息")],
                          svc: AccountService = Depends(get_account_service),
                          user: Annotated[Account, "认证的用户信息"] = Depends(get_current_user)):
@@ -199,7 +200,7 @@ async def update_account(account_id: Annotated[str, "账户ID"],
     """
     try:
         # 越权保护: 只允许修改自己的账户
-        assert user.account_id == account_id, '请不要跨账户操作'
+        assert user.id == account_id, '请不要跨账户操作'
         return await svc.update_account(account_id, account)
     except AssertionError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

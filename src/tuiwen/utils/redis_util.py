@@ -42,9 +42,17 @@ async def init_redis():
 
 
 async def close_redis():
-    """停机时关闭全局 Redis 连接。"""
+    """停机时关闭全局 Redis 连接。
+
+    NOTE: redis-py 5.x 起 close() 已废弃, 异步客户端应使用 aclose();
+          为兼容旧版本(还没 aclose)做一次能力判断, 避免停机时报 AttributeError。
+    """
     if redis_client:
-        await redis_client.close()
+        aclose = getattr(redis_client, "aclose", None)
+        if aclose is not None:
+            await aclose()
+        else:  # pragma: no cover - 仅老版本 redis-py 会走到
+            await redis_client.close()
 
 
 # ==================== 业务接口（异步 await）====================

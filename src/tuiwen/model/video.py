@@ -2,11 +2,11 @@ import uuid
 from enum import IntEnum, StrEnum
 from typing import Optional, Dict
 from datetime import datetime
-from pydantic import field_serializer, BaseModel
+from pydantic import AliasChoices, field_serializer, BaseModel
 
 from sqlalchemy.sql.functions import func
 from sqlmodel import SQLModel, Field, text
-from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Identity, Boolean, UniqueConstraint
+from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Identity, Boolean, UniqueConstraint, UUID
 
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.utils import convert_to_timezone
@@ -16,18 +16,24 @@ TABLE_PREFIX = get_settings().TABLE_PREFIX
 
 # 视频分类（短/中/长）
 class VideoCategory(IntEnum):
+    """视频时长分类, 由转码完成回调按 duration 归档。"""
     SHORT = 1  # <1分钟
     MEDIUM = 2  # 1-30分钟
     LONG = 3  # >30分钟
 
 
 class VideoOrientation(IntEnum):
+    """画面方向。转码后按 ffprobe 校正过的宽高判定, 供前端决定播放器布局。"""
     UNKNOWN = 0
     LANDSCAPE = 1  # 横屏
     PORTRAIT = 2  # 竖屏
 
 
 class VideoTranscodeStatus(IntEnum):
+    """转码状态机: PENDING → PROCESSING → SUCCESS / FAILED。
+
+    回调接口据此做幂等: 已是 SUCCESS 的记录不允许被失败回调覆盖。
+    """
     PENDING = 0  # 待转码
     PROCESSING = 1  # 转码中
     SUCCESS = 2  # 转码成功
@@ -35,27 +41,25 @@ class VideoTranscodeStatus(IntEnum):
 
 
 class Video(SQLModel, table=True):
+    """用户上传视频记录表(一条上传行为一行)。
+
+    唯一约束 (account_id, video_md5): 同一用户重复上传同一文件只会有一条记录;
+    不同用户上传相同文件则各有一条记录, 但 extra.storage_key 指向同一份底层文件(秒传)。
+    """
     __tablename__ = f"{TABLE_PREFIX}video"
     __table_args__ = (UniqueConstraint("account_id", "video_md5", name="uk_tw_video_account_md5"),
                       {"comment": "用户上传视频记录表"}
                       )
 
-    # 内部自增主键，仅数据库内部使用，业务对外不暴露
-    id: int = Field(
-        None,
-        primary_key=True,
-        sa_column_kwargs={"comment": "数据库内部自增主键ID"},
-        sa_type=BigInteger,
-        sa_column_args=[Identity(always=False)]
-    )
-
-    # 业务对外视频ID：雪花64位Bigint，唯一索引
-    video_id: uuid.UUID = Field(
+    # 主键: uuid7(时间有序), 对外暴露, 替代原"自增id + video_id(uuid)"的冗余结构
+    # 对外 JSON 仍沿用 video_id(兼容既有客户端)
+    id: uuid.UUID = Field(
         default_factory=uuid.uuid7,
-        index=True,
-        unique=True,
-        description='业务视频ID（对外暴露）',
-        sa_column_kwargs={'comment': '业务视频ID，对外接口使用，全局唯一', "server_default": text("uuidv7()")}
+        primary_key=True,
+        sa_type=UUID,
+        sa_column_kwargs={"comment": "视频主键ID (uuid7)", "server_default": text("uuidv7()")},
+        serialization_alias="video_id",
+        validation_alias=AliasChoices("id", "video_id"),
     )
 
     poster: Optional[str] = Field(
@@ -113,11 +117,10 @@ class Video(SQLModel, table=True):
         sa_type=SMALLINT
     )
 
-    account_id: Optional[str] = Field(
+    account_id: Optional[uuid.UUID] = Field(
         None,
-        max_length=8,
-        description="作者账号雪花ID",
-        sa_column_kwargs={"comment": "视频作者账号雪花ID，关联账号表"}
+        description="作者账户主键",
+        sa_column_kwargs={"comment": "视频作者账户主键，关联账号表"}
     )
     video_md5: Optional[str] = Field(
         None,
@@ -132,6 +135,16 @@ class Video(SQLModel, table=True):
         sa_type=SMALLINT,
     )
     transcode_msg: Optional[str] = Field(None, max_length=128, sa_column_kwargs={"comment": "转码失败原因"})
+    # 本次转码任务ID: 由转码服务在提交任务时回填, 回调接口用它区分「当前任务」与「过期任务」。
+    # 提交转码任务的逻辑尚未实现(TODO), 因此允许为 NULL; 回调侧对 NULL 视为"首个任务直接接受"。
+    # NOTE: 已有表的库需手动加列: ALTER TABLE tw_video ADD COLUMN transcode_id VARCHAR(64);
+    transcode_id: Optional[str] = Field(
+        None,
+        max_length=64,
+        index=True,
+        description="本次转码任务ID",
+        sa_column_kwargs={"comment": "本次转码任务ID, 转码回调幂等判断依据"},
+    )
 
     extra: Optional[Dict] = Field(
         default_factory=dict,
@@ -174,17 +187,20 @@ class Video(SQLModel, table=True):
 
     @field_serializer('create_at')
     def serialize_datetime(self, value):
+        """出参时把 create_at 统一转换到配置时区(默认 Asia/Shanghai)。"""
         return convert_to_timezone(value)
 
 
 # 视频源类型
 class VideoSourceType(IntEnum):
+    """视频源形态: HLS 为分片流(多码率自适应), MP4 为单文件直链。"""
     HLS = 1
     MP4 = 2
 
 
 # 视频清晰度
 class VideoQuality(StrEnum):
+    """清晰度标识, 需与转码器输出的档位名(360p/720p/1080p)保持可映射。"""
     Q_360 = "360"
     Q_720 = "720"
     Q_1080 = "1080"
@@ -192,6 +208,11 @@ class VideoQuality(StrEnum):
 
 
 class VideoSource(SQLModel, table=True):
+    """视频源表: 一条视频 × 一种类型 × 一档清晰度 = 一行。
+
+    唯一约束 (video_id, type, quality) 保证回调重复写入不会产生重复源;
+    url 存的是相对路径/资源标识, 对外访问地址由 Service 拼前缀生成。
+    """
     __tablename__ = f"{TABLE_PREFIX}video_source"
     __table_args__ = (
         UniqueConstraint(
@@ -212,13 +233,12 @@ class VideoSource(SQLModel, table=True):
         sa_column_args=[Identity(always=False)]
     )
 
-    video_id: str = Field(
+    video_id: uuid.UUID = Field(
         ...,
         nullable=False,
         index=True,
-        description="关联视频ID",
-        sa_column_kwargs={"comment": "关联视频主表的业务video_id"},
-        max_length=36
+        description="关联视频主键ID",
+        sa_column_kwargs={"comment": "关联视频主表的 id"}
     )
     url: str = Field(
         ...,
@@ -273,6 +293,7 @@ class VideoSource(SQLModel, table=True):
 
 
 class VideoFeedQuery(BaseModel):
+    """推荐流的查询参数(cursor 优先于 feed_id: 续读时以游标内携带的 feed_id 为准)。"""
     feed_id: uuid.UUID | None = None
     cursor: str | None = None
     limit: int = Field(
@@ -283,12 +304,14 @@ class VideoFeedQuery(BaseModel):
 
 
 class VideoAuthor(SQLModel):
-    account_id: str
+    """视频作者信息(列表页只透出必要的展示字段)。"""
+    account_id: uuid.UUID
     nickname: str | None = None
     avatar_url: str | None = None
 
 
 class VideoStats(SQLModel):
+    """互动统计。当前为占位默认值, 尚未接入真实计数(点赞/播放/评论/分享)。"""
     view_count: int = 0
     like_count: int = 0
     comment_count: int = 0
@@ -296,12 +319,18 @@ class VideoStats(SQLModel):
 
 
 class VideoInteraction(SQLModel):
+    """当前登录用户对这条视频的互动状态(未登录时全为 False)。"""
     liked: bool = False
     collected: bool = False
     followed: bool = False
 
 
 class VideoFeedItem(SQLModel):
+    """推荐流单条视频。
+
+    play_url 指向 master playlist(play_list.m3u8), 播放器据此自适应选码率;
+    width/height/duration 用于前端在视频加载前就撑好占位区域, 避免布局抖动。
+    """
     video_id: uuid.UUID
     poster_url: str | None = None
     play_url: str
@@ -321,6 +350,10 @@ class VideoFeedItem(SQLModel):
 
 
 class VideoFeedResponse(SQLModel):
+    """推荐流响应: 本页数据 + 续读游标。
+
+    next_cursor 为 None 时表示已到底; has_more 与它同真同假, 前端两者取其一即可。
+    """
     feed_id: uuid.UUID
     items: list[VideoFeedItem]
     next_cursor: str | None = None
@@ -357,10 +390,9 @@ class TranscodeCompleteRequest(BaseModel):
     """
     视频转码完成回调
     """
-    video_id: str = Field(
+    video_id: uuid.UUID = Field(
         ...,
-        max_length=36,
-        description="业务视频ID",
+        description="视频主键ID",
     )
     transcode_id: str = Field(
         ...,
@@ -389,7 +421,12 @@ class TranscodeCompleteRequest(BaseModel):
 
 
 class TranscodeFailedRequest(BaseModel):
-    video_id: str
+    """视频转码失败回调。
+
+    transcode_id 用于区分"当前任务"与"过期任务": 视频可能已被重新转码,
+    旧任务的失败回调不应覆盖新任务的状态。
+    """
+    video_id: uuid.UUID
     transcode_id: str
     # FFmpeg / 转码失败原因
     detail: str

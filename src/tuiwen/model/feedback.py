@@ -1,10 +1,11 @@
 """用户反馈模型: 反馈表(tw_feedback)、创建/管理端入参与响应模型。"""
+import uuid
 from datetime import datetime, timezone
 from enum import IntEnum
 from ipaddress import IPv4Address, IPv6Address
 from typing import Optional, List
 
-from sqlalchemy import BigInteger, JSON, SMALLINT, Identity
+from sqlalchemy import BigInteger, JSON, SMALLINT, Identity, UUID
 from sqlmodel import SQLModel, Field, Column, DateTime, text
 from sqlalchemy.dialects.postgresql import INET
 from pydantic import field_serializer
@@ -117,7 +118,7 @@ class Feedback(SQLModel, table=True):
     app_version: Optional[str] = Field(None, description="应用版本号", sa_column_kwargs={'comment': '应用版本号'})
     allow_reply: Optional[bool] = Field(default=True, description="是否允许后台回复联系用户",
                                         sa_column_kwargs={'comment': '是否允许后台回复联系用户'})
-    account_id: Optional[str] = Field(None, index=True, description="提交用户ID，匿名则为空", sa_column_kwargs={'comment': '用户ID'})
+    account_id: Optional[uuid.UUID] = Field(None, index=True, description="提交用户主键，匿名则为空", sa_column_kwargs={'comment': '用户主键'})
 
     # 后端从Request获取，前端不传
     user_agent: Optional[str] = Field(None, max_length=1024, description="客户端UA", sa_column_kwargs={'comment': '客户端UA'})
@@ -125,7 +126,7 @@ class Feedback(SQLModel, table=True):
     # 后台管理字段
     status: FeedbackStatus = Field(default=FeedbackStatus.PENDING, sa_type=SMALLINT, description="状态:0已关闭 1待处理 2处理中 3已完成", sa_column_kwargs={'comment': '状态:0已关闭 1待处理 2处理中 3已完成'})
     admin_reply: Optional[str] = Field(default=None, max_length=1024, description="管理员回复内容", sa_column_kwargs={'comment': '管理员回复内容'})
-    handle_user_id: Optional[str] = Field(default=None, max_length=32, description="处理管理员ID", sa_column_kwargs={'comment': '处理管理员ID'})
+    handle_user_id: Optional[uuid.UUID] = Field(default=None, description="处理管理员主键", sa_column_kwargs={'comment': '处理管理员主键'})
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment='创建日期时间', nullable=False, server_default=text("NOW()"))
@@ -145,7 +146,7 @@ class FeedbackResponse(SQLModel):
     """反馈详情响应模型(from_attributes 支持 ORM 对象直接转换)。
     """
     id: int
-    account_id: Optional[str]
+    account_id: Optional[uuid.UUID]
     title: Optional[str]
     content: str
     feedback_type: Optional[FeedbackType]
@@ -157,8 +158,7 @@ class FeedbackResponse(SQLModel):
     allow_reply: bool
     status: FeedbackStatus
     admin_reply: Optional[str]
-    # NOTE: 处理人ID与表模型 handle_user_id 一致都是字符串账户ID, 不要写成 int
-    handle_user_id: Optional[str]
+    handle_user_id: Optional[uuid.UUID]
     user_agent: Optional[str]
     create_at: datetime
     update_at: datetime

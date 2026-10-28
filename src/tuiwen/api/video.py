@@ -1,15 +1,18 @@
-"""
-文件上传 API 路由层
+"""视频 API 路由层。
 
 职责:
-    1. 校验上传文件的类型(后缀白名单来自配置 ALLOWED_IMAGE_FORMATS)
-    2. 交由 UploadService 落盘 + 记录引用(相同 MD5 直接复用, 避免重复存储)
+    1. 视频上传: 校验后缀白名单/大小上限后交给 VideoService 流式落盘
+    2. 推荐流: 游标分页返回待播放的 HLS 视频列表
+    3. 转码回调: 接收转码服务的完成/失败通知(内部接口)
 
-接口清单:
-    POST /api/v2/v2/upload/image/  图片上传
+接口清单(实际对外路径带 /api/v2 前缀):
+    POST /api/v2/videos/upload/                       视频上传
+    GET  /api/v2/videos/feed/                         推荐流
+    POST /api/v2/videos/internal/transcode-complete/  转码完成回调
+    POST /api/v2/videos/internal/transcode-failed/    转码失败回调
 
 分层位置:
-    API → UploadService → UploadDAO → PostgreSQL (+ 本地存储)
+    API → VideoService → VideoDAO / VideoSourceDAO → PostgreSQL (+ 本地存储)
 """
 import uuid
 from typing import Annotated
@@ -19,6 +22,7 @@ from fastapi.params import Form, File, Query
 
 from src.tuiwen.dependencies import get_video_service
 from src.tuiwen.service.video import VideoService
+from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.model.video import Video, VideoFeedQuery, VideoFeedResponse, TranscodeCompleteRequest, \
     TranscodeFailedRequest
 from src.tuiwen.core import Settings
@@ -26,7 +30,7 @@ from src.tuiwen.core import Tag
 from src.tuiwen.utils import allowed_file
 from src.tuiwen.core import get_settings
 
-# NOTE: 沿用历史前缀, 实际对外路径为 /api/v2/upload/image/
+# NOTE: 路由前缀为 /videos, 拼上 /api/v2 后实际路径是 /api/v2/videos/*
 router_upload = APIRouter(prefix="/videos", tags=[Tag.upload])
 
 
@@ -42,25 +46,28 @@ async def upload_video(
         svc: VideoService = Depends(get_video_service)):
     """
     上传视频文件
+
+    处理顺序: 文件名/后缀白名单校验 → 交给 Service 流式写盘(边读边算 MD5)
+    → Service 内做去重判断、建 Video 记录并投递转码任务。
+
+    注意最大长度等参数由 Form/File 声明约束, FastAPI 会先做一轮校验再进函数体。
+
     Args:
         file: multipart/form-data 视频文件
-        request: 请求对象，携带登录账号信息
+        request: 请求对象，携带登录账号信息(公开路由, 未登录时上传者记为空)
+        title/description/category: 视频元信息, 均可选
+        video_md5: 前端预计算的 MD5, 仅用于「秒传」预检查, 不作为入库依据
         settings: 全局配置对象，文件大小、后缀白名单
         svc: 视频业务服务
+
     Returns:
         Video: 视频主表记录
-        :param file:
-        :param request:
-        :param svc:
-        :param video_md5:
-        :param settings:
-        :param description:
-        :param category:
-        :param title:
+
+    Raises:
+        HTTPException: 400 —— 文件名为空、后缀不在白名单、或 Service 抛出的业务异常
     """
 
     # 基础参数校验
-    # ✅ 修复你原代码int第二个参数错误问题
     MAX_SIZE = settings.VIDEO_MAX_BYTES or 100 * 1024 * 1024  # 默认100MB
 
     if not file.filename:
@@ -75,11 +82,22 @@ async def upload_video(
         raise HTTPException(status_code=400, detail=f"不支持的文件格式，允许：{allow_suffix}")
 
     try:
-        return await svc.upload(file, uploader_account_id=getattr(request.state, "account_id", "1"), title=title,
+        # 公开路由: 未登录时 request.state 上没有 account_id
+        raw_account_id = getattr(request.state, "account_id", None)
+        uploader_account_id = (
+            raw_account_id if isinstance(raw_account_id, uuid.UUID) else uuid.UUID(raw_account_id)
+        ) if raw_account_id else None
+        return await svc.upload(file, uploader_account_id=uploader_account_id, title=title,
                                 description=description, video_md5=video_md5,
                                 category=category, max_size=MAX_SIZE)
+    except BizError as e:
+        # 业务异常: 按 Service 约定的业务码透传(如 413 超限 / 400 空文件)
+        raise HTTPException(status_code=e.code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # 非业务异常(存储/数据库等): 保留 500 语义, 不再一律压成 400, 便于排查
+        raise HTTPException(status_code=500, detail=f"视频上传失败: {e}")
 
 
 @router_upload.get('/feed/', summary="返回推荐流", response_model=VideoFeedResponse,
@@ -87,22 +105,56 @@ async def upload_video(
 async def feed(request: Request,
                query: Annotated[VideoFeedQuery, Query()],
                svc: VideoService = Depends(get_video_service)):
-    """返回推荐流
+    """返回推荐流(游标分页)。
+
+    Args:
+        request: 请求对象(当前未使用, 预留后续按账号做个性化)
+        query: 查询参数, 含 feed_id / cursor / limit(1~20)
+        svc: 视频业务服务
+
+    Returns:
+        VideoFeedResponse: 本页视频列表 + 下一页游标 + has_more
     """
     return await svc.feed(feed_id=query.feed_id, limit=query.limit, cursor=query.cursor)
 
 
-@router_upload.post("/internal/transcode-complete/",response_model=bool,)
-def transcode_complete(
+@router_upload.post("/internal/transcode-complete/", response_model=bool,)
+async def transcode_complete(
     data: TranscodeCompleteRequest,
     svc: VideoService = Depends(get_video_service),
 ):
-    return svc.transcode_complete(data)
+    """转码完成回调(内部接口, 由转码服务调用)。
+
+    幂等设计: 已成功直接返回 True; transcode_id 与记录不一致视为旧任务, 返回 False。
+
+    NOTE: 内部接口当前挂在 router_public(免登录), 上线前建议加内部调用鉴权
+          (共享密钥头或仅允许内网访问), 否则任何人都能伪造转码结果。
+
+    Args:
+        data: 转码结果(视频 ID、任务 ID、时长、宽高、各清晰度产物)
+        svc: 视频业务服务
+
+    Returns:
+        bool: True 已接受; False 旧任务回调被忽略
+    """
+    return await svc.transcode_complete(data)
 
 
-@router_upload.post("/internal/transcode-failed/",response_model=bool,)
-def transcode_failed(
+@router_upload.post("/internal/transcode-failed/", response_model=bool,)
+async def transcode_failed(
     data: TranscodeFailedRequest,
     service: VideoService = Depends(get_video_service),
 ) -> bool:
-    return service.transcode_failed(data)
+    """转码失败回调(内部接口, 由转码服务调用)。
+
+    幂等设计: 已成功的不允许被失败回调覆盖(返回 True 表示"已确认, 无需重试");
+    transcode_id 不匹配视为旧任务, 返回 False。
+
+    Args:
+        data: 失败详情(视频 ID、任务 ID、失败原因)
+        service: 视频业务服务
+
+    Returns:
+        bool: True 已处理; False 旧任务回调被忽略
+    """
+    return await service.transcode_failed(data)

@@ -8,6 +8,7 @@
 分层位置:
     API → NoticeService → NoticeDAO → PostgreSQL
 """
+import uuid
 from dataclasses import dataclass
 from sqlmodel import desc
 from src.tuiwen.dal.notice import NoticeDAO
@@ -36,7 +37,7 @@ class NoticeService:
         """
         return await self.dao.page(type=NoticeType.SYSTEM, limit=limit, offset=offset)
 
-    async def get_user_notices(self, account_id: str, limit: int = 10, offset: int = 0):
+    async def get_user_notices(self, account_id: uuid.UUID, limit: int = 10, offset: int = 0):
         """
         分页查询指定用户收到的通知(按创建时间倒序)
 

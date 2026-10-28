@@ -10,6 +10,7 @@
     @Desc: 点赞业务服务层 —— 统计 / 取消 / 查询点赞状态
 =================================================
 """
+import uuid
 from dataclasses import dataclass
 
 from src.tuiwen.dal.like import LikeDAO
@@ -45,7 +46,7 @@ class LikeService:
         await self.dao.write_db.refresh(instance)
         return instance
 
-    async def like_count(self, obj_id: str):
+    async def like_count(self, obj_id: uuid.UUID):
         """
         统计某帖子的点赞总数
 
@@ -58,7 +59,7 @@ class LikeService:
         # 仅统计帖子类型(obj_type=POST)的点赞
         return await self.dao.count(obj_type=Like.ObjTypeEnum.POST, obj_id=obj_id)
 
-    async def delete_like(self, obj_id: str, account_id: str):
+    async def delete_like(self, obj_id: uuid.UUID, account_id: uuid.UUID):
         """
         取消当前用户对某对象的点赞
 
@@ -79,7 +80,7 @@ class LikeService:
         await self.dao.write_db.commit()
         return True
 
-    async def get_like_count(self, obj_id: str, account_id: str):
+    async def get_like_count(self, obj_id: uuid.UUID, account_id: uuid.UUID):
         """
         查询点赞总数与当前用户是否已点赞
 

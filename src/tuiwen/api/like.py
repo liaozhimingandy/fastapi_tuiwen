@@ -10,6 +10,7 @@
     @Desc: 点赞 API 路由层 —— 点赞 / 取消赞 / 点赞数查询
 =================================================
 """
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, status, Request, Depends
@@ -43,7 +44,7 @@ async def create_like(payload: Annotated[Like, "赞的输入对象"],
 
 
 @router_like.delete('/{obj_id}/', summary='取消赞', status_code=status.HTTP_204_NO_CONTENT)
-async def delete_like(obj_id: Annotated[str, "对象ID"], request: Annotated[Request, "请求对象"],
+async def delete_like(obj_id: Annotated[uuid.UUID, "对象ID"], request: Annotated[Request, "请求对象"],
                       svc: LikeService = Depends(get_like_service)):
     """
     取消当前登录用户对某对象的点赞
@@ -63,7 +64,7 @@ async def delete_like(obj_id: Annotated[str, "对象ID"], request: Annotated[Req
 
 
 @router_like.get('/{obj_id}/count/', summary="获取指定帖子的点赞数", response_model=LikeCountModel)
-async def get_like_count(obj_id: Annotated[str, "对象id"], request: Annotated[Request, "请求对象"],
+async def get_like_count(obj_id: Annotated[uuid.UUID, "对象id"], request: Annotated[Request, "请求对象"],
                          svc: LikeService = Depends(get_like_service)) -> LikeCountModel:
     """
     查询某对象的点赞总数, 以及当前登录用户是否已点赞

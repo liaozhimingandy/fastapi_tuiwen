@@ -3,10 +3,11 @@
 以内容 MD5 作为唯一键实现秒传(同文件重复上传直接复用已有记录),
 差异化元数据(宽高/时长/封面)统一放 extra JSONB。
 """
+import uuid
 from typing import Optional
 from datetime import datetime
 from pydantic import field_serializer
-from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Identity
+from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Identity, UUID
 from sqlmodel import SQLModel, Field, text
 
 from src.tuiwen.core import get_settings
@@ -36,7 +37,7 @@ class File(SQLModel, table=True):
     file_md5: str = Field(..., max_length=32, min_length=32, index=True, description='文件md值',
                            sa_column_kwargs={'comment': '文件md值'}, unique=True)
     file_size: int = Field(..., description="文件字节大小")
-    account_id: str = Field(..., max_length=64, index=True, description="上传账号ID")
+    account_id: uuid.UUID = Field(..., index=True, description="上传账号ID(账户主键)")
     # 图片宽高、视频时长、封面等差异化字段全部放jsonb
     extra: Optional[dict] = Field(default={}, description='json内容', max_length=1024,
                                  sa_column_kwargs={'comment': '扩展元数据：宽高、时长、封面key等'},

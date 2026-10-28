@@ -32,16 +32,13 @@ DATABASE_URL = str(settings.SQLALCHEMY_DATABASE_URI)
 # 模块级单例引擎: 整个应用共享这一个连接池, 由 FastAPI lifespan 在停机时 dispose
 engine: AsyncEngine = create_async_engine(
     DATABASE_URL,
-    echo=settings.DEBUG,
+    echo=settings.DEBUG,         # 仅调试模式打印 SQL, 生产保持安静
     pool_pre_ping=True,          # 自动检测失效连接，自动重连（生产必备）
     pool_recycle=3600,           # 连接1小时后强制回收，避免超时失效
     pool_size=5,                 # 常驻连接数
     max_overflow=10,             # 峰值最大额外连接数
     connect_args={"timeout": 60} # 连接超时时间
-    )  # Annotated[bool, Doc("是否显示数据库层面日志")]
-
-# NOTE: echo=not settings.DEBUG 的语义与直觉相反 —— 生产环境(DEBUG=False)会打印全部 SQL 日志,
-#       本地调试反而安静; 如需"调试时才打 SQL", 应改为 echo=settings.DEBUG
+    )
 # 创建异步session
 # NOTE: expire_on_commit=False 使 commit 后 ORM 实例属性仍然可用(项目 DAO 规范依赖此行为);
 #       autoflush=False 避免查询前隐式 flush 带来的意外写库
@@ -59,10 +56,14 @@ def _import_all_models() -> None:
     """集中导入所有模型，确保元数据注册到 metadata
     单独抽成函数，避免循环导入，同时保证建表前所有模型已加载
 
-    NOTE: 函数体当前为空 —— src/tuiwen/model/ 下的模型一个都没被导入,
-          SQLModel.metadata 里不会有任何表, 因此 init_db()/drop_and_create_tables()
-          实际什么表都不会创建; 需要补上对 src.tuiwen.model.* 的导入后才有效
+    NOTE: init_db() 依赖本函数把 src/tuiwen/model/ 下的模型注册进 SQLModel.metadata。
+          新增表模型后记得在这里补一行导入, 否则 create_all 不会建那张表。
+          create_all 只创建「不存在的表」, 不会给已有表加列 —— 给旧表加字段仍需手动 ALTER。
     """
+    from src.tuiwen.model import (  # noqa: F401 显式导入以触发模型注册
+        account, comment, feedback, file, follow, like, notice, oauth, post, snap, video,
+    )
+    from src.tuiwen.log import models as log_models  # noqa: F401
 
 
 async def init_db():
@@ -103,10 +104,17 @@ async def add_instance(session: Annotated[AsyncSession, "会话对象"], instanc
 _asyncpg_pool: asyncpg.Pool | None = None
 
 async def get_async_pool()->asyncpg.Pool:
-    """获取 asyncpg 原生连接池（单例，用于批量操作等特殊场景）"""
+    """获取 asyncpg 原生连接池（单例，用于批量操作等特殊场景）。
+
+    Returns:
+        asyncpg.Pool: 已初始化的连接池; 首次调用时创建, 之后直接复用
+
+    NOTE: create_pool() 返回的 Pool 必须 await 一次完成初始化, 否则池一直处于
+          "未初始化"状态, 后续 pool.acquire() 会抛 InterfaceError('pool is not initialized')。
+    """
     global _asyncpg_pool
     if _asyncpg_pool is None:
-        _asyncpg_pool = asyncpg.create_pool(
+        _asyncpg_pool = await asyncpg.create_pool(
             user=settings.POSTGRES_USER,
             password=settings.POSTGRES_PASSWORD,
             database=settings.POSTGRES_DB,

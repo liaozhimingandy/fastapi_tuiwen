@@ -3,11 +3,11 @@
 """
 =================================================
     @Project: fastapi_tuiwen
-    @File： account.py
+    @File： models.py
     @Author：liaozhimingandy
     @Email: liaozhimingandy@gmail.com
     @Date：2025/2/22 10:05
-    @Desc: 通用响应模型(非表模型)
+    @Desc: 通用响应模型(非表模型): 统一响应包装与分页结构, 供各 API 复用
 =================================================
 """
 from datetime import datetime

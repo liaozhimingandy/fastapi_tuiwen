@@ -85,60 +85,76 @@ class HLSProfile:
         竖屏:
             1080x1920 -> 720x1280
     """
-    name: str
-    short_side: int
-    bitrate: str
-    audio_bitrate: str = "128k"
+    name: str          # 清晰度名, 同时作为输出子目录名(360p / 480p / 720p / 1080p)
+    short_side: int    # 目标短边像素; 只做缩小, 不做放大(见 select_profiles)
+    bitrate: str       # 视频目标码率, 形如 "2800k"
+    audio_bitrate: str = "128k"  # 音频目标码率; 源视频无音轨时不会被使用
 
 
 @dataclass
 class VideoInfo:
-    width: int
-    height: int
-    duration: float
-    fps: float
-    audio: bool
-    video_codec: Optional[str] = None
-    audio_codec: Optional[str] = None
-    rotation: int = 0
+    """ffprobe 探测结果。
+
+    宽高已在 probe() 中按旋转元数据做过交换, 因此这里的 width/height
+    就是「播放器实际看到的画面方向」, 后续 calc_size 直接按此比例缩放。
+    """
+    width: int                          # 画面宽(已按旋转角校正)
+    height: int                         # 画面高(已按旋转角校正)
+    duration: float                     # 时长(秒), 取容器时长, 缺失时退回视频流时长
+    fps: float                          # 平均帧率, 解析失败按 25.0 兜底(影响 GOP 计算)
+    audio: bool                         # 是否存在音频流, 决定是否加 -c:a 参数
+    video_codec: Optional[str] = None   # 视频编码名, 如 h264 / hevc
+    audio_codec: Optional[str] = None   # 音频编码名, 无音轨为 None
+    rotation: int = 0                   # 旋转角(0/90/180/270), 已归一化为 abs(x) % 360
 
     @property
     def short_side(self) -> int:
+        """短边尺寸: 清晰度选择的依据(横屏看 height, 竖屏看 width)。"""
         return min(self.width, self.height)
 
     @property
     def long_side(self) -> int:
+        """长边尺寸。"""
         return max(self.width, self.height)
 
     @property
     def is_portrait(self) -> bool:
+        """是否竖屏(高 > 宽)。"""
         return self.height > self.width
 
     @property
     def is_landscape(self) -> bool:
+        """是否横屏(宽 > 高)。"""
         return self.width > self.height
 
     @property
     def is_square(self) -> bool:
+        """是否正方形(宽 == 高), 缩放时宽高取同一目标值。"""
         return self.width == self.height
 
 
 @dataclass
 class HLSVariant:
-    name: str
-    width: int
-    height: int
-    bitrate: str
-    audio_bitrate: str
-    playlist: str
+    """单条清晰度的转码产物描述, 用于拼装 master playlist。
+
+    playlist 是相对 master 的路径(如 "720p/index.m3u8"), 因为 ffmpeg 以
+    变体目录为 cwd 生成分片, 相对路径才能被播放器正确解析。
+    """
+    name: str          # 清晰度名, 对应输出子目录
+    width: int         # 实际输出宽(偶数化之后)
+    height: int        # 实际输出高(偶数化之后)
+    bitrate: str       # 视频码率, 形如 "2800k"
+    audio_bitrate: str # 音频码率; 源无音轨时为 "0"
+    playlist: str      # 变体 playlist 相对路径, 如 "720p/index.m3u8"
 
 
 @dataclass
 class TranscodeResult:
-    playlist: str
-    cover: str
-    info: VideoInfo
-    variants: List[HLSVariant]
+    """一次完整转码的结果, 供调用方落库/回调使用。"""
+    playlist: str             # master playlist 的绝对路径(play_list.m3u8)
+    cover: str                # 封面绝对路径; generate_cover=False 时为空字符串
+    info: VideoInfo           # 源视频探测信息(宽高已校正)
+    variants: List[HLSVariant]  # 实际产出的各清晰度, 可能少于 DEFAULT_PROFILES
 
 
 class VideoTranscoder:
@@ -204,6 +220,17 @@ class VideoTranscoder:
         preset: str = "fast",
         segment_time: int = 4,
     ):
+        """
+        Args:
+            ffmpeg: ffmpeg 可执行文件(裸命令名走 PATH, 也可传绝对路径)
+            ffprobe: ffprobe 可执行文件, 同上
+            threads: 编码线程数; None 表示交给 ffmpeg 自选
+            preset: libx264 预设(ultrafast..veryslow), 越慢压缩率越高
+            segment_time: HLS 分片时长(秒), 同时决定关键帧间隔
+
+        Raises:
+            FileNotFoundError: ffmpeg / ffprobe 不可用
+        """
         self.ffmpeg = ffmpeg
         self.ffprobe = ffprobe
         self.threads = threads
@@ -559,6 +586,22 @@ class VideoTranscoder:
         profile: HLSProfile,
         info: VideoInfo,
     ) -> HLSVariant:
+        """把源视频转码成单个清晰度的 fMP4 HLS 变体。
+
+        输出写入 output/<profile.name>/, 内含 index.m3u8 + init.mp4 + segment_*.m4s。
+
+        Args:
+            input_file: 源视频绝对路径
+            output: 转码临时根目录(各清晰度在此下建子目录)
+            profile: 该档清晰度配置
+            info: 源视频信息, 用于算目标尺寸与 GOP 帧数
+
+        Returns:
+            HLSVariant: 供 master playlist 使用的变体描述
+
+        Raises:
+            FFmpegError: ffmpeg 返回非 0, 或 playlist / init.mp4 未生成
+        """
         folder = output / profile.name
         folder.mkdir(parents=True, exist_ok=True)
 
@@ -700,6 +743,20 @@ class VideoTranscoder:
         variants: Sequence[HLSVariant],
         has_audio: bool,
     ) -> Path:
+        """生成多码率入口 play_list.m3u8。
+
+        码率声明取 maxrate(目标码率 x1.1) + 音频码率: BANDWIDTH 是播放器选流的
+        硬门槛, 取实际峰值而非平均值, 否则弱网下会选到跑不动的档位。
+        变体按清晰度从高到低写入(播放器默认取第一条), 所以这里 reversed 输出。
+
+        Args:
+            output: master playlist 输出目录
+            variants: 各清晰度产物
+            has_audio: 源是否含音轨, 决定是否把音频码率计入 BANDWIDTH
+
+        Returns:
+            Path: 生成好的 play_list.m3u8 路径
+        """
         playlist = output / "play_list.m3u8"
         with playlist.open("w", encoding="utf-8", newline="\n") as f:
             f.write("#EXTM3U\n")
@@ -733,6 +790,19 @@ class VideoTranscoder:
         output: Path,
         duration: float,
     ) -> None:
+        """截取一帧作为封面(cover.jpg)。
+
+        取帧位置: 优先第 1 秒, 极短视频(duration<2s)取中点, 避免截到开头的黑帧。
+        注意: 这里用 -ss 放在 -i 之前(输入侧 seek), 速度快但精度是最近关键帧。
+
+        Args:
+            input_file: 源视频
+            output: 封面输出路径
+            duration: 源时长, <=0 表示未知, 此时直接从开头截取
+
+        Raises:
+            FFmpegError: 未生成封面文件
+        """
         if duration <= 0:
             seek = 0
         else:
@@ -769,6 +839,19 @@ class VideoTranscoder:
         output: Path,
         variants: Sequence[HLSVariant],
     ) -> None:
+        """发布前的完整性校验(在临时目录上做, 通过后才 publish)。
+
+        逐项检查: master 是否为合法 m3u8 → 每档 index.m3u8 / init.mp4 是否存在且非空
+        → playlist 里引用的每个 .m4s 分片是否真实落盘且非空 → 至少有一个媒体分片。
+        这一步能在发布前拦住「ffmpeg 退出码 0 但产物残缺」的情况。
+
+        Args:
+            output: 临时目录(含 master 与各变体子目录)
+            variants: 待校验的变体列表
+
+        Raises:
+            VideoTranscoderError: 任一检查项不通过
+        """
         master = output / "play_list.m3u8"
         if not master.exists():
             raise VideoTranscoderError(f"Master playlist 不存在: {master}")
@@ -864,6 +947,18 @@ class VideoTranscoder:
         cmd: Sequence[str],
         cwd: Optional[str | Path] = None,
     ) -> None:
+        """执行一条 ffmpeg 命令, 非 0 退出码统一转成 FFmpegError。
+
+        stdout/stderr 全部捕获(不打印到控制台), 失败时把 stderr 原样带进异常消息,
+        便于定位转码失败原因。cwd 传变体目录, 以支持 HLS 的相对路径输出。
+
+        Args:
+            cmd: 完整命令参数序列
+            cwd: 子进程工作目录; None 表示沿用当前进程目录
+
+        Raises:
+            FFmpegError: ffmpeg 返回非 0(消息内含 returncode / cwd / command / stderr)
+        """
         logger.debug("执行 FFmpeg: %s", " ".join(map(str, cmd)))
         result = subprocess.run(
             list(map(str, cmd)),
@@ -892,6 +987,21 @@ class VideoTranscoder:
         info: VideoInfo,
         target_short_side: int,
     ) -> tuple[int, int]:
+        """按「锁定短边」的方式等比计算目标宽高。
+
+        锁定短边而不是固定长边, 是为了让竖屏视频也能按同一条清晰度阶梯缩小;
+        宽高各自再偶数化, 因为 H.264 + yuv420p 要求尺寸必须是偶数。
+
+        Args:
+            info: 源视频信息
+            target_short_side: 目标短边像素, 必须 > 0
+
+        Returns:
+            tuple[int, int]: (宽, 高), 均为偶数
+
+        Raises:
+            ValueError: target_short_side <= 0
+        """
         if target_short_side <= 0:
             raise ValueError("target_short_side must be > 0")
 
@@ -917,10 +1027,12 @@ class VideoTranscoder:
     # ============================================================
     @staticmethod
     def _even(value: int) -> int:
+        """向下取到最近的偶数(最小 2), 满足 H.264 / yuv420p 对尺寸的约束。"""
         return max(2, value - (value % 2))
 
     @staticmethod
     def _parse_float(value) -> float:
+        """宽容地把 ffprobe 字段转 float: None / "N/A" / 非法值统一返回 0.0。"""
         try:
             return float(value or 0)
         except (TypeError, ValueError):
@@ -928,6 +1040,11 @@ class VideoTranscoder:
 
     @staticmethod
     def _parse_fps(value) -> float:
+        """解析帧率。
+
+        ffprobe 的帧率是分数字符串("30000/1001"), 也可能缺失或为 "0/0";
+        解析失败一律按 25.0 兜底 —— 该值只用于估算 GOP 帧数, 偏差不影响正确性。
+        """
         if not value or value in ("0/0", "N/A"):
             return 25.0
         try:
@@ -967,6 +1084,7 @@ class VideoTranscoder:
 
     @staticmethod
     def _bitrate_to_bps(bitrate: str) -> int:
+        """把 "800k" / "2.5m" / "128000" 这类码率字符串换算成 bit/s。"""
         value = bitrate.strip().lower()
         if value.endswith("k"):
             return int(float(value[:-1]) * 1000)
@@ -976,18 +1094,26 @@ class VideoTranscoder:
 
     @classmethod
     def _calculate_maxrate(cls, bitrate: str) -> str:
+        """峰值码率 = 目标码率 x1.1: 允许瞬时波动, 又避免 VBR 冲高影响播放。"""
         bps = cls._bitrate_to_bps(bitrate)
         maxrate = int(math.ceil(bps * 1.1))
         return f"{maxrate // 1000}k"
 
     @classmethod
     def _calculate_bufsize(cls, bitrate: str) -> str:
+        """码率缓冲区 = 目标码率 x2: 常规经验值, 太小画质抖动, 太大失去限流作用。"""
         bps = cls._bitrate_to_bps(bitrate)
         bufsize = int(math.ceil(bps * 2))
         return f"{bufsize // 1000}k"
 
     @staticmethod
     def _validate_input(input_path: Path) -> None:
+        """校验输入文件存在、是普通文件、且非空。
+
+        Raises:
+            FileNotFoundError: 路径不存在
+            ValueError: 不是文件 / 文件大小为 0
+        """
         if not input_path.exists():
             raise FileNotFoundError(f"视频文件不存在: {input_path}")
         if not input_path.is_file():
@@ -997,6 +1123,14 @@ class VideoTranscoder:
 
     @staticmethod
     def _validate_executable(executable: str, name: str) -> None:
+        """校验 ffmpeg / ffprobe 可执行文件可用, 让环境问题在构造阶段就暴露。
+
+        两种来源: 显式路径(含目录分隔符)直接检查文件是否存在;
+        裸命令名(如 "ffmpeg")则到 PATH 中查找。
+
+        Raises:
+            FileNotFoundError: 路径不存在, 或 PATH 中找不到该命令
+        """
         path = Path(executable)
         # 用户传绝对/相对路径
         if path.is_absolute() or path.parent != Path("."):
@@ -1015,6 +1149,11 @@ class VideoTranscoder:
 # 测试
 # ================================================================
 def main(*args, **kwargs) -> None:
+    """手工调试入口: 对固定的样例视频跑一次完整转码并打印产物路径。
+
+    输入/输出路径写死在本机目录, 仅用于本地验证转码链路,
+    不属于请求调用链; 生产侧应改为由转码服务(任务队列)调用 VideoTranscoder.convert()。
+    """
     logging.basicConfig(
         level=logging.INFO,
         format=(

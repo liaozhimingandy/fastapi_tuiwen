@@ -12,6 +12,8 @@
 """
 from sqlmodel import delete, select, exists
 
+import uuid
+
 from src.tuiwen.dal.base import BaseDAO
 from src.tuiwen.model.like import Like
 
@@ -20,7 +22,7 @@ class LikeDAO(BaseDAO[Like]):
     # 绑定 DAO 对应的 ORM 模型
     model = Like
 
-    async def delete_like(self, obj_id: str, account_id: str, obj_type: int = Like.ObjTypeEnum.POST) -> bool:
+    async def delete_like(self, obj_id: uuid.UUID, account_id: uuid.UUID, obj_type: int = Like.ObjTypeEnum.POST) -> bool:
         """
         取消当前用户对某帖子的点赞(硬删除)
 
@@ -40,7 +42,7 @@ class LikeDAO(BaseDAO[Like]):
         result = await self.exec_write(statement, "delete_like")
         return bool(result.rowcount)
 
-    async def get_like_count(self, obj_id: str, account_id: str, obj_type: int = Like.ObjTypeEnum.POST) -> dict:
+    async def get_like_count(self, obj_id: uuid.UUID, account_id: uuid.UUID, obj_type: int = Like.ObjTypeEnum.POST) -> dict:
         """
         统计某帖子的点赞总数, 并判断当前用户是否已点赞
 

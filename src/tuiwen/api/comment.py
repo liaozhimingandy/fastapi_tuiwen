@@ -43,9 +43,9 @@ async def create_comment(comment: Annotated[Comment, Body(..., description="评�
         Comment: 落库后的评论实体(含数据库生成的 id / comment_id)
     """
     # 排除服务端生成的字段, 防止客户端伪造主键与创建时间
-    comment_data = comment.model_dump(exclude={"id", "create_at", "comment_id"})
+    comment_data = comment.model_dump(exclude={"id", "create_at"})
     # comment_id 使用 uuid7, 时间有序, 便于按主键做游标分页
-    instance = Comment(**comment_data, comment_id=str(uuid.uuid7()))
+    instance = Comment(**comment_data, id=uuid.uuid7())
 
     result = await svc.create(instance)
     # 事务出口: DAO 只 flush, 由 API 层统一提交
@@ -77,7 +77,7 @@ async def delete_comment(comment_id: Annotated[uuid.UUID, '评论ID'], request: 
 @router_comment.get('/{obj_type}/{obj_id}/', summary="查询指定帖子的评论", response_model=PageResponse[Comment],
                     response_model_include={'items', 'total'})
 async def get_comments(
-        obj_id: Annotated[str, "评论ID"] = Path(...),
+        obj_id: Annotated[uuid.UUID, "评论对象ID"] = Path(...),
         obj_type: Annotated[int, "枚举类型"] = Path(..., description="目标对象类型枚举值", ge=1, le=1),
         limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
         cursor: Annotated[uuid.UUID | None, "最早的那个id"] = Query(None),

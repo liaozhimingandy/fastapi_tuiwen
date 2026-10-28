@@ -15,8 +15,8 @@ from datetime import datetime, timezone, date, UTC
 from enum import IntEnum
 from typing import Optional
 
-from pydantic import EmailStr, field_validator, field_serializer
-from sqlalchemy import DateTime, SMALLINT, Column, JSON, BigInteger, Identity, func
+from pydantic import AliasChoices, EmailStr, field_validator, field_serializer
+from sqlalchemy import DateTime, SMALLINT, Column, JSON, BigInteger, Identity, func, UUID
 from sqlmodel import SQLModel, Field, text
 
 from src.tuiwen.core import get_settings
@@ -37,10 +37,10 @@ def salt_default():
 
 
 def userid_default():
-    """用户ID默认生成: 前缀 + 7 位随机串, 形如 twid_x1a2b3c。
+    """(已废弃) 历史用户ID生成器: 前缀 + 7 位随机串, 形如 twid_x1a2b3c。
 
-    NOTE: 前缀取自环境变量 PREFIX_ID, 与 core.config 的 ACCOUNT_ID_PREFIX("twid_")
-          是两处来源, 建议统一为 get_settings().ACCOUNT_ID_PREFIX
+    账户表主键已统一改为 uuid7(见 Account.id), 不再需要独立的 business id 列,
+    本函数仅被历史 DTO 默认工厂引用, 新代码请勿使用。
     """
     return f'{os.getenv("PREFIX_ID", "twid_")}{uuid_generator(7)}'
 
@@ -96,7 +96,8 @@ class AccountPublic(AccountPublicCommon):
     NOTE: 目前 api/account.py 的响应模型已统一改用 AccountInfo(多了 mail/mobile/状态开关),
           本模型暂无引用, 保留或删除待定夺
     """
-    account_id: str = Field(default_factory=userid_default, max_length=32, description="用户ID")
+    id: uuid.UUID = Field(..., description="用户ID (uuid7)", serialization_alias="account_id",
+                          validation_alias=AliasChoices("id", "account_id"))
 
 
 class AccountInfo(AccountPublicCommon):
@@ -105,7 +106,8 @@ class AccountInfo(AccountPublicCommon):
     继承 SQLModel 自带 from_attributes, 可直接从 ORM 实例(Account)转换;
     比老版 AccountPublic 多暴露 mail/mobile 与三个状态开关, 仍不包含 password/salt。
     """
-    account_id: str = Field(default_factory=userid_default, max_length=32, description="用户ID")
+    id: uuid.UUID = Field(..., description="用户ID (uuid7)", serialization_alias="account_id",
+                          validation_alias=AliasChoices("id", "account_id"))
     mail: Optional[EmailStr] = Field(None, max_length=64, description="电子邮箱")
     mobile: Optional[str] = Field(None, max_length=32, description="电话号码")
     is_active: bool = Field(default=True, description="账户状态")
@@ -129,10 +131,15 @@ class Account(SQLModel, table=True):
     __tablename__ = f"{TABLE_PREFIX}account"  # 表名
     __table_args__ = {'comment': '账户信息'}  # 表备注
 
-    id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
-                    sa_column_args=[Identity(always=False)])
-    account_id: str = Field(..., default_factory=userid_default, index=True, max_length=32,
-                            description='用户ID', sa_column_kwargs={'comment': '用户ID'}, unique=True)
+    # 主键即业务账户 ID: DB 列名为 id, 对外 JSON 仍沿用 account_id(兼容既有客户端)
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid7,
+        primary_key=True,
+        sa_type=UUID,
+        sa_column_kwargs={"comment": "表主键ID (uuid7)", "server_default": text("uuidv7()")},
+        serialization_alias="account_id",
+        validation_alias=AliasChoices("id", "account_id"),
+    )
     username: str = Field(None, index=True, max_length=32, description='用户名',
                           sa_column_kwargs={'comment': '用户名'}, unique=True)
     nick_name: str | None = Field(None, max_length=30, description='昵称', sa_column_kwargs={'comment': '昵称'})
@@ -203,8 +210,11 @@ class AccountPasswordReset(SQLModel):
 
 
 class AccountPasswordChange(SQLModel):
-    """已登录用户修改密码入参: 校验当前密码后换新。"""
-    account_id: str = Field(..., description='用户ID')
+    """已登录用户修改密码入参: 校验当前密码后换新。
+
+    NOTE: 当前登录账户ID 由令牌载荷(request.state.account_id)提供, 不在此 DTO 中透传,
+          避免客户端伪造越权; 因此本模型不含 id 字段。
+    """
     password_current: str = Field(..., max_length=32, min_length=32, description='当前用户密码')
     password_new: str = Field(..., max_length=36, min_length=32, description='用户新密码')
 

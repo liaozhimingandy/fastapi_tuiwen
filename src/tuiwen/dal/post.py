@@ -24,24 +24,24 @@ class PostDAO(BaseDAO[Post]):
     # ---------------------------------------------------------
     # 写操作
     # ---------------------------------------------------------
-    async def delete_by_post_id(self, post_id: uuid.UUID, account_id: str) -> bool:
+    async def delete_by_id(self, post_id: uuid.UUID, account_id: uuid.UUID) -> bool:
         """
-        按 post_id + account_id 删除帖子(硬删除), 保证只有作者本人能删
+        按主键 id + account_id 删除帖子(硬删除), 保证只有作者本人能删
 
         Args:
-            post_id: 帖子ID
-            account_id: 作者账户ID
+            post_id: 帖子主键ID
+            account_id: 作者账户主键
 
         Returns:
             bool: True 表示删除到记录; False 表示帖子不存在或不属于该作者
 
         事务: 只执行不提交, 由上层统一 commit
         """
-        statement = delete(Post).where(Post.post_id == post_id, Post.account_id == account_id)
-        result = await self.exec_write(statement, "delete_by_post_id")
+        statement = delete(Post).where(Post.id == post_id, Post.account_id == account_id)
+        result = await self.exec_write(statement, "delete_by_id")
         return bool(result.rowcount)
 
-    async def update_post_right(self, post_id: uuid.UUID, account_id: str, right_status: int) -> bool:
+    async def update_post_right(self, post_id: uuid.UUID, account_id: uuid.UUID, right_status: int) -> bool:
         """
         更新帖子可见性状态(公开/私密)
 
@@ -55,7 +55,7 @@ class PostDAO(BaseDAO[Post]):
 
         事务: 只执行不提交, 由上层统一 commit
         """
-        statement = (update(Post).where(Post.post_id == post_id, Post.account_id == account_id)
+        statement = (update(Post).where(Post.id == post_id, Post.account_id == account_id)
                      .values(right_status=right_status))
         result = await self.exec_write(statement, "update_post_right")
         return bool(result.rowcount)
@@ -63,7 +63,7 @@ class PostDAO(BaseDAO[Post]):
     # ---------------------------------------------------------
     # 读操作(均走 exec_read, 默认读库 + 统一埋点)
     # ---------------------------------------------------------
-    async def get_posts_latest(self, account_id: str, limit: int = 10) -> list[Post]:
+    async def get_posts_latest(self, account_id: uuid.UUID, limit: int = 10) -> list[Post]:
         """
         获取最近的帖子(按创建时间倒序)
 
@@ -87,7 +87,7 @@ class PostDAO(BaseDAO[Post]):
                      .limit(limit))
         return list((await self.exec_read(statement, "get_posts_latest")).all())
 
-    async def get_posts(self, account_id: str, cursor: uuid.UUID | None, limit: int = 10) -> list[Post]:
+    async def get_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None, limit: int = 10) -> list[Post]:
         """
         帖子流游标分页
 
@@ -108,14 +108,14 @@ class PostDAO(BaseDAO[Post]):
 
         # 仅当有游标时追加翻页条件
         if cursor:
-            statement = statement.where(Post.post_id < cursor)
+            statement = statement.where(Post.id < cursor)
 
         # 按创建时间倒序 + 限制数量
         statement = statement.order_by(Post.id.desc()).limit(limit)
         return list((await self.exec_read(statement, "get_posts")).all())
 
-    async def get_account_posts(self, account_id: str, cursor: uuid.UUID | None = None, limit: int = 10,
-                                viewer_account_id: str | None = None) -> list[Post]:
+    async def get_account_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None = None, limit: int = 10,
+                                viewer_account_id: uuid.UUID | None = None) -> list[Post]:
         """
         查询指定账号的帖子(uuid7 游标分页)
 
@@ -141,7 +141,7 @@ class PostDAO(BaseDAO[Post]):
 
         # 仅当有游标时添加时间条件
         if cursor:
-            statement = statement.where(Post.post_id < cursor)
+            statement = statement.where(Post.id < cursor)
 
         # 按创建时间倒序 + 限制数量
         statement = statement.order_by(Post.id.desc()).limit(limit)
@@ -152,10 +152,10 @@ class PostDAO(BaseDAO[Post]):
         查询单条公开帖子(匿名可见)
 
         Args:
-            post_id: 帖子ID
+            post_id: 帖子主键ID
 
         Returns:
             Post | None: 仅当帖子为 PUBLIC 时返回实体
         """
-        statement = select(Post).where(Post.post_id == post_id, Post.right_status == RightStatusEnum.PUBLIC)
+        statement = select(Post).where(Post.id == post_id, Post.right_status == RightStatusEnum.PUBLIC)
         return (await self.exec_read(statement, "get_s_post")).first()

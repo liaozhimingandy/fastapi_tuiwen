@@ -42,7 +42,7 @@ class PostService:
         await self.dao.write_db.refresh(instance)
         return instance
 
-    async def delete_by_post_id(self, post_id: uuid.UUID, account_id: str):
+    async def delete_by_post_id(self, post_id: uuid.UUID, account_id: uuid.UUID):
         """
         删除帖子(带归属校验)
 
@@ -56,11 +56,11 @@ class PostService:
         NOTE: 恒返回 True —— 丢弃了 DAO 的 rowcount, 帖子不存在或不属于该 account_id
               时同样是 True, 调用方无法区分(API 返回 204 掩盖了这一点)
         """
-        await self.dao.delete_by_post_id(post_id, account_id)
+        await self.dao.delete_by_id(post_id, account_id)
         await self.dao.write_db.commit()
         return True
 
-    async def update_post_right(self, post_id: uuid.UUID, account_id: str, right_status: int):
+    async def update_post_right(self, post_id: uuid.UUID, account_id: uuid.UUID, right_status: int):
         """
         修改帖子可见性(公开/私密)
 
@@ -78,7 +78,7 @@ class PostService:
         await self.dao.write_db.commit()
         return True
 
-    async def get_posts_latest(self, account_id: str):
+    async def get_posts_latest(self, account_id: uuid.UUID):
         """
         获取最近 10 条帖子(公开帖子 + 自己的帖子)
 
@@ -90,7 +90,7 @@ class PostService:
         """
         return await self.dao.get_posts_latest(account_id)
 
-    async def get_posts(self, account_id: str, cursor: uuid.UUID, limit: int):
+    async def get_posts(self, account_id: uuid.UUID, cursor: uuid.UUID, limit: int):
         """
         游标分页获取帖子流
 
@@ -104,8 +104,8 @@ class PostService:
         """
         return await self.dao.get_posts(account_id, cursor, limit)
 
-    async def get_account_posts(self, account_id: str, cursor: uuid.UUID | None = None, limit: int = 10,
-                                viewer_account_id: str | None = None):
+    async def get_account_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None = None, limit: int = 10,
+                                viewer_account_id: uuid.UUID | None = None):
         """
         游标分页获取某账号的帖子
 

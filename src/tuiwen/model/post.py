@@ -7,11 +7,10 @@ from enum import IntEnum
 import uuid
 from ipaddress import IPv4Address, IPv6Address
 from typing import Optional
-from uuid import UUID
 from datetime import datetime
 
-from pydantic import field_serializer
-from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Numeric, Identity, func
+from pydantic import AliasChoices, field_serializer
+from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Numeric, Identity, func, UUID
 from sqlalchemy.dialects.postgresql import INET
 from sqlmodel import SQLModel, Field, Index, text
 
@@ -62,8 +61,10 @@ class FromDeviceEnum(IntEnum):
 
 
 class PostCreate(SQLModel):
-    """发帖入参模型 = 内容/来源/位置等业务字段。"""
-    post_id: uuid.UUID = Field(default_factory=uuid.uuid7, description="帖子ID")
+    """发帖入参模型 = 内容/来源/位置等业务字段。
+
+    NOTE: 帖子主键 id 由服务端统一生成(uuid7, 见 Post.id), 不在请求体透传。
+    """
     content: dict = Field(default_factory=dict, max_length=1024, description="帖子JSON内容")
     post_type: PostType = Field(default=PostType.POST, ge=0, description="内容类型")
     from_ip: Optional[IPv4Address | IPv6Address] = Field(default=None, description="来源IP")
@@ -72,7 +73,7 @@ class PostCreate(SQLModel):
     is_top: bool = Field(default=False, description="是否置顶")
     latitude: Optional[Decimal] = Field(default=None, ge=-90, le=90, description="纬度")
     longitude: Optional[Decimal] = Field(default=None, ge=-180, le=180, description="经度")
-    account_id: str = Field(..., max_length=32, description="用户ID")
+    account_id: uuid.UUID = Field(..., description="用户ID(帖子作者主键)")
     right_status: RightStatusEnum = Field(default=RightStatusEnum.PUBLIC, ge=0, description="权限状态")
 
 
@@ -88,10 +89,15 @@ class Post(SQLModel, table=True):
     __table_args__ = {'comment': '帖子'}  # 表备注
 
 
-    id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID",},sa_type=BigInteger,sa_column_args=[Identity(always=False)])
-    post_id: UUID = Field(default_factory=uuid.uuid7, index=True, description='帖子ID',
-                          sa_column_kwargs={'comment': '帖子ID', "server_default": text("uuidv7()")},
-                          unique=True)
+    # 主键即业务帖子 ID: DB 列名为 id, 对外 JSON 仍沿用 post_id(兼容既有客户端)
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid7,
+        primary_key=True,
+        sa_type=UUID,
+        sa_column_kwargs={"comment": "表主键ID (uuid7)", "server_default": text("uuidv7()")},
+        serialization_alias="post_id",
+        validation_alias=AliasChoices("id", "post_id"),
+    )
     content: dict = Field(default={}, description='json内容', max_length=1024,
                           sa_column_kwargs={'comment': '内容'},
                           sa_type=JSON)
@@ -110,8 +116,8 @@ class Post(SQLModel, table=True):
                                      sa_column_kwargs={'comment': '纬度'})
     longitude: Decimal | None = Field(None, sa_type=Numeric(10, 7), description='经度',
                                       sa_column_kwargs={'comment': '经度'})
-    account_id: str = Field(..., index=True, max_length=32, description='用户ID',
-                            sa_column_kwargs={'comment': '用户ID'})
+    account_id: uuid.UUID = Field(..., index=True, description='用户ID(作者主键)',
+                            sa_column_kwargs={'comment': '用户ID(作者主键)'})
     right_status: RightStatusEnum = Field(default=RightStatusEnum.PUBLIC, description='权限状态',
                                           sa_column_kwargs={'comment': '权限状态'},
                                           sa_type=SMALLINT, ge=0)
@@ -137,12 +143,10 @@ class Post(SQLModel, table=True):
 
 
 class PostRightStatusUpdate(SQLModel):
-    """更新帖子可见权限的入参: 帖子ID + 作者 + 目标权限状态。
+    """更新帖子可见权限的入参。
 
-    NOTE: post_id 带了 default_factory=uuid.uuid7 —— 对"更新"类入参其实不该有默认值,
-          忘传 post_id 时会静默生成一个新 UUID 去更新, 查不到任何行也不报错
+    NOTE: 帖子由 URL 路径参数 {post_id} 定位, 作者由认证令牌(request.state.account_id)定位,
+          二者已在 API 层用于越权校验, 因此本 DTO 只需携带目标权限状态; 原来的
+          post_id / account_id 字段是冗余的(且 post_id 还带了一个不该有的默认值)。
     """
-    post_id: UUID = Field(..., index=True, description='帖子ID')
-    account_id: str = Field(..., index=True, max_length=32, description='用户ID',
-                            sa_column_kwargs={'comment': '用户ID'})
     right_status: RightStatusEnum = Field(default=RightStatusEnum.PUBLIC, description='权限状态')

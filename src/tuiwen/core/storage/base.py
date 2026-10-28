@@ -1,3 +1,11 @@
+"""文件存储抽象层。
+
+定义 Storage 接口(参考 Django Storage), 让业务代码只依赖「相对 key + 统一语义」,
+不关心底层是本地磁盘、S3 还是其它对象存储 —— 换后端只需实现本类并改
+core/storage/__init__.py 的工厂函数, Service 层无需改动。
+
+当前实现: LocalStorage(core/storage/local.py)。
+"""
 import abc
 import datetime
 from pathlib import Path

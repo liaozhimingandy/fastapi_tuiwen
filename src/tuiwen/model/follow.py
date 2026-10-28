@@ -2,10 +2,11 @@
 
 follower_id(关注者) + followee_id(被关注者) 有联合唯一索引, 保证不重复关注。
 """
+import uuid
 from datetime import datetime
 
 from pydantic import field_serializer
-from sqlalchemy import DateTime, Column, BigInteger,Identity
+from sqlalchemy import DateTime, Column, BigInteger, Identity, UUID
 from sqlmodel import SQLModel, Field, Index, text
 
 from src.tuiwen.core import get_settings
@@ -21,10 +22,10 @@ class Follow(SQLModel, table=True):
 
     id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
                     sa_column_args=[Identity(always=False)])
-    follower_id: str = Field(..., index=True, max_length=32, description='关注者',
-                             sa_column_kwargs={'comment': '关注者'})
-    followee_id: str = Field(..., index=True, max_length=32, description='被关注者',
-                             sa_column_kwargs={'comment': '被关注者'})
+    follower_id: uuid.UUID = Field(..., index=True, description='关注者账户主键',
+                                   sa_column_kwargs={'comment': '关注者账户主键'})
+    followee_id: uuid.UUID = Field(..., index=True, description='被关注者账户主键',
+                                   sa_column_kwargs={'comment': '被关注者账户主键'})
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                   sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                    comment="创建日期时间", nullable=False,
@@ -39,6 +40,19 @@ class Follow(SQLModel, table=True):
     @field_serializer('create_at')
     def serialize_datetime(self, value):
         return convert_to_timezone(value)
+
+
+class FollowCreate(SQLModel):
+    """关注入参 DTO: 只承载关注关系的两个端点。
+
+    NOTE: 入参不要直接用表模型 Follow —— SQLModel 表模型构造时不校验字段类型,
+          FastAPI 把 JSON 校验成表模型后, 字符串会原样留在 UUID 字段上,
+          直到 model_dump()/写库时才以告警或隐式转换的形式暴露。
+          用独立 DTO 可以在 API 边界就把非法 uuid 拦成 422。
+    """
+
+    follower_id: uuid.UUID = Field(..., description='关注者账户主键')
+    followee_id: uuid.UUID = Field(..., description='被关注者账户主键')
 
 
 class FollowCountModel(SQLModel):

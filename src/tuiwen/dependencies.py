@@ -9,6 +9,7 @@
 
 约定: DAO 只 flush 不 commit, 事务提交/回滚出口统一在 API 层(dao.commit()/rollback())。
 """
+import uuid
 from typing import Annotated, AsyncGenerator, Any
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -50,10 +51,13 @@ async def check_authentication(request: Request, token: Annotated[str, Depends(o
                       "/openapi.json",
                       '/redoc',
                       '/oauth/authorize/password/',
-                      '/accounts/password/reset/',
-                      '/oauth/authorize/password/']  # 排除的路径(免登录白名单; 列表内有重复项, 可清理)
+                      '/accounts/password/reset/']  # 排除的路径(免登录白名单)
 
-    if request.url.path in excluded_paths:
+    # 实际 request.url.path 带 /api/v2 总前缀, 去掉后再比对白名单
+    api_prefix = "/api/v2"
+    path = request.url.path
+    norm_path = path[len(api_prefix):] if path.startswith(api_prefix) else path
+    if path in excluded_paths or norm_path in excluded_paths:
         return None  # 如果是排除路径，不做认证检查
 
     credentials_exception = HTTPException(
@@ -69,8 +73,15 @@ async def check_authentication(request: Request, token: Annotated[str, Depends(o
         credentials_exception.detail = str(e)
         raise credentials_exception
 
-    request.state.account_id = payload["account_id"]
-    request.state.salt = payload["salt"]
+    # NOTE: 令牌里缺 account_id / salt 时会抛 KeyError(500) 而非 401;
+    #       若存在历史令牌或签发逻辑变更, 建议改用 payload.get() 并统一返回 401。
+    # 令牌载荷里是 UUID 字符串, 这里统一转成 UUID 对象:
+    # 下游与主键列比较、拼 Redis key 都不必再做类型转换
+    try:
+        request.state.account_id = uuid.UUID(str(payload["account_id"]))
+    except (KeyError, ValueError, TypeError):
+        raise credentials_exception
+    request.state.salt = payload.get("salt")
 
 
 async def get_current_user(
@@ -135,7 +146,7 @@ async def get_current_user(
 
     # 回库取真实账户: account_id 上是唯一索引, 这次查询走索引且只读, 代价很小
     # (认证属框架级原语, 直接查表而不经 Service/DAO, 避免为一次主键查询再开一个写会话)
-    result = await session.exec(select(Account).where(Account.account_id == payload["account_id"]))
+    result = await session.exec(select(Account).where(Account.id == payload["account_id"]))
     instance = result.first()
     if not instance:
         # 令牌签名有效但账户已被删除/注销, 与令牌无效同样处理, 不泄露账户是否存在
@@ -178,9 +189,14 @@ async def get_session() -> AsyncGenerator[Any, Any]:
             await session.close()
 
 
-async def get_conn(app: FastAPI) -> AsyncGenerator[Any, Any]:
-    """返回 asyncpg 原生连接(需先由 lifespan 把连接池挂到 app.state.pool), 适合批量/COPY 场景。"""
-    async with app.state.pool.acquire() as conn:
+async def get_conn(request: Request) -> AsyncGenerator[Any, Any]:
+    """返回 asyncpg 原生连接(需先由 lifespan 把连接池挂到 app.state.pool), 适合批量/COPY 场景。
+
+    注意: 连接池对象要从 request.app.state 取, 而不是声明 app: FastAPI 参数 ——
+          依赖函数的参数会被 FastAPI 当作请求参数(Query/Body)解析, 直接注入 app 会报错。
+          当前 main.py 里 app.state.pool 的赋值仍处于注释状态, 启用前需先在 lifespan 挂上。
+    """
+    async with request.app.state.pool.acquire() as conn:
         yield conn
 
 

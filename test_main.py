@@ -92,6 +92,7 @@ class TestMain:
     account_id = ''
     post_id = ''
     comment_id = ''
+    followee_id = ''
     md5_hash = md5()
     snap_id = ""
 
@@ -117,7 +118,7 @@ class TestMain:
         }
         print(data)
         # with httpx.Client() as client:
-        r = client.post(f"/accounts/register/", json=data,
+        r = client.post("/accounts/register/", json=data,
                         headers={"Content-Type": "application/json"})
         assert r.status_code == status.HTTP_201_CREATED, f'注册失败: {r.text}'
         TestMain.account_id = r.json().get('account_id')
@@ -131,7 +132,7 @@ class TestMain:
             "password": TestMain.md5_hash.hexdigest(),
         }
 
-        r = client.post(f"/oauth/authorize/password/", data=form_data,
+        r = client.post("/oauth/authorize/password/", data=form_data,
                         headers={"Content-Type": "application/x-www-form-urlencoded"})
         assert r.status_code == 200, f"登录失败: {r.text}"
         token_data = r.json()
@@ -161,7 +162,7 @@ class TestMain:
     def test_health_check(self, test_register_and_login) -> None:
         """测试健康检查"""
         # 直接使用 httpx 发送同步 HTTP 请求
-        r = test_register_and_login.get('client').get(f"/health-check/")
+        r = test_register_and_login.get('client').get("/health-check/")
         assert r.status_code == 200
 
     def test_get_account(self, test_register_and_login) -> None:
@@ -170,9 +171,12 @@ class TestMain:
         # ok
         r = test_register_and_login.get('client').get(f"/accounts/{account_id}/")
         assert r.status_code == 200
-        # 404
-        r = test_register_and_login.get('client').get(f"/accounts/{account_id}{random.randint(0, 9000)}/")
+        # 404: 合法但不存在的 uuid7
+        r = test_register_and_login.get('client').get(f"/accounts/{uuid.uuid7()}/")
         assert r.status_code == status.HTTP_404_NOT_FOUND
+        # 422: 非法 uuid 在路径参数校验阶段即被拒, 不会打到数据库
+        r = test_register_and_login.get('client').get(f"/accounts/{account_id}xx/")
+        assert r.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def test_account_search(self, test_register_and_login) -> None:
         """搜索功能"""
@@ -214,7 +218,7 @@ class TestMain:
             "password_new": TestMain.md5_hash.hexdigest()
         }
         client = test_register_and_login.get('client')
-        r = client.put(f'/accounts/password/change/', json=data)
+        r = client.put('/accounts/password/change/', json=data)
         assert r.status_code == status.HTTP_400_BAD_REQUEST, r.json()
 
         new_md5 = md5()
@@ -226,7 +230,7 @@ class TestMain:
             "password_new": new_md5.hexdigest()
         }
         client = test_register_and_login.get('client')
-        r = client.put(f'/accounts/password/change/', json=data)
+        r = client.put('/accounts/password/change/', json=data)
         assert r.status_code == status.HTTP_200_OK, r.json()
 
     def test_password_reset(self, test_register_and_login) -> None:
@@ -243,11 +247,11 @@ class TestMain:
             "code": correct_code
         }
         client = test_register_and_login.get('client')
-        r = client.put(f'/accounts/password/reset/', json=data)
+        r = client.put('/accounts/password/reset/', json=data)
         assert r.status_code == status.HTTP_200_OK, r.json()
         # 测试验证码不对的情况
         data['code'] = "666777"
-        r = client.put(f'/accounts/password/reset/', json=data)
+        r = client.put('/accounts/password/reset/', json=data)
         assert r.status_code == status.HTTP_400_BAD_REQUEST
 
     # ==================== 帖子 ====================
@@ -263,7 +267,7 @@ class TestMain:
             "is_top": False
         }
         client = test_register_and_login.get('client')
-        r = client.post(f'/posts/', json=data)
+        r = client.post('/posts/', json=data)
         assert r.status_code == status.HTTP_201_CREATED
         TestMain.post_id = r.json().get('post_id')
 
@@ -271,7 +275,7 @@ class TestMain:
     def test_get_posts_latest(self, test_register_and_login) -> None:
         """获取最新帖子"""
         client = test_register_and_login.get('client')
-        r = client.get(f"/posts/", params={"limit": 10})
+        r = client.get("/posts/", params={"limit": 10})
         assert r.status_code == 200 and r.json()['total'] > 0, "帖子数量为0"
 
     def test_get_account_posts(self, test_register_and_login) -> None:
@@ -319,18 +323,19 @@ class TestMain:
             "obj_id": str(uuid.uuid4())
         }
         client = test_register_and_login.get('client')
-        r = client.post(f'/comments/', json=data)
+        r = client.post('/comments/', json=data)
         assert r.status_code == status.HTTP_201_CREATED
-        TestMain.comment_id = data.get('comment_id')
+        # 主键由服务端生成(uuid7), 与请求体里的 comment_id 无关, 必须回读响应
+        TestMain.comment_id = r.json().get('comment_id')
 
     def test_get_comments(self, test_register_and_login) -> None:
         """评论分页(带游标 / 不带游标两种)"""
         client = test_register_and_login.get('client')
         # NOTE: 这里用 self.post_id 取的是类属性初值 '', 并非前面创建的帖子ID(应为 TestMain.post_id),
         #       因此实际请求路径形如 /comments/1//, 断言也就失去了校验意义
-        r = client.get(f'/comments/1/{self.post_id}/', params={'limit': 10, 'cursor': TestMain.comment_id})
+        r = client.get(f'/comments/1/{TestMain.post_id}/', params={'limit': 10, 'cursor': TestMain.comment_id})
         assert r.status_code == 200 and r.json().get('total') == 0, '不应该有数据'
-        r = client.get(f'/comments/1/{self.post_id}/', params={'limit': 10})
+        r = client.get(f'/comments/1/{TestMain.post_id}/', params={'limit': 10})
         assert r.status_code == 200 and r.json().get('total') == 0, '可能有数据'
 
     def test_delete_comment(self, test_register_and_login) -> None:
@@ -348,7 +353,7 @@ class TestMain:
             "account_id": TestMain.account_id
         }
         client = test_register_and_login.get('client')
-        r = client.post(f'/likes/', json=data)
+        r = client.post('/likes/', json=data)
         assert r.status_code == status.HTTP_201_CREATED
 
     def test_delete_like(self, test_register_and_login) -> None:
@@ -360,7 +365,7 @@ class TestMain:
     def test_get_like_count(self, test_register_and_login) -> None:
         """获取指定帖子的点赞数量"""
         client = test_register_and_login.get('client')
-        r = client.get(f'/likes/{self.post_id}/count/')
+        r = client.get(f'/likes/{TestMain.post_id}/count/')
         assert r.status_code == 200
         assert r.json().get('is_liked') == False
 
@@ -368,37 +373,44 @@ class TestMain:
     def test_upload_image(self, test_register_and_login) -> None:
         """测试图片上传
 
-        NOTE: 依赖本机固定路径的图片文件, 换机器/CI 上必然失败;
-              建议改为 fixture 生成的临时小图
+        NOTE: 原先依赖本机固定路径的图片文件, 换机器/CI 上必然失败;
+              现改为运行时生成一张 8x8 的小图, 与运行环境解耦
         """
         client = test_register_and_login.get('client')
-        with open(r'C:\Users\liaoz\Pictures\【可乐】智能云千帆行业实战：金融大模型应用探索与开发实践1915.867.png',
-                  'rb') as f:
-            files = {'file': ('test.jpg', f, 'image/jpeg')}
-            response = client.post(f'/upload/image/', files=files)
-            assert response.status_code == status.HTTP_201_CREATED
+        from io import BytesIO
+
+        from PIL import Image
+
+        buf = BytesIO()
+        Image.new("RGB", (8, 8), (12, 34, 56)).save(buf, format="PNG")
+        buf.seek(0)
+        files = {'file': ('test.png', buf, 'image/png')}
+        response = client.post('/upload/image/', files=files)
+        assert response.status_code == status.HTTP_201_CREATED, response.text
 
     # ==================== 关注 ====================
     def test_create_follower(self, test_register_and_login) -> None:
         """创建关注"""
         account_id = test_register_and_login.get('account_id')
+        # 被关注者主键在本仓库没有外键约束, 用合法 uuid 即可; 重点验证「重复关注返回 400」
+        TestMain.followee_id = str(uuid.uuid7())
         data = {
             "id": 0,
             "follower_id": account_id,
-            "followee_id": f'{account_id}-test'
+            "followee_id": TestMain.followee_id
         }
         client = test_register_and_login.get('client')
-        r = client.post(f'/follows/', json=data)
-        assert r.status_code == status.HTTP_201_CREATED
+        r = client.post('/follows/', json=data)
+        assert r.status_code == status.HTTP_201_CREATED, r.text
         # 400
-        r = client.post(f'/follows/', json=data)
+        r = client.post('/follows/', json=data)
         assert r.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_delete_follower(self, test_register_and_login) -> None:
         """删除关注"""
         client = test_register_and_login.get('client')
         r = client.delete(
-            f'/follows/{test_register_and_login.get("account_id")}/{test_register_and_login.get("account_id")}-test/')
+            f'/follows/{test_register_and_login.get("account_id")}/{TestMain.followee_id}/')
         assert r.status_code == status.HTTP_204_NO_CONTENT
 
     def test_get_follow_info_by_id(self, test_register_and_login) -> None:
@@ -409,14 +421,26 @@ class TestMain:
         assert r.json().get('is_following') == False
 
     def test_get_posts(self, test_register_and_login) -> None:
-        """获取下页数据
+        """游标分页: 用「比现有帖子都新」的主键当游标, 应能取到第一页数据
 
-        NOTE: 查询参数写成了 'cusror'(拼写错误), 服务端只认 cursor,
-              因此这里实际测的是"不带游标的第一页"
+        NOTE: 原写法把查询参数拼成了 'cusror', 实际测的是无游标的第一页;
+              且本用例在 test_delete_post 之后执行, 库里已无该账号的帖子,
+              因此这里自建一条再翻页, 使用例不依赖其它用例的执行结果
         """
         client = test_register_and_login.get('client')
-        r = client.get('/posts/', params={'limit': 10, 'cusror': TestMain.post_id})
-        assert r.status_code == 200
+        created = client.post('/posts/', json={
+            "content": {},
+            "post_type": 1,
+            "account_id": test_register_and_login.get('account_id'),
+            "from_device": 9,
+            "right_status": 1,
+            "location": "string",
+            "is_top": False,
+        })
+        assert created.status_code == status.HTTP_201_CREATED, created.text
+
+        r = client.get('/posts/', params={'limit': 10, 'cursor': str(uuid.uuid7())})
+        assert r.status_code == 200, r.text
         assert r.json().get('total') > 0, '没有数据了'
 
     # ==================== 反馈 / 天亮即焚 ====================
@@ -454,7 +478,7 @@ class TestMain:
 
         # NOTE: 同 test_get_posts, 'cusror' 为拼写错误, 游标实际未生效
         client = test_register_and_login.get('client')
-        r = client.get('/snaps/', params={'limit': 10, 'cusror': 1})
+        r = client.get('/snaps/', params={'limit': 10, 'cursor': 1})
         assert r.status_code == status.HTTP_200_OK
 
     def test_snaps_like(self, test_register_and_login):

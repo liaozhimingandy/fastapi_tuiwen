@@ -30,7 +30,7 @@ class FileService:
 
     dao: FileDAO
 
-    async def upload(self, file, uploader_account_id: str = '1'):
+    async def upload(self, file, uploader_account_id: uuid.UUID | None = None):
         """
         上传单张图片并返回图片记录
 

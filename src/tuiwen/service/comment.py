@@ -59,7 +59,7 @@ class CommentService:
               API 层返回 204 掩盖了这一点, 但换个返回体就会暴露。
               需要真实结果时把 DAO 的返回值透传出来即可。
         """
-        await self.dao.delete_by_fields(comment_id=comment_id, account_id=account_id)
+        await self.dao.delete_by_fields(id=comment_id, account_id=account_id)
         await self.dao.write_db.commit()
         return True
 

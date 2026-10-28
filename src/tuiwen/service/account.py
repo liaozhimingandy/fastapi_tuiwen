@@ -23,6 +23,7 @@
 """
 import re
 import secrets
+import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Annotated
@@ -82,9 +83,9 @@ class AccountService:
         account_data = dto.model_dump()
         instance = Account(**account_data)
 
-        # 用户名兜底
+        # 用户名兜底: 用主键的 32 位十六进制形式(去掉连字符), 与 username 列 varchar(32) 对齐
         if not instance.username:
-            instance.username = instance.account_id
+            instance.username = instance.id.hex
 
         # 用户名黑名单正则校验
         ok, detail = validate_username(instance.username)
@@ -126,11 +127,11 @@ class AccountService:
     # ---------------------------------------------------------
     # 查询 / 更新资料
     # ---------------------------------------------------------
-    async def get_account(self, account_id: str):
-        """按账户ID查询账号, 走唯一索引, 无匹配返回 None。"""
-        return await self.dao.get_by_unique_field("account_id", account_id)
+    async def get_account(self, account_id: uuid.UUID):
+        """按账户主键ID查询账号, 走主键, 无匹配返回 None。"""
+        return await self.dao.get_by_unique_field("id", account_id)
 
-    async def update_account(self, account_id: str, account: AccountPublicCommon):
+    async def update_account(self, account_id: uuid.UUID, account: AccountPublicCommon):
         """
         更新账号基本资料
 
@@ -147,7 +148,7 @@ class AccountService:
         Raises:
             BizError: 账号不存在
         """
-        instance = await self.dao.get_by_unique_field("account_id", account_id)
+        instance = await self.dao.get_by_unique_field("id", account_id)
         if not instance:
             raise BizError(code=400, message="no such account")
 
@@ -214,7 +215,7 @@ class AccountService:
         # ======================
         # key 用查到的账户ID而不是客户端提交的字符串:
         # 用户申请验证码时填邮箱、重置时填用户名也应当能对上, 用提交值做 key 会错位
-        key = RedisKey.reset_pwd_code(instance.account_id)
+        key = RedisKey.reset_pwd_code(str(instance.id))
         if await redis_get(key):
             raise BizError(
                 code=400,
@@ -257,7 +258,7 @@ class AccountService:
         # 用账户ID构造 key —— 必须与 account_send_code 侧完全一致。
         # 两边都用查到的账户ID, 用户"用邮箱收码、用用户名重置"(或大小写不一致)才能校验通过;
         # 若改用提交值, 两侧字符串不同就会读到空值, 表现为"验证码已过期或未发送"
-        redis_key = RedisKey.reset_pwd_code(instance.account_id)
+        redis_key = RedisKey.reset_pwd_code(str(instance.id))
 
         # 从 Redis 获取验证码
         correct_code = await redis_get(redis_key)
@@ -319,21 +320,21 @@ class AccountService:
             raise BizError(code=400, message=str(e))
 
 
-        data = {"account_id": instance.account_id, "salt": instance.salt, 'scopes': SCOPES_BASIC}
+        data = {"account_id": str(instance.id), "salt": instance.salt, 'scopes': SCOPES_BASIC}
         refresh_token = generate_jwt_token(data,
                                            expires_in=timedelta(minutes=get_settings().REFRESH_TOKEN_EXPIRE_MINUTES),
                                            grant_type="refresh_token")
 
-        data.update(**{'jwt_account_id': instance.account_id})
+        data.update(**{'jwt_account_id': str(instance.id)})
         access_token = generate_jwt_token(data, grant_type="access_token")
 
         return RefreshToken(refresh_token=refresh_token, access_token=access_token,
                             expires_in=int(
                                 timedelta(minutes=get_settings().REFRESH_TOKEN_EXPIRE_MINUTES).total_seconds()),
-                            account_id=instance.account_id)
+                            account_id=str(instance.id))
 
     @classmethod
-    async def refresh_token(cls, account_id: str, refresh_token: str):
+    async def refresh_token(cls, account_id: uuid.UUID, refresh_token: str):
         """
         用刷新令牌换发新的访问令牌
 
@@ -352,19 +353,19 @@ class AccountService:
         """
         try:
             payload = verify_jwt_token(data=refresh_token, grant_type='refresh_token')
-            assert account_id == payload.get('account_id'), '请检查token是否为该账户的token同时为刷新令牌,请不要跨账户操作'
+            assert str(account_id) == payload.get('account_id'), '请检查token是否为该账户的token同时为刷新令牌,请不要跨账户操作'
         except AssertionError as e:
             raise BizError(code=401, message=str(e))
         except Exception as e:
             raise BizError(code=401, message=str(e))
 
-        data = {"account_id": account_id, "salt": payload.get('salt'), 'jwt_account_id': account_id,
+        data = {"account_id": str(account_id), "salt": payload.get('salt'), 'jwt_account_id': str(account_id),
                 'scopes': SCOPES_BASIC}
 
         access_token = generate_jwt_token(data, grant_type="access_token",
                                           expires_in=timedelta(minutes=get_settings().ACCESS_TOKEN_EXPIRE_MINUTES))
 
-        return AccessToken(access_token=access_token, account_id=account_id)
+        return AccessToken(access_token=access_token, account_id=str(account_id))
 
     # ---------------------------------------------------------
     # 人机检测 / 用户名
@@ -411,7 +412,7 @@ class AccountService:
         is_exists = await self.dao.exists(username=username)
         return is_exists
 
-    async def change_credential(self, account_id: str, data: Annotated[UpdateCredential, "更新用户认证信息"]):
+    async def change_credential(self, account_id: uuid.UUID, data: Annotated[UpdateCredential, "更新用户认证信息"]):
         """
         修改用户认证信息
 
@@ -438,7 +439,7 @@ class AccountService:
             if is_exists:
                 raise BizError(code=400, message=str("该用户已被占用"))
 
-            instance = await self.dao.get_by_unique_field("account_id", account_id)
+            instance = await self.dao.get_by_unique_field("id", account_id)
             # 用户名统一小写存储, 避免大小写造成重复账号
             # 用 partial_update(Core UPDATE) 而不是 dao.update() 整对象覆盖, 原因有二:
             #   1. dao.update() 内部走 write_db.merge(), merge 会把所有列(含 update_at 的旧值)
@@ -455,7 +456,7 @@ class AccountService:
 
         return None
 
-    async def change_password(self, account_id: str, salt,
+    async def change_password(self, account_id: uuid.UUID, salt,
                               account: Annotated[AccountPasswordChange, '修改密码必要的参数']):
         """
         已登录状态下修改密码
@@ -477,7 +478,7 @@ class AccountService:
         """
         # 先按令牌里的盐算出原密码摘要, 与库中摘要做等值比较(库里存的是加盐 SHA256)
         current_hash = hash_password(account.password_current, salt)
-        instance = await self.dao.get_by_fields(account_id=account_id, password=current_hash)
+        instance = await self.dao.get_by_fields(id=account_id, password=current_hash)
         if not instance:
             raise BizError(code=400, message="原密码不对,请重新输入原密码")
 

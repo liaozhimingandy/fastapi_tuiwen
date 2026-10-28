@@ -13,6 +13,7 @@
 分层位置:
     API → FollowService → FollowDAO → PostgreSQL
 """
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Body, status, Depends, Request, HTTPException
@@ -20,13 +21,13 @@ from fastapi import APIRouter, Body, status, Depends, Request, HTTPException
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dependencies import get_follow_service
 from src.tuiwen.service.follow import FollowService
-from src.tuiwen.model.follow import Follow, FollowCountModel
+from src.tuiwen.model.follow import Follow, FollowCreate, FollowCountModel
 
 router_follow = APIRouter(prefix="/follows", tags=["follow"])
 
 
 @router_follow.post('/', summary="关注", response_model=Follow, status_code=status.HTTP_201_CREATED)
-async def follow(follow: Annotated[Follow, Body(..., description="关注信息")],
+async def follow(follow: Annotated[FollowCreate, Body(..., description="关注信息")],
                  svc: FollowService = Depends(get_follow_service)) -> Follow:
     """
     建立关注关系
@@ -39,8 +40,10 @@ async def follow(follow: Annotated[Follow, Body(..., description="关注信息")
         Follow: 落库后的关注记录
     """
     # 主键 id 与创建时间由数据库/模型负责生成, 不接受客户端传入
-    follow_data = follow.model_dump(exclude={"id", "create_at"})
-    instance = Follow(**follow_data)
+    follow_data = follow.model_dump()
+    # NOTE: SQLModel 表模型用 `Follow(**data)` 构造时不做类型校验,
+    #       这里用 model_validate 保证 UUID 字段真的是 uuid.UUID 实例
+    instance = Follow.model_validate(follow_data)
     try:
         return await svc.create(instance)
     except BizError as e:
@@ -48,7 +51,7 @@ async def follow(follow: Annotated[Follow, Body(..., description="关注信息")
 
 
 @router_follow.delete('/{follower_id}/{followee_id}/', summary="取消关注", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_follow(follower_id: Annotated[str, "追随者ID"], followee_id: Annotated[str, "被关注者ID"],
+async def delete_follow(follower_id: Annotated[uuid.UUID, "追随者ID"], followee_id: Annotated[uuid.UUID, "被关注者ID"],
                         svc: FollowService = Depends(get_follow_service)):
     """
     取消关注关系(硬删除)
@@ -69,7 +72,7 @@ async def delete_follow(follower_id: Annotated[str, "追随者ID"], followee_id:
 
 @router_follow.get('/{account_id}/count/', summary="获取指定帐户的关注和正在关注数量及获赞数量",
                    response_model=FollowCountModel)
-async def get_follow_info_by_id(account_id: Annotated[str, "账户ID"], request: Annotated[Request, "请求对象"],
+async def get_follow_info_by_id(account_id: Annotated[uuid.UUID, "账户ID"], request: Annotated[Request, "请求对象"],
                                 svc: FollowService = Depends(get_follow_service)) -> FollowCountModel:
     """
     获取指定帐户的关注和正在关注数量及获赞数量

@@ -2,11 +2,12 @@
 
 obj_type + obj_id + account_id 有联合唯一索引, 天然防重复点赞。
 """
+import uuid
 from enum import IntEnum
 from datetime import datetime
 
 from pydantic import field_serializer
-from sqlalchemy import DateTime, Column, BigInteger, SMALLINT, Identity
+from sqlalchemy import DateTime, Column, BigInteger, SMALLINT, Identity, UUID
 from sqlmodel import SQLModel, Field, Index
 
 from src.tuiwen.core import get_settings
@@ -29,11 +30,12 @@ class Like(SQLModel, table=True):
 
     id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
                     sa_column_args=[Identity(always=False)])
-    obj_id: str = Field(index=True, max_length=36, description='赞对象ID', sa_column_kwargs={'comment': '赞对象ID'})
+    obj_id: uuid.UUID = Field(index=True, description='赞对象ID(帖子/评论主键)',
+                              sa_column_kwargs={'comment': '赞对象ID(帖子/评论主键)'})
     obj_type: ObjTypeEnum = Field(default=ObjTypeEnum.POST, description="点赞对象类别",
                                   sa_column_kwargs={'comment': '点赞对象类别'}, sa_type=SMALLINT, ge=0)
-    account_id: str = Field(..., index=True, max_length=32, description='点赞的用户',
-                            sa_column_kwargs={'comment': '点赞的用户'})
+    account_id: uuid.UUID = Field(..., index=True, description='点赞的用户账户主键',
+                                  sa_column_kwargs={'comment': '点赞的用户账户主键'})
     create_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
                                 sa_column=Column(DateTime(timezone=True), default=datetime.now,
                                                  comment="创建日期时间", nullable=False))

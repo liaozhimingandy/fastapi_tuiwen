@@ -45,12 +45,12 @@ async def create_post(post: Annotated[PostCreate, Body(..., description="帖子�
         post_id 使用 uuid7(时间有序), 由服务端生成;
         from_ip 由服务端从请求中提取, 不接受客户端传入。
     """
-    post_data = post.model_dump(exclude={"from_ip", "post_id"})
+    post_data = post.model_dump(exclude={"from_ip"})
     # 提取ip地址
     client_ip = None
     if request.client:
         client_ip = request.client.host
-    instance = Post(**post_data, from_ip=client_ip, post_id=str(uuid.uuid7()))
+    instance = Post(**post_data, from_ip=client_ip, id=uuid.uuid7())
     result = await svc.create(instance)
     return result
 

@@ -10,6 +10,7 @@
     @Desc: 通知 API 路由层 —— 系统公告 / 指定用户通知 查询
 =================================================
 """
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -74,7 +75,7 @@ async def get_system_notices(svc: NoticeService = Depends(get_notice_service),
 
 @router_notice.get("/accounts/{account_id}/", summary="返回指定用户的通知", response_model=PageResponse[Notice],
                    response_model_include={'items', 'total'})
-async def get_account_notices(account_id: Annotated[str, "用户id"], svc: NoticeService = Depends(get_notice_service),
+async def get_account_notices(account_id: Annotated[uuid.UUID, "用户id"], svc: NoticeService = Depends(get_notice_service),
                               page: int = Query(default=1, ge=1), size: int = Query(default=20, ge=1, le=100), ):
     """
     分页获取某个用户收到的通知(按创建时间倒序)

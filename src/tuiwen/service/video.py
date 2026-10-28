@@ -1,3 +1,16 @@
+"""视频业务服务。
+
+覆盖三条业务线:
+    upload             —— 流式接收上传、服务端重算 MD5、按 MD5 去重(秒传)、建记录
+    feed               —— 推荐流游标分页, 拼装播放地址与封面地址
+    transcode_*        —— 转码服务的完成/失败回调, 幂等更新转码状态
+
+存储约定(与 utils/video_transcoder.py 保持一致):
+    <VIDEO_STORAGE_DIR>/<YYYYMM>/<video_id>/original.mp4
+    <VIDEO_STORAGE_DIR>/<YYYYMM>/<video_id>/play_list.m3u8
+    <VIDEO_STORAGE_DIR>/<YYYYMM>/<video_id>/cover.jpg
+    <VIDEO_STORAGE_DIR>/<YYYYMM>/<video_id>/<清晰度>/index.m3u8
+"""
 import hashlib
 import uuid
 from dataclasses import dataclass
@@ -11,7 +24,7 @@ from src.tuiwen.core.storage import Storage
 from src.tuiwen.core.storage import storage
 from src.tuiwen.dal.video_source import VideoSourceDAO
 from src.tuiwen.model.video import Video, VideoOrientation, VideoTranscodeStatus, VideoFeedResponse, VideoInteraction, \
-    VideoStats, VideoFeedItem, VideoSource, VideoSourceType, TranscodeFailedRequest
+    VideoStats, VideoFeedItem, VideoSource, VideoSourceType, TranscodeCompleteRequest, TranscodeFailedRequest
 from src.tuiwen.dal.video import VideoDAO
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.utils import logger
@@ -33,27 +46,42 @@ class VideoService:
 
     @staticmethod
     def _calc_orientation(width: int, height: int) -> int:
+        """由宽高判定画面方向, 返回 VideoOrientation 枚举值。
+
+        上传时源视频宽高未知, 因此在转码完成回调里按回调宽高写入 Video.orientation,
+        feed 接口据此返回给前端决定播放器布局。
+        """
         if width <= 0 or height <= 0:
             return VideoOrientation.UNKNOWN
         return VideoOrientation.LANDSCAPE if width > height else VideoOrientation.PORTRAIT
 
     @staticmethod
     def _build_play_url(video: Video) -> str:
+        """拼 HLS 播放地址: <URL前缀>/<YYYYMM>/<video_id>/play_list.m3u8。
+
+        与 utils/video_transcoder.py 的实际产物保持一致:
+        master playlist 落在视频根目录, 各清晰度在 <清晰度>/index.m3u8,
+        播放器拿到 master 后自适应选码率。
+        """
         ym = video.create_at.strftime("%Y%m")
         return (
             f"{get_settings().VIDEO_STORAGE_URL_PREFIX}"
             f"{ym}/"
-            f"{video.video_id}/"
-            f"hls/playlist.m3u8"
+            f"{video.id}/"
+            f"play_list.m3u8"
         )
 
     @staticmethod
     def _build_poster_url(video: Video) -> str:
+        """拼封面地址: <URL前缀>/<YYYYMM>/<video_id>/cover.jpg。
+
+        文件名与 VideoTranscoder.create_cover 的输出(cover.jpg)保持一致。
+        """
         ym = video.create_at.strftime("%Y%m")
         return (
             f"{get_settings().VIDEO_STORAGE_URL_PREFIX}"
             f"{ym}/"
-            f"{video.video_id}/"
+            f"{video.id}/"
             f"poster.jpg"
         )
 
@@ -64,7 +92,7 @@ class VideoService:
             title: str | None,
             description: str | None,
             category: int | None,
-            uploader_account_id: str = "1",
+            uploader_account_id: uuid.UUID | None = None,
             video_md5: Optional[str] = None,
     ) -> Video:
         """
@@ -215,7 +243,7 @@ class VideoService:
             # 8. 创建当前用户自己的 Video 记录
             # -----------------------------------------------------
             video = Video(
-                video_id=video_id,
+                id=video_id,
                 poster=None,
                 title=title,
                 description=description,
@@ -325,7 +353,7 @@ class VideoService:
         items = []
         for video in videos:
             item = VideoFeedItem(
-                video_id=video.video_id,
+                video_id=video.id,
                 poster_url=self._build_poster_url(video),
                 play_url=self._build_play_url(video),
                 width=video.width,
@@ -357,8 +385,25 @@ class VideoService:
             has_more=has_more,
         )
 
-    async def transcode_complete(self, data):
-        video = await self.dao.get_by_unique_field("video_id", data["video_id"])
+    async def transcode_complete(self, data: TranscodeCompleteRequest) -> bool:
+        """处理转码完成回调: 回写转码状态/时长/宽高/方向, 并按清晰度落 VideoSource。
+
+        幂等与顺序保护:
+            已成功 → 直接返回 True(重复回调无害)
+            记录上已有 transcode_id 且与回调不一致 → 旧任务, 返回 False
+            (transcode_id 为 NULL 视为"首个任务", 直接接受;
+             等转码任务提交逻辑落地后, 提交时会先回填 transcode_id 再进入转码)
+
+        Args:
+            data: TranscodeCompleteRequest, 含 video_id / transcode_id / variants 等
+
+        Returns:
+            bool: True 已处理; False 旧任务回调被忽略
+
+        Raises:
+            BizError: 视频不存在 / 回调的变体列表为空
+        """
+        video = await self.dao.get_by_unique_field("id", data.video_id)
 
         if video is None:
             raise BizError(
@@ -366,14 +411,16 @@ class VideoService:
             )
 
         # 已经成功，重复回调直接幂等返回
-        if video.transcode_status == VideoStats.READY:
+        if video.transcode_status == VideoTranscodeStatus.SUCCESS:
             return True
 
-        # 不是当前转码任务
-        if video.transcode_id != data.transcode_id:
+        # 不是当前转码任务(记录上还没回填 transcode_id 时视为首个任务, 放行)
+        if video.transcode_id is not None and video.transcode_id != data.transcode_id:
             logger.warning(
-                "忽略旧转码任务回调: video_id=%s",
+                "忽略旧转码任务回调: video_id=%s, callback_transcode_id=%s, current_transcode_id=%s",
                 data.video_id,
+                data.transcode_id,
+                video.transcode_id,
             )
             return False
 
@@ -384,23 +431,27 @@ class VideoService:
 
         sources = [
             VideoSource(
-                video_id=video.video_id,
+                video_id=video.id,
                 type=VideoSourceType.HLS,
                 quality=item.quality,
-                path=item.path,
+                url=item.url,
                 size=item.size,
                 bitrate=item.bitrate,
             )
             for item in data.variants
         ]
 
-        video.transcode_status = VideoStats.READY
-        video.duration = data.duration
+        video.transcode_status = VideoTranscodeStatus.SUCCESS
+        video.transcode_id = data.transcode_id
+        video.duration = int(data.duration)  # 表字段为整型秒, 回调给的是浮点, 向下取整
         video.width = data.width
         video.height = data.height
+        video.orientation = self._calc_orientation(data.width, data.height)
         video.transcode_msg = None
 
         await self.dao.complete_transcode(video=video)
+        # 幂等保护: 先清掉该视频的旧源记录再写, 保证回调重放不会撞 (video_id,type,quality) 唯一约束
+        await self.source_dao.delete_by_fields(video_id=video.id)
         await self.source_dao.bulk_create(sources)
         await self.source_dao.commit()
         await self.dao.write_db.commit()
@@ -408,13 +459,29 @@ class VideoService:
         return True
 
     async def transcode_failed(self, data: TranscodeFailedRequest,) -> bool:
-        video = self.dao.get_by_unique_field("video_id", data.video_id)
+        """处理转码失败回调: 记录失败原因, 但不覆盖已成功的记录。
+
+        幂等与顺序保护与 transcode_complete 一致:
+            已成功 → 忽略失败回调(返回 True, 告知转码服务无需重试)
+            已失败 → 重复回调幂等返回 True
+            transcode_id 不一致(且记录上已有值) → 旧任务, 返回 False
+
+        Args:
+            data: 失败详情, 含 video_id / transcode_id / detail
+
+        Returns:
+            bool: True 已处理(含幂等忽略); False 旧任务回调被忽略
+
+        Raises:
+            BizError: 视频不存在
+        """
+        video = await self.dao.get_by_unique_field("id", data.video_id)
 
         if video is None:
             raise BizError(f"视频不存在: {data.video_id}")
 
-        # 已经成功，不允许失败回调覆盖 READY
-        if video.transcode_status == VideoStats.READY:
+        # 已经成功，不允许失败回调覆盖 SUCCESS
+        if video.transcode_status == VideoTranscodeStatus.SUCCESS:
             logger.warning(
                 "忽略转码失败回调，视频已经成功: "
                 "video_id=%s, transcode_id=%s",
@@ -424,7 +491,7 @@ class VideoService:
             return True
 
         # 转码任务不是当前任务，说明是旧任务回调
-        if video.transcode_id != data.transcode_id:
+        if video.transcode_id is not None and video.transcode_id != data.transcode_id:
             logger.warning(
                 "忽略过期转码失败回调: "
                 "video_id=%s, callback_transcode_id=%s, "
@@ -436,11 +503,12 @@ class VideoService:
             return False
 
         # 已经失败，重复回调直接幂等返回
-        if video.transcode_status == VideoStats.FAILED:
+        if video.transcode_status == VideoTranscodeStatus.FAILED:
             return True
 
-        video.transcode_status = VideoStats.FAILED
-        video.transcode_msg = data.detail
+        video.transcode_status = VideoTranscodeStatus.FAILED
+        video.transcode_id = data.transcode_id
+        video.transcode_msg = data.detail[:128]  # 表字段 max_length=128, 截断防止入库报错
         await self.dao.update(video)
         await self.dao.write_db.commit()
 

@@ -10,10 +10,11 @@
     @Desc: 通知/公告模型: 单用户通知与系统公告统一落 tw_notice 表
 =================================================
 """
+import uuid
 from enum import IntEnum
 
 from pydantic import field_serializer
-from sqlalchemy import Column, DateTime, text, JSON, BigInteger, SmallInteger, Identity, func
+from sqlalchemy import Column, DateTime, text, JSON, BigInteger, SmallInteger, Identity, func, UUID
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from typing import Optional
@@ -61,14 +62,12 @@ class Notice(SQLModel, table=True):
     id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
                     sa_column_args=[Identity(always=False)])
     # 接收通知的用户
-    account_id: str = Field(nullable=True, max_length=32, index=True,
-                            sa_column_kwargs={'comment': '单用户接收人ID，系统公告为空'})
+    account_id: Optional[uuid.UUID] = Field(nullable=True, index=True,
+                            sa_column_kwargs={'comment': '单用户接收人主键，系统公告为空'})
 
     # 触发者（点赞/评论/关注的人，系统通知为 None）
-    # NOTE: 字段是字符串ID但 default=1 是整数 —— asyncpg 对 varchar 传 int 会直接报错,
-    #       系统通知要么显式传 "1", 要么把默认值改成 None
-    trigger_account_id: Optional[str] = Field(nullable=True, default=1, index=True, max_length=32,
-                                           sa_column_kwargs={'comment': '触发者用户ID，系统通知为1'})
+    trigger_account_id: Optional[uuid.UUID] = Field(nullable=True, default=None, index=True,
+                                           sa_column_kwargs={'comment': '触发者账户主键，系统通知为None'})
     type: NoticeType | None = Field(default=NoticeType.SYSTEM, nullable=False, ge=0, sa_type=SmallInteger,
                              index=True, sa_column_kwargs={
             'comment': '通知类型 system系统/like点赞/comment评论/follow关注/mention@'})
@@ -82,8 +81,8 @@ class Notice(SQLModel, table=True):
         index=True,
         sa_column_kwargs={'comment': '推送范围 all全部/new新用户/vip付费用户'}
     )
-    target_id: Optional[str] = Field(default=None, max_length=32, nullable=True,
-                                     index=True, sa_column_kwargs={'comment': '内容ID'})
+    target_id: Optional[uuid.UUID] = Field(default=None, nullable=True,
+                                     index=True, sa_column_kwargs={'comment': '内容主键(帖子/评论/用户)'})
 
     # 标题、内容
     title: Optional[str] = Field(..., max_length=256, description='标题', sa_column_kwargs={'comment': '标题'})
