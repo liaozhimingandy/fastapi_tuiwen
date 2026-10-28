@@ -425,6 +425,10 @@ jobs:
           echo "本地标签文件:"; cat /tmp/tags.txt
 
       # 有凭据: 用 buildx 一次构建、多仓库多标签推送(支持多架构与 gha 缓存)
+      - name: 记录构建开始时间
+        if: needs.meta.outputs.should_push == 'true'
+        run: echo "BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: 构建并推送（buildx）
         if: needs.meta.outputs.should_push == 'true'
         uses: docker/build-push-action@v6
@@ -443,6 +447,16 @@ jobs:
           cache-to: type=gha,scope=tuiwen-image,mode=max
           provenance: false
           sbom: false
+
+      # 把耗时打到注解里: 作业日志需要 admin 权限才能读, 注解谁都能看。
+      # 首次推送往往要 8-12 分钟 —— 依赖层没有缓存、还要把 mode=max 的缓存
+      # 上传到 gha、同一批层分别传到两个仓库; 之后命中缓存通常 2-3 分钟。
+      - name: 构建耗时
+        if: needs.meta.outputs.should_push == 'true' && always()
+        run: |
+          if [ -n "${BUILD_START:-}" ]; then
+            echo "::notice title=构建耗时::构建+推送共 $(( $(date +%s) - BUILD_START ))s（首次无缓存会明显更久）"
+          fi
 
       # 没有凭据(或手动选择不推送): 只在本地产出镜像, 用经典构建器即可。
       # 不用 buildx 的 load 导出 —— 那条路径依赖 docker exporter,
@@ -521,6 +535,7 @@ jobs:
           HUB_IMAGE: ${{ steps.img.outputs.hub_image }}
           ALI_IMAGE: ${{ steps.img.outputs.aliyun_image }}
           VERSION: ${{ needs.meta.outputs.version }}
+          IS_DEV: ${{ needs.meta.outputs.is_dev }}
           PUSH_HUB: ${{ needs.meta.outputs.push_hub }}
           PUSH_ALI: ${{ needs.meta.outputs.push_aliyun }}
           PLATFORMS: ${{ needs.meta.outputs.platforms }}
@@ -536,7 +551,9 @@ jobs:
               docker run --rm --entrypoint sh "${ref}" -c 'test -f /app/VERSION && test -d /app/src/tuiwen && test -f /app/main.py'
               got=$(docker run --rm --entrypoint cat "${ref}" /app/VERSION | tr -d '\r\n')
               echo "镜像内 VERSION: ${got}"
-              if [ "${VERSION}" != "dev" ] && [ "${got}" != "${VERSION}" ]; then
+              # dev/develop 是分支构建, VERSION 文件本来就还是上一个发布版本,
+              # 只有正式发布(tag)时才需要两者一致, 否则每次推 develop 都刷一条告警
+              if [ "${IS_DEV}" != "true" ] && [ "${got}" != "${VERSION}" ]; then
                 echo "::warning title=版本文件不一致::镜像内 VERSION=${got}, 标签=${VERSION}"
               fi
             fi

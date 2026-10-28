@@ -1,22 +1,41 @@
-.venv/*
-static/media/*
+# =============================================================================
+# 构建上下文过滤
+#   目的只有两个：把上下文传得尽量小（直接影响每次构建的前几秒）、
+#   别把本机的依赖/密钥/运行产物塞进镜像。
+#   注意 Docker 的匹配规则：不带 `**` 的模式只匹配上下文根目录那一层，
+#   所以嵌套目录必须写成 `**/xxx`；也不要写 `./xxx` 这种前缀，它不生效。
+# =============================================================================
+
+# ---- 依赖与虚拟环境(整个目录排除, 不留空壳) ----
+.venv
+.venv/
 pdm-python
-Dockerfile
-.gitignore
-.git/*
-__pycache__/*
 .pdm-python
-.idea/*
-.env.develop
-./docker-compose.yml
-./static/medias/*
+
+# ---- 运行产物 ----
+logs
+**/*.log
 tuiwen.sqlite3
-# 测试代码与 CI 配置不进运行镜像（CI 在宿主机跑测试，镜像只留运行期所需文件）
-# 注意：这里写目录名而不是 `目录/*`，否则空目录仍会被 COPY 进镜像
+static/media
+static/medias
+
+# ---- 测试与 CI(镜像里只留运行期所需) ----
 test_main.py
 tests
 .github
 .pytest_cache
 .ruff_cache
-# 日志由应用运行时生成，不预置空目录
-logs
+.mypy_cache
+**/__pycache__
+**/*.pyc
+
+# ---- 仓库自身与本地配置 ----
+Dockerfile
+.dockerignore
+.gitignore
+.git
+.idea
+.vscode
+docker-compose.yml
+.env
+.env.*
