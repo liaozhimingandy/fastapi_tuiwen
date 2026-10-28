@@ -318,6 +318,7 @@ jobs:
           password: ${{ secrets.ALIYUN_PASSWORD || secrets.DOCKER_PASSWORD }}
 
       - name: 输出解析后的构建参数
+        id: params
         env:
           VERSION: ${{ needs.meta.outputs.version }}
           TAGS: ${{ needs.meta.outputs.tags }}
@@ -325,13 +326,39 @@ jobs:
           SHOULD_PUSH: ${{ needs.meta.outputs.should_push }}
           PUSH_HUB: ${{ needs.meta.outputs.push_hub }}
           PUSH_ALI: ${{ needs.meta.outputs.push_aliyun }}
+          HUB_IMAGE: ${{ needs.meta.outputs.hub_image }}
+          ALI_IMAGE: ${{ needs.meta.outputs.aliyun_image }}
         run: |
           set -euo pipefail
           echo "::notice title=构建参数::version=${VERSION} should_push=${SHOULD_PUSH} hub=${PUSH_HUB} aliyun=${PUSH_ALI} platforms=${PLATFORMS}"
-          printf 'tag: %s\n' ${TAGS}
-          printf '%s\n' "${TAGS}" > /tmp/tags.txt
+          # 标签来自 meta 的多行 output, 这里统一去掉空行并落地成文件,
+          # 后续构建只读这个文件 —— 不把多行值再接进 action 的 input
+          TAG_LIST="$(printf '%s\n' "${TAGS}" | awk 'NF')"
+          if [ -z "${TAG_LIST}" ]; then
+            # 兜底: 跨作业取不到标签时按推送目标自行拼一个,
+            # 否则 buildx 只会报 "tag is needed when pushing to registry"
+            if [ "${PUSH_ALI}" = "true" ] && [ -n "${ALI_IMAGE}" ]; then
+              TAG_LIST="${ALI_IMAGE}:${VERSION}"
+            else
+              TAG_LIST="${HUB_IMAGE}:${VERSION}"
+            fi
+            echo "::warning title=标签回退::meta 作业没有传出 tags, 已按推送目标回退为 ${TAG_LIST}"
+          fi
+          if printf '%s\n' "${TAG_LIST}" | grep -qE ':$'; then
+            echo "::error title=非法镜像标签::存在空版本号的标签, 请检查 meta 的版本映射"
+            exit 1
+          fi
+          printf '%s\n' "${TAG_LIST}" > /tmp/tags.txt
+          echo "::notice title=镜像标签::共 $(printf '%s\n' "${TAG_LIST}" | grep -c . ) 个: $(printf '%s ' ${TAG_LIST})"
+          {
+            echo "tags<<TAGS_EOF"
+            printf '%s\n' "${TAG_LIST}"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
 
-      # 有凭据: 用 buildx 一次构建、多仓库推送(支持多架构与 gha 缓存)
+      # 有凭据: 用 buildx 一次构建、多仓库多标签推送(支持多架构与 gha 缓存)。
+      # tags 取自同一作业上一步的 output —— 跨作业传递多行 output 曾出现标签丢失,
+      # buildx 只会报 "tag is needed when pushing to registry", 看不出根因
       - name: 构建并推送（buildx）
         if: needs.meta.outputs.should_push == 'true'
         uses: docker/build-push-action@v6
@@ -340,7 +367,7 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: ${{ needs.meta.outputs.platforms }}
-          tags: ${{ needs.meta.outputs.tags }}
+          tags: ${{ steps.params.outputs.tags }}
           labels: |
             org.opencontainers.image.title=fastapi_tuiwen
             org.opencontainers.image.version=${{ needs.meta.outputs.version }}
