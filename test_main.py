@@ -479,10 +479,13 @@ class TestMain:
         assert r.status_code == status.HTTP_200_OK
 
     def test_snaps_like(self, test_register_and_login):
-        "获取帖子数据"
+        "给某条 snap 点赞(写操作, 必须是 POST)"
         client = test_register_and_login.get('client')
-        r = client.get(f'/snaps/{TestMain.snap_id}/like/')
+        r = client.post(f'/snaps/{TestMain.snap_id}/like/')
         assert r.status_code == status.HTTP_200_OK
+        # 响应键随列名一起从 like 改成 like_count
+        assert 'like_count' in r.json()
+        assert r.json()['like_count'] >= 1
 
     # @pytest.mark.skip(reason="测试完成后删除测试用户")
     # def test_delete_test_user(self, session: Session) -> None:
