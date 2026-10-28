@@ -1,0 +1,174 @@
+# =============================================================================
+# 由「版本 + 推送开关」算出镜像名与全部标签。
+#
+# 为什么做成 composite action 而不是 job output：
+#   GitHub 会丢弃「值里包含 secret」的 job output，注解表现为
+#     Skip output 'hub_image' since it may contain secret.
+#   镜像名/标签里必然含 ALIYUN_REGISTRY(secret) 与用户名，因此跨作业传递
+#   一定会变成空串，下游只能拿到空标签，buildx 报 "tag is needed when
+#   pushing to registry" 或推到一个不存在的路径。
+#   所以镜像名在各作业内部现场计算，只把「不含 secret 的标量」当 job output 传。
+#
+# 规则必须与 .github/workflows/build-images.yml 里 meta 作业的版本映射保持一致：
+#   dev 构建不带 sha；正式版附 sha + latest；稳定系列滚动 A.B / A
+# =============================================================================
+name: resolve-image
+description: 根据版本号与推送开关计算镜像名和标签（在调用方作业内运行，结果不跨作业传递）
+
+inputs:
+  version:
+    description: 镜像版本号（如 dev / develop / 1.2 / 1.2.3 / 1.2rc1）
+    required: true
+  short_sha:
+    description: 7 位提交短哈希
+    required: true
+  is_dev:
+    description: 是否开发构建（true 时不附 sha 标签）
+    required: false
+    default: 'false'
+  is_latest:
+    description: 是否滚动 latest 标签
+    required: false
+    default: 'false'
+  series:
+    description: 稳定系列号（如 1.2），为空则不滚动 A.B / A
+    required: false
+    default: ''
+  floating:
+    description: 是否启用 A.B / A 浮动标签
+    required: false
+    default: 'true'
+  push_hub:
+    description: 是否推送 Docker Hub
+    required: false
+    default: 'false'
+  push_aliyun:
+    description: 是否推送阿里云 ACR
+    required: false
+    default: 'false'
+  default_image_name:
+    description: 默认镜像名（工作流里的 DEFAULT_IMAGE_NAME）
+    required: true
+  docker_repository:
+    description: 覆盖镜像名的仓库变量（vars.DOCKER_REPOSITORY），可空
+    required: false
+    default: ''
+  aliyun_registry:
+    description: 阿里云 ACR 域名（secrets.ALIYUN_REGISTRY）
+    required: false
+    default: ''
+  aliyun_namespace:
+    description: 阿里云 ACR 命名空间（vars.ALIYUN_NAMESPACE）
+    required: false
+    default: ''
+
+outputs:
+  hub_image:
+    description: Docker Hub 镜像名（不含标签）
+    value: ${{ steps.calc.outputs.hub_image }}
+  aliyun_image:
+    description: 阿里云 ACR 镜像名（不含标签），未推送时为空
+    value: ${{ steps.calc.outputs.aliyun_image }}
+  tags:
+    description: 换行分隔的完整标签列表
+    value: ${{ steps.calc.outputs.tags }}
+
+runs:
+  using: composite
+  steps:
+    - id: calc
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHORT_SHA: ${{ inputs.short_sha }}
+        IS_DEV: ${{ inputs.is_dev }}
+        IS_LATEST: ${{ inputs.is_latest }}
+        SERIES: ${{ inputs.series }}
+        FLOATING: ${{ inputs.floating }}
+        PUSH_HUB: ${{ inputs.push_hub }}
+        PUSH_ALI: ${{ inputs.push_aliyun }}
+        DEFAULT_IMAGE_NAME: ${{ inputs.default_image_name }}
+        DOCKER_REPOSITORY: ${{ inputs.docker_repository }}
+        ALIYUN_REGISTRY: ${{ inputs.aliyun_registry }}
+        ALIYUN_NAMESPACE: ${{ inputs.aliyun_namespace }}
+        OWNER: ${{ github.repository_owner }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${VERSION}" ]; then
+          echo "::error title=版本号为空::上游没有给出镜像版本号"
+          exit 1
+        fi
+
+        HUB_IMAGE="${DOCKER_REPOSITORY:-${OWNER}/${DEFAULT_IMAGE_NAME}}"
+        ALI_IMAGE=""
+        # ACR 命名空间是账号里自建的，不能用 github 用户名去猜：
+        # 猜出来的路径一定不存在，推送只会得到 "repository does not exist"
+        if [ "${PUSH_ALI}" = "true" ]; then
+          if [ -z "${ALIYUN_REGISTRY}" ] || [ -z "${ALIYUN_NAMESPACE}" ]; then
+            echo "::error title=阿里云镜像路径不完整::要推送阿里云, 但 ALIYUN_REGISTRY 或 ALIYUN_NAMESPACE 为空"
+            exit 1
+          fi
+          ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE}/${HUB_IMAGE##*/}"
+        fi
+
+        tag_lines() {  # tag_lines <镜像名>
+          local image="$1"
+          [ -z "${image}" ] && return 0
+          printf '%s\n' "${image}:${VERSION}"
+          # dev/develop 构建不附 sha，避免每次提交堆积无用标签
+          if [ "${IS_DEV}" != "true" ]; then
+            printf '%s\n' "${image}:sha-${SHORT_SHA}"
+          fi
+          if [ "${IS_LATEST}" = "true" ]; then
+            printf '%s\n' "${image}:latest"
+          fi
+          if [ "${FLOATING}" = "true" ] && [ -n "${SERIES}" ]; then
+            printf '%s\n' "${image}:${SERIES}"
+            printf '%s\n' "${image}:$(printf '%s' "${SERIES}" | cut -d. -f1)"
+          fi
+          return 0
+        }
+
+        ALL_TAGS="$(
+          {
+            if [ "${PUSH_HUB}" = "true" ]; then tag_lines "${HUB_IMAGE}"; fi
+            if [ "${PUSH_ALI}" = "true" ]; then tag_lines "${ALI_IMAGE}"; fi
+            true
+          } | awk 'NF && !seen[$0]++'
+        )"
+        # 不推送时仍需要一个本地标签，供 docker build --tag 使用
+        if [ -z "${ALL_TAGS}" ]; then
+          ALL_TAGS="${HUB_IMAGE}:${VERSION}"
+        fi
+        if printf '%s\n' "${ALL_TAGS}" | grep -qE ':$'; then
+          echo "::error title=非法镜像标签::存在空版本号的标签, 检查版本映射"
+          exit 1
+        fi
+        # 真要推送时，每个标签的仓库都必须是已登录的，否则 buildx 拉 oauth
+        # token 会 401。没有域名/端口的第一段即 docker.io 短名（owner/repo）。
+        # 不推送时标签只是本机构建用的名字，与仓库无关，不做这项校验
+        if [ "${PUSH_HUB}" = "true" ] || [ "${PUSH_ALI}" = "true" ]; then
+          while read -r t; do
+            [ -z "${t}" ] && continue
+            first="${t%%/*}"
+            case "${first}" in
+              *.*|*:*|localhost) continue ;;
+            esac
+            if [ "${PUSH_HUB}" != "true" ]; then
+              echo "::error title=标签指向未登录的仓库::${t} 属于 docker.io, 但本工作流没有 Docker Hub 凭据"
+              exit 1
+            fi
+          done <<< "${ALL_TAGS}"
+        fi
+
+        # 同一作业内的后续步骤（含经典 docker build）直接读这个文件
+        printf '%s\n' "${ALL_TAGS}" > /tmp/tags.txt
+        {
+          echo "hub_image=${HUB_IMAGE}"
+          echo "aliyun_image=${ALI_IMAGE}"
+          echo "tags<<TAGS_EOF"
+          printf '%s\n' "${ALL_TAGS}"
+          echo "TAGS_EOF"
+        } >> "$GITHUB_OUTPUT"
+        echo "::notice title=镜像标签::共 $(printf '%s\n' "${ALL_TAGS}" | grep -c .) 个: $(printf '%s ' ${ALL_TAGS})"

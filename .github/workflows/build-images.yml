@@ -78,19 +78,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      # 只传「不含 secret 值的标量」。
+      # GitHub 会丢弃值里含 secret 的 job output（注解: Skip output 'x' since it
+      # may contain secret），镜像名/标签必然含 ALIYUN_REGISTRY 等密钥值，
+      # 因此镜像名与标签改由各作业用 ./.github/actions/resolve-image 现场计算。
       version: ${{ steps.calc.outputs.version }}
       short_sha: ${{ steps.calc.outputs.short_sha }}
-      hub_image: ${{ steps.calc.outputs.hub_image }}
-      aliyun_image: ${{ steps.calc.outputs.aliyun_image }}
-      # 这四个值跨作业传递时出现过丢失(多行 tags 与 aliyun_image 都变成空串),
-      # 因此额外给一份 base64 单行版本, 由 build 作业负责解码
-      aliyun_image_b64: ${{ steps.calc.outputs.aliyun_image_b64 }}
-      tags_b64: ${{ steps.calc.outputs.tags_b64 }}
+      is_dev: ${{ steps.calc.outputs.is_dev }}
+      is_latest: ${{ steps.calc.outputs.is_latest }}
+      series: ${{ steps.calc.outputs.series }}
+      floating: ${{ steps.calc.outputs.floating }}
       push_hub: ${{ steps.calc.outputs.push_hub }}
       push_aliyun: ${{ steps.calc.outputs.push_aliyun }}
       should_push: ${{ steps.calc.outputs.should_push }}
       platforms: ${{ steps.calc.outputs.platforms }}
-      tags: ${{ steps.calc.outputs.tags }}
       build_type: ${{ steps.calc.outputs.build_type }}
     steps:
       - name: 检出代码
@@ -254,19 +255,15 @@ jobs:
           {
             echo "version=${VERSION}"
             echo "short_sha=${SHORT_SHA}"
-            echo "hub_image=${HUB_IMAGE}"
-            echo "aliyun_image=${ALI_IMAGE}"
+            echo "is_dev=${IS_DEV}"
+            echo "is_latest=${LATEST}"
+            echo "series=${SERIES}"
+            echo "floating=${FLOATING}"
             echo "push_hub=${PUSH_HUB}"
             echo "push_aliyun=${PUSH_ALI}"
             echo "should_push=${SHOULD_PUSH}"
             echo "platforms=${PLATFORMS}"
             echo "build_type=${BUILD_TYPE}"
-            # base64 单行版本: 多行值作为 job output 会丢, 单行不会
-            echo "aliyun_image_b64=$(printf '%s' "${ALI_IMAGE}" | base64 -w0)"
-            echo "tags_b64=$(printf '%s\n' "${ALL_TAGS}" | base64 -w0)"
-            echo "tags<<TAGS_EOF"
-            printf '%s\n' "${ALL_TAGS}"
-            echo "TAGS_EOF"
           } >> "$GITHUB_OUTPUT"
 
           # 版本号一致性检查：main.py 的版本来自 VERSION 文件，tag 与之不符会导致
@@ -332,97 +329,41 @@ jobs:
           username: ${{ secrets.ALIYUN_USERNAME || secrets.DOCKER_USERNAME }}
           password: ${{ secrets.ALIYUN_PASSWORD || secrets.DOCKER_PASSWORD }}
 
+      # 镜像名与标签在本作业内现场计算: 不能靠 meta 的 job output,
+      # 那类值含 secret(registry/用户名) 会被 GitHub 静默丢弃
+      - name: 计算镜像名与标签
+        id: img
+        uses: ./.github/actions/resolve-image
+        with:
+          version: ${{ needs.meta.outputs.version }}
+          short_sha: ${{ needs.meta.outputs.short_sha }}
+          is_dev: ${{ needs.meta.outputs.is_dev }}
+          is_latest: ${{ needs.meta.outputs.is_latest }}
+          series: ${{ needs.meta.outputs.series }}
+          floating: ${{ needs.meta.outputs.floating }}
+          push_hub: ${{ needs.meta.outputs.push_hub }}
+          push_aliyun: ${{ needs.meta.outputs.push_aliyun }}
+          default_image_name: ${{ env.DEFAULT_IMAGE_NAME }}
+          docker_repository: ${{ vars.DOCKER_REPOSITORY }}
+          aliyun_registry: ${{ secrets.ALIYUN_REGISTRY }}
+          aliyun_namespace: ${{ vars.ALIYUN_NAMESPACE }}
+
       - name: 输出解析后的构建参数
-        id: params
         env:
           VERSION: ${{ needs.meta.outputs.version }}
-          TAGS: ${{ needs.meta.outputs.tags }}
-          TAGS_B64: ${{ needs.meta.outputs.tags_b64 }}
           PLATFORMS: ${{ needs.meta.outputs.platforms }}
           SHOULD_PUSH: ${{ needs.meta.outputs.should_push }}
           PUSH_HUB: ${{ needs.meta.outputs.push_hub }}
           PUSH_ALI: ${{ needs.meta.outputs.push_aliyun }}
-          HUB_IMAGE: ${{ needs.meta.outputs.hub_image }}
-          ALI_IMAGE: ${{ needs.meta.outputs.aliyun_image }}
-          ALI_IMAGE_B64: ${{ needs.meta.outputs.aliyun_image_b64 }}
-          # 兜底: 若 meta 的 output 再次丢失, 用凭据现场重建阿里云镜像名
-          ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
-          ALIYUN_NAMESPACE: ${{ vars.ALIYUN_NAMESPACE }}
+          HUB_IMAGE: ${{ steps.img.outputs.hub_image }}
+          ALI_IMAGE: ${{ steps.img.outputs.aliyun_image }}
         run: |
           set -euo pipefail
-
-          decode() {  # decode <base64> -> 原值(空输入返回空)
-            [ -z "$1" ] && return 0
-            printf '%s' "$1" | base64 -d
-            return 0
-          }
-
-          # 优先取 base64 单行版本, 拿不到再退回明文 output
-          [ -z "${ALI_IMAGE}" ] && ALI_IMAGE="$(decode "${ALI_IMAGE_B64}")"
-          [ -z "${TAGS}" ] && TAGS="$(decode "${TAGS_B64}")"
           echo "::notice title=构建参数::version=${VERSION} should_push=${SHOULD_PUSH} hub=${PUSH_HUB} aliyun=${PUSH_ALI} platforms=${PLATFORMS}"
+          echo "::notice title=镜像名::hub=${HUB_IMAGE} aliyun=${ALI_IMAGE:-无}"
+          echo "本地标签文件:"; cat /tmp/tags.txt
 
-          if [ -z "${HUB_IMAGE}" ]; then
-            echo "::error title=镜像名为空::meta 作业没有传出 hub_image"
-            exit 1
-          fi
-          if [ "${PUSH_ALI}" = "true" ] && [ -z "${ALI_IMAGE}" ]; then
-            if [ -n "${ALIYUN_NAMESPACE}" ]; then
-              ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE}/${HUB_IMAGE##*/}"
-              echo "::warning title=阿里云镜像名兜底::meta 输出为空, 现场重建为 ${ALI_IMAGE}"
-            else
-              echo "::error title=缺少 ALIYUN_NAMESPACE::要推送阿里云, 但仓库变量 ALIYUN_NAMESPACE(ACR 命名空间) 为空"
-              exit 1
-            fi
-          fi
-
-          # 标签来自 meta 的多行 output, 这里统一去掉空行并落地成文件,
-          # 后续构建只读这个文件 —— 不把多行值再接进 action 的 input
-          TAG_LIST="$(printf '%s\n' "${TAGS}" | awk 'NF')"
-          if [ -z "${TAG_LIST}" ]; then
-            # 兜底: 仍取不到标签时按推送目标自己拼,
-            # 否则 buildx 只会报 "tag is needed when pushing to registry"
-            if [ "${PUSH_ALI}" = "true" ]; then
-              TAG_LIST="${ALI_IMAGE}:${VERSION}"
-            else
-              TAG_LIST="${HUB_IMAGE}:${VERSION}"
-            fi
-            echo "::warning title=标签回退::meta 作业没有传出 tags, 已按推送目标回退为 ${TAG_LIST}"
-          fi
-          if printf '%s\n' "${TAG_LIST}" | grep -qE ':$'; then
-            echo "::error title=非法镜像标签::存在空版本号的标签, 请检查 meta 的版本映射"
-            exit 1
-          fi
-
-          # 每个标签的仓库必须已登录, 否则 buildx 会在拉 oauth token 时 401。
-          # 没有域名和端口的第一段就是 docker.io 短名(如 owner/repo)。
-          # 只在真的要推送时校验 —— 仅本地构建时标签只是本机名字, 与仓库无关
-          while read -r t; do
-            [ -z "${t}" ] && continue
-            [ "${SHOULD_PUSH}" = "true" ] || continue
-            first="${t%%/*}"
-            is_hub=false
-            case "${first}" in
-              *.*|*:*|localhost) is_hub=false ;;
-              *) is_hub=true ;;
-            esac
-            if [ "${is_hub}" = "true" ] && [ "${PUSH_HUB}" != "true" ]; then
-              echo "::error title=标签指向未登录的仓库::${t} 属于 docker.io, 但本工作流没有配置 Docker Hub 凭据; 请检查 meta 的镜像名拼接"
-              exit 1
-            fi
-          done <<< "${TAG_LIST}"
-
-          printf '%s\n' "${TAG_LIST}" > /tmp/tags.txt
-          echo "::notice title=镜像标签::共 $(printf '%s\n' "${TAG_LIST}" | grep -c . ) 个: $(printf '%s ' ${TAG_LIST})"
-          {
-            echo "tags<<TAGS_EOF"
-            printf '%s\n' "${TAG_LIST}"
-            echo "TAGS_EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      # 有凭据: 用 buildx 一次构建、多仓库多标签推送(支持多架构与 gha 缓存)。
-      # tags 取自同一作业上一步的 output —— 跨作业传递多行 output 曾出现标签丢失,
-      # buildx 只会报 "tag is needed when pushing to registry", 看不出根因
+      # 有凭据: 用 buildx 一次构建、多仓库多标签推送(支持多架构与 gha 缓存)
       - name: 构建并推送（buildx）
         if: needs.meta.outputs.should_push == 'true'
         uses: docker/build-push-action@v6
@@ -431,7 +372,7 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: ${{ needs.meta.outputs.platforms }}
-          tags: ${{ steps.params.outputs.tags }}
+          tags: ${{ steps.img.outputs.tags }}
           labels: |
             org.opencontainers.image.title=fastapi_tuiwen
             org.opencontainers.image.version=${{ needs.meta.outputs.version }}
@@ -451,7 +392,7 @@ jobs:
           set -euo pipefail
           first_tag="$(head -1 /tmp/tags.txt)"
           if [ -z "${first_tag}" ]; then
-            echo "::error title=镜像标签为空::meta 作业没有产出 tags, 检查版本映射"
+            echo "::error title=镜像标签为空::resolve-image 没有产出标签, 检查版本映射"
             exit 1
           fi
           echo "本地构建标签: ${first_tag}"
@@ -469,6 +410,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 计算镜像名与标签
+        id: img
+        uses: ./.github/actions/resolve-image
+        with:
+          version: ${{ needs.meta.outputs.version }}
+          short_sha: ${{ needs.meta.outputs.short_sha }}
+          is_dev: ${{ needs.meta.outputs.is_dev }}
+          is_latest: ${{ needs.meta.outputs.is_latest }}
+          series: ${{ needs.meta.outputs.series }}
+          floating: ${{ needs.meta.outputs.floating }}
+          push_hub: ${{ needs.meta.outputs.push_hub }}
+          push_aliyun: ${{ needs.meta.outputs.push_aliyun }}
+          default_image_name: ${{ env.DEFAULT_IMAGE_NAME }}
+          docker_repository: ${{ vars.DOCKER_REPOSITORY }}
+          aliyun_registry: ${{ secrets.ALIYUN_REGISTRY }}
+          aliyun_namespace: ${{ vars.ALIYUN_NAMESPACE }}
+
       - name: 配置 Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -490,24 +453,14 @@ jobs:
 
       - name: 校验镜像可拉取
         env:
-          HUB_IMAGE: ${{ needs.meta.outputs.hub_image }}
-          ALI_IMAGE: ${{ needs.meta.outputs.aliyun_image }}
-          ALI_IMAGE_B64: ${{ needs.meta.outputs.aliyun_image_b64 }}
-          ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
-          ALIYUN_NAMESPACE: ${{ vars.ALIYUN_NAMESPACE }}
+          HUB_IMAGE: ${{ steps.img.outputs.hub_image }}
+          ALI_IMAGE: ${{ steps.img.outputs.aliyun_image }}
           VERSION: ${{ needs.meta.outputs.version }}
           PUSH_HUB: ${{ needs.meta.outputs.push_hub }}
           PUSH_ALI: ${{ needs.meta.outputs.push_aliyun }}
           PLATFORMS: ${{ needs.meta.outputs.platforms }}
         run: |
           set -euo pipefail
-          # meta 的 aliyun_image 可能跨作业丢失, 用 base64 版本或凭据现场重建
-          if [ -z "${ALI_IMAGE}" ] && [ -n "${ALI_IMAGE_B64}" ]; then
-            ALI_IMAGE="$(printf '%s' "${ALI_IMAGE_B64}" | base64 -d)"
-          fi
-          if [ "${PUSH_ALI}" = "true" ] && [ -z "${ALI_IMAGE}" ] && [ -n "${ALIYUN_NAMESPACE}" ]; then
-            ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE}/${HUB_IMAGE##*/}"
-          fi
           check() {
             local ref="$1"
             echo "--- 校验 ${ref}"
@@ -537,14 +490,34 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 计算镜像名（仅用于摘要展示）
+        id: img
+        if: needs.meta.outputs.version != ''
+        uses: ./.github/actions/resolve-image
+        with:
+          version: ${{ needs.meta.outputs.version }}
+          short_sha: ${{ needs.meta.outputs.short_sha }}
+          is_dev: ${{ needs.meta.outputs.is_dev }}
+          is_latest: ${{ needs.meta.outputs.is_latest }}
+          series: ${{ needs.meta.outputs.series }}
+          floating: ${{ needs.meta.outputs.floating }}
+          push_hub: ${{ needs.meta.outputs.push_hub }}
+          push_aliyun: ${{ needs.meta.outputs.push_aliyun }}
+          default_image_name: ${{ env.DEFAULT_IMAGE_NAME }}
+          docker_repository: ${{ vars.DOCKER_REPOSITORY }}
+          aliyun_registry: ${{ secrets.ALIYUN_REGISTRY }}
+          aliyun_namespace: ${{ vars.ALIYUN_NAMESPACE }}
+
       - name: 写入摘要
         env:
           VERSION: ${{ needs.meta.outputs.version }}
-          HUB_IMAGE: ${{ needs.meta.outputs.hub_image }}
-          ALI_IMAGE: ${{ needs.meta.outputs.aliyun_image }}
-          ALI_IMAGE_B64: ${{ needs.meta.outputs.aliyun_image_b64 }}
-          ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
-          ALIYUN_NAMESPACE: ${{ vars.ALIYUN_NAMESPACE }}
+          HUB_IMAGE: ${{ steps.img.outputs.hub_image }}
+          ALI_IMAGE: ${{ steps.img.outputs.aliyun_image }}
           PUSH_HUB: ${{ needs.meta.outputs.push_hub }}
           PUSH_ALI: ${{ needs.meta.outputs.push_aliyun }}
           BUILD_TYPE: ${{ needs.meta.outputs.build_type }}
@@ -553,13 +526,6 @@ jobs:
           R_VERIFY: ${{ needs.verify.result }}
         run: |
           set -euo pipefail
-          # 摘要里也要显示真实的阿里云镜像名: 该 output 跨作业可能为空
-          if [ -z "${ALI_IMAGE}" ] && [ -n "${ALI_IMAGE_B64}" ]; then
-            ALI_IMAGE="$(printf '%s' "${ALI_IMAGE_B64}" | base64 -d)"
-          fi
-          if [ "${PUSH_ALI}" = "true" ] && [ -z "${ALI_IMAGE}" ] && [ -n "${ALIYUN_NAMESPACE}" ]; then
-            ALI_IMAGE="${ALIYUN_REGISTRY}/${ALIYUN_NAMESPACE}/${HUB_IMAGE##*/}"
-          fi
           {
             echo "## 镜像构建报告"
             echo ""
