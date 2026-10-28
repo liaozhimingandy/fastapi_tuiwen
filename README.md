@@ -66,8 +66,8 @@ videos/<YYYYMM>/<video_id>/
 
 | 类型 | 名称 | 说明 |
 | --- | --- | --- |
-| Secret | `DOCKERHUB_USERNAME` | Docker Hub 用户名（不配则跳过 Docker Hub） |
-| Secret | `DOCKERHUB_TOKEN` | Docker Hub Access Token |
+| Secret | `DOCKERHUB_USERNAME` | Docker Hub 用户名；未配时回退到 `DOCKER_USERNAME` |
+| Secret | `DOCKERHUB_TOKEN` | Docker Hub Access Token（不是登录密码）；未配时回退到 `DOCKER_PASSWORD` |
 | Secret | `ALIYUN_REGISTRY` | 例：`registry.cn-hangzhou.aliyuncs.com`（不配则跳过阿里云） |
 | Secret | `ALIYUN_USERNAME` | 阿里云 ACR 用户名；未配时回退到 `DOCKER_USERNAME` |
 | Secret | `ALIYUN_PASSWORD` | 阿里云 ACR 密码/访问凭证；未配时回退到 `DOCKER_PASSWORD` |
@@ -75,9 +75,12 @@ videos/<YYYYMM>/<video_id>/
 | Variable | `DOCKER_REPOSITORY` | 覆盖镜像名，默认 `<owner>/fastapi_tuiwen` |
 | Variable | `ENABLE_FLOATING_TAGS` | 是否滚动 `A.B` / `A` 浮动标签，默认 `true` |
 
-> 历史沿革：旧工作流用 `DOCKER_USERNAME` / `DOCKER_PASSWORD` 登录**阿里云** ACR。
-> 为免迁移，新工作流的阿里云登录优先用 `ALIYUN_*`，取不到时自动回退到这两个旧名字；
-> Docker Hub 改用独立的 `DOCKERHUB_*`，两边不会再互相覆盖。
+> 命名兼容：`DOCKER_USERNAME` / `DOCKER_PASSWORD` 是旧工作流的通用命名，两个仓库都会
+> 在专用名（`DOCKERHUB_*` / `ALIYUN_*`）缺失时回退使用它，所以老仓库不改名也能跑。
+>
+> 凭据是否可用不是「看 secret 有没有配」，而是 `meta` 作业对每个仓库**真实登录一次**：
+> 登录成功的仓库才会生成对应标签并推送，失败的只留一条 warning，不会把 401 一路带到
+> buildx push 才爆炸。两个仓库都登录失败时降级为「仅本地构建」，工作流仍然是绿的。
 
 
 ### 发布新版本
