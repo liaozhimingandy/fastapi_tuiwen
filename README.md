@@ -44,7 +44,7 @@ videos/<YYYYMM>/<video_id>/
 | 工作流 | 触发 | 职责 |
 | --- | --- | --- |
 | `ci.yml` | PR（main/develop）、main/develop 推送、手动 | 静态检查 → 单元测试 → 集成测试（PG18+Redis+MailDev）→ 镜像构建与启动冒烟 |
-| `build-images.yml` | main/stable 分支、`v*` Tag、手动 | 构建并推送镜像到 Docker Hub 与阿里云 ACR（配了才推） |
+| `build-images.yml` | main/develop/stable 分支、`v*` Tag、手动 | 构建并推送镜像到 Docker Hub 与阿里云 ACR（配了才推；都没配则只本地构建） |
 | `release.yml` | `v*` Tag、手动 | 校验 VERSION 与 Tag → 全量测试 → 创建 GitHub Release |
 
 ### 镜像标签规则
@@ -52,6 +52,7 @@ videos/<YYYYMM>/<video_id>/
 | 来源 | 版本 | 附加标签 |
 | --- | --- | --- |
 | `main` 推送 | `dev` | 无（不占 `latest`，不附 sha，避免标签堆积） |
+| `develop` 推送 | `develop` | 无（同上；与 `dev` 分开，避免互相覆盖） |
 | `stable/A.B.x` 分支 | `A.B` | `sha-<7位>`、`A.B`、`A` |
 | Tag `vA.B` / `vA.B.C` | `A.B` / `A.B.C` | `sha-<7位>`、`latest`、`A.B`、`A` |
 | Tag `vA.Brc1`（预发布） | `A.Brc1` | `sha-<7位>`（不占 `latest`） |

@@ -154,7 +154,13 @@ jobs:
               VERSION="dev"
               WANT_PUSH="true"
               IS_DEV="true"
-              BUILD_TYPE="开发构建"
+              BUILD_TYPE="开发构建(main)"
+            elif [ "${REF_NAME}" = "develop" ]; then
+              # develop 单独打 develop 标签, 避免和 main 的 dev 相互覆盖
+              VERSION="develop"
+              WANT_PUSH="true"
+              IS_DEV="true"
+              BUILD_TYPE="开发构建(develop)"
             else
               BUILD_TYPE="未匹配分支, 不构建"
             fi
@@ -170,6 +176,13 @@ jobs:
               LATEST="true"
               SERIES=$(echo "${VERSION}" | cut -d. -f1,2)
             fi
+          fi
+
+          # 版本号必须已确定: 空版本会拼出 `<image>:` 这种非法标签,
+          # docker 只会报 "invalid reference format", 看不出根因, 因此提前拦截
+          if [ -z "${VERSION}" ]; then
+            echo "::error title=版本号为空::引用 ${REF_TYPE}:${REF_NAME} 没有匹配到任何版本规则, 请检查 on.push.branches 与版本映射"
+            exit 1
           fi
 
           # ---- 两个仓库分别判断能否推送 ----
@@ -346,6 +359,10 @@ jobs:
         run: |
           set -euo pipefail
           first_tag="$(head -1 /tmp/tags.txt)"
+          if [ -z "${first_tag}" ]; then
+            echo "::error title=镜像标签为空::meta 作业没有产出 tags, 检查版本映射"
+            exit 1
+          fi
           echo "本地构建标签: ${first_tag}"
           docker build --file Dockerfile --tag "${first_tag}" .
           docker image inspect "${first_tag}" >/dev/null
