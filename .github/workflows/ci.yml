@@ -41,7 +41,8 @@ env:
   POSTGRES_DB: tuiwen_ci
   # Redis 用 services 里的无密码实例：init_redis() 会在 ping 失败时终止启动，
   # 而 services 的 options 无法给 redis 传 --requirepass，所以这里必须留空不传密码
-  APP_SECRET_KEY: ci-secret-key-for-testing-only-not-for-production
+  # 仅 CI 用的假密钥(>=32 字节, 避免 HMAC 密钥过短的告警); 不是任何真实凭据
+  SECRET_KEY: ci-secret-key-for-testing-only-not-for-production
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -79,7 +80,6 @@ jobs:
         env:
           DOCKER_MODE: '1'
           DEBUG: 'true'
-          SECRET_KEY: ${{ env.APP_SECRET_KEY }}
           BACKEND_CORS_ORIGINS: http://localhost
           VIDEO_ALLOW_SUFFIX: .mp4,.mov,.mkv
         run: |
@@ -168,7 +168,7 @@ jobs:
     env:
       DOCKER_MODE: '1'
       DEBUG: 'true'
-      SECRET_KEY: ${{ env.APP_SECRET_KEY }}
+      # SECRET_KEY 由工作流级 env 继承; 作业级 env 不允许引用 ${{ env.* }} 上下文
       BACKEND_CORS_ORIGINS: http://localhost
       VIDEO_ALLOW_SUFFIX: .mp4,.mov,.mkv
       POSTGRES_HOST: 127.0.0.1
@@ -285,7 +285,7 @@ jobs:
           docker run -d --name tuiwen-smoke --network host \
             -e DOCKER_MODE=1 \
             -e DEBUG=true \
-            -e SECRET_KEY="${APP_SECRET_KEY}" \
+            -e SECRET_KEY="${SECRET_KEY}" \
             -e BACKEND_CORS_ORIGINS=http://localhost \
             -e VIDEO_ALLOW_SUFFIX=.mp4,.mov,.mkv \
             -e POSTGRES_HOST=127.0.0.1 \
