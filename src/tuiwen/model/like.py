@@ -7,13 +7,13 @@ from enum import IntEnum
 from datetime import datetime
 
 from pydantic import field_serializer
-from sqlalchemy import DateTime, Column, BigInteger, Identity, UUID
+from sqlalchemy import Column, BigInteger, Identity, UUID
 from sqlmodel import SQLModel, Field, Index
 
-from src.tuiwen.model.types import IntEnumType
+from src.tuiwen.model.types import IntEnumType, UTCDateTime
 
 from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import convert_to_timezone
+from src.tuiwen.utils.datetime_utils import to_utc, utcnow
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -38,13 +38,13 @@ class Like(SQLModel, table=True):
                                   sa_column_kwargs={'comment': '点赞对象类别'}, sa_type=IntEnumType(TargetTypeEnum), ge=0)
     account_id: uuid.UUID = Field(..., index=True, description='点赞的用户账户主键',
                                   sa_column_kwargs={'comment': '点赞的用户账户主键'})
-    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                sa_column=Column(DateTime(timezone=True), default=datetime.now,
+    created_at: datetime = Field(..., default_factory=utcnow, description='创建日期时间',
+                                sa_column=Column(UTCDateTime, default=utcnow,
                                                  comment="创建日期时间", nullable=False))
 
     @field_serializer('created_at')
     def serialize_datetime(self, value):
-        return convert_to_timezone(value)
+        return to_utc(value)
 
     # 创建联合索引
     __table_args__ = (

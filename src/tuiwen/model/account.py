@@ -16,13 +16,13 @@ from enum import IntEnum
 from typing import Optional
 
 from pydantic import AliasChoices, EmailStr, field_validator, field_serializer
-from sqlalchemy import DateTime, SMALLINT, Column, JSON, BigInteger, Identity, func, UUID
+from sqlalchemy import SMALLINT, Column, JSON, BigInteger, Identity, func, UUID
 from sqlmodel import SQLModel, Field, text
 
-from src.tuiwen.model.types import IntEnumType
+from src.tuiwen.model.types import IntEnumType, UTCDateTime
 
 from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import convert_to_timezone
+from src.tuiwen.utils.datetime_utils import to_utc, utcnow
 from src.tuiwen.utils import get_random_salt
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
@@ -164,13 +164,13 @@ class Account(SQLModel, table=True):
     allow_vibration: bool = Field(default=True, description='是否允许震动提示',
                                   sa_column_kwargs={'comment': '是否允许震动提示', 'server_default': text("true")})
 
-    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                sa_column=Column(DateTime(timezone=True), default=datetime.now,
+    created_at: datetime = Field(..., default_factory=utcnow, description='创建日期时间',
+                                sa_column=Column(UTCDateTime, default=utcnow,
                                                  comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                 )
-    updated_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
+    updated_at: datetime = Field(..., default_factory=utcnow, description="最后更新时间",
                                 sa_column=Column(
-                                    DateTime(timezone=True),
+                                    UTCDateTime,
                                     server_default=func.now(),
                                     onupdate=func.now(),
                                     nullable=False,
@@ -179,7 +179,7 @@ class Account(SQLModel, table=True):
 
     @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value):
-        return convert_to_timezone(value)
+        return to_utc(value)
 
     @field_validator("username", "mail", mode="before")
     def username_to_lower(cls, v: Optional[str]) -> Optional[str]:
@@ -233,15 +233,15 @@ class App(SQLModel, table=False):
     app_en_name: str | None = Field(None, max_length=64, description='应用英文名称',
                                     sa_column_kwargs={'comment': '应用英文名称'})
     is_active: bool = Field(default=True, description='激活状态', sa_column_kwargs={'comment': '激活状态'})
-    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                sa_column=Column(DateTime(timezone=True), default=datetime.now,
+    created_at: datetime = Field(..., default_factory=utcnow, description='创建日期时间',
+                                sa_column=Column(UTCDateTime, default=utcnow,
                                                  comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                 )
-    updated_at: datetime = Field(..., default_factory=lambda: datetime.now(timezone.utc), description='最后修改时间',
-                                sa_column=Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now,
+    updated_at: datetime = Field(..., default_factory=utcnow, description='最后修改时间',
+                                sa_column=Column(UTCDateTime, default=utcnow, onupdate=utcnow,
                                                  comment='最后修改时间')
                                 )
 
     @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value):
-        return convert_to_timezone(value)
+        return to_utc(value)

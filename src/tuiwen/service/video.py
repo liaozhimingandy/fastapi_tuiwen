@@ -14,7 +14,6 @@
 import hashlib
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -28,6 +27,7 @@ from src.tuiwen.model.video import Video, VideoOrientation, VideoTranscodeStatus
 from src.tuiwen.dal.video import VideoDAO
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.utils import logger
+from src.tuiwen.utils.datetime_utils import iso_utc, to_business_tz, utcnow
 
 
 @dataclass
@@ -63,7 +63,7 @@ class VideoService:
         master playlist 落在视频根目录, 各清晰度在 <清晰度>/index.m3u8,
         播放器拿到 master 后自适应选码率。
         """
-        ym = video.created_at.strftime("%Y%m")
+        ym = to_business_tz(video.created_at).strftime("%Y%m")
         return (
             f"{get_settings().VIDEO_STORAGE_URL_PREFIX}"
             f"{ym}/"
@@ -77,7 +77,7 @@ class VideoService:
 
         文件名与 VideoTranscoder.create_cover 的输出(cover.jpg)保持一致。
         """
-        ym = video.created_at.strftime("%Y%m")
+        ym = to_business_tz(video.created_at).strftime("%Y%m")
         return (
             f"{get_settings().VIDEO_STORAGE_URL_PREFIX}"
             f"{ym}/"
@@ -270,7 +270,7 @@ class VideoService:
                     # 文件后缀
                     "file_suffix": ext,
                     # 上传时间
-                    "upload_at": datetime.now(timezone.utc).isoformat(),
+                    "upload_at": iso_utc(utcnow()),
                 },
             )
 

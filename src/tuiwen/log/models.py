@@ -15,9 +15,11 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import BigInteger
-from sqlmodel import SQLModel, Field, Column, DateTime, text, SMALLINT, JSON
+from sqlmodel import SQLModel, Field, Column, text, SMALLINT, JSON
 
 from src.tuiwen import get_settings
+from src.tuiwen.model.types import UTCDateTime
+from src.tuiwen.utils.datetime_utils import utcnow
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -45,7 +47,7 @@ class Log(SQLModel, table=True):
     message: str = Field(..., max_length=1024, description='日志主要描述信息', sa_column_kwargs={'comment': '日志主要描述信息'})
     context: Optional[dict] = Field(default=None, description='存储额外的上下文和处理细节', sa_type=JSON,
                                     sa_column_kwargs={'comment': '存储额外的上下文和处理细节'})
-    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), default=datetime.now, comment="创建日期时间",
+    created_at: datetime = Field(sa_column=Column(UTCDateTime, default=utcnow, comment="创建日期时间",
                                                    nullable=False, server_default=text("NOW()")))
 
 

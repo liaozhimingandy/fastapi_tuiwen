@@ -6,11 +6,11 @@ from pydantic import AliasChoices, field_serializer, BaseModel
 
 from sqlalchemy.sql.functions import func
 from sqlmodel import SQLModel, Field, text
-from sqlalchemy import DateTime, JSON, Column, BigInteger, Identity, Boolean, UniqueConstraint, UUID
+from sqlalchemy import JSON, Column, BigInteger, Identity, Boolean, UniqueConstraint, UUID
 
-from src.tuiwen.model.types import IntEnumType
+from src.tuiwen.model.types import IntEnumType, UTCDateTime
 from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import convert_to_timezone
+from src.tuiwen.utils.datetime_utils import to_utc, utcnow
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -165,11 +165,11 @@ class Video(SQLModel, table=True):
 
     created_at: datetime = Field(
         ...,
-        default_factory=datetime.now,
+        default_factory=utcnow,
         description='记录创建时间',
         sa_column=Column(
-            DateTime(timezone=True),
-            default=datetime.now,
+            UTCDateTime,
+            default=utcnow,
             nullable=False,
             server_default=text("NOW()"),
             comment="记录创建时间（带时区）"
@@ -178,10 +178,10 @@ class Video(SQLModel, table=True):
 
     updated_at: datetime = Field(
         ...,
-        default_factory=datetime.now,
+        default_factory=utcnow,
         description='记录最后更新时间',
         sa_column=Column(
-            DateTime(timezone=True),
+            UTCDateTime,
             server_default=func.now(),
             onupdate=func.now(),
             nullable=False,
@@ -192,7 +192,7 @@ class Video(SQLModel, table=True):
     @field_serializer('created_at')
     def serialize_datetime(self, value):
         """出参时把 created_at 统一转换到配置时区(默认 Asia/Shanghai)。"""
-        return convert_to_timezone(value)
+        return to_utc(value)
 
 
 # 视频源类型
@@ -290,11 +290,11 @@ class VideoSource(SQLModel, table=True):
     )
 
     created_at: datetime = Field(
-        default_factory=datetime.now,
+        default_factory=utcnow,
         description='记录创建日期时间',
         sa_column=Column(
-            DateTime(timezone=True),
-            default=datetime.now,
+            UTCDateTime,
+            default=utcnow,
             comment="记录创建日期时间（带时区）",
             nullable=False,
             server_default=text("NOW()")

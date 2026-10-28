@@ -15,14 +15,16 @@
     API → SnapService → SnapDAO → PostgreSQL
 """
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
+import pytz
 from sqlalchemy import text
 
 from src.tuiwen import get_settings
 from src.tuiwen.dal.base import PageResult
 from src.tuiwen.dal.snap import SnapDAO
 from src.tuiwen.model.snap import Snap
+from src.tuiwen.utils.datetime_utils import business_now, to_business_tz
 
 # =========================================================
 # 「天亮即焚」场次窗口常量
@@ -30,7 +32,9 @@ from src.tuiwen.model.snap import Snap
 # 当晚开闸时刻(含)。改这里就能调整场次长短, 例如 22 表示 22:00 开闸
 SNAP_SESSION_OPEN_HOUR = get_settings().SNAP_SESSION_OPEN_HOUR
 # 次日焚毁时刻(不含)。内容在该时刻之后一律不再对外返回
-SNAP_SESSION_BURN_HOUR = get_settings().SNAP_SESSION_OPEN_HOUR
+# NOTE: 这里原先误写成 SNAP_SESSION_OPEN_HOUR(复制粘贴), 导致"开闸=焚毁",
+#       窗口变成 24 小时, 白天本该返回空列表却仍能读到昨夜内容。
+SNAP_SESSION_BURN_HOUR = get_settings().SNAP_SESSION_BURN_HOUR
 # 首页最新快照的条数
 SNAP_LATEST_LIMIT = 10
 
@@ -48,23 +52,30 @@ def current_snap_session(now: datetime | None = None) -> tuple[datetime, datetim
     把已焚毁的内容重新展示出来。调用方拿到 None 应当返回空列表。
 
     Args:
-        now: 用于计算窗口的基准时间; 默认取 datetime.now()
-             (与 Snap.created_at 的 default_factory 同一时钟, 保证过滤条件与存量数据同口径)
+        now: 用于计算窗口的基准时间; 默认取当前时刻。
+             传入 naive 值会先按 UTC 补齐(与库里的口径一致), 再换算到业务时区。
 
     Returns:
         tuple[datetime, datetime] | None: (开闸时间, 焚毁时间); 白天非场次时间返回 None
 
-    NOTE: 窗口使用的是「应用本地时钟的 naive 时间」, 与 Snap.created_at 的写入方式一致
-          (模型里 default_factory=datetime.now 也是 naive 本地时间)。
-          若容器时区与业务时区(Asia/Shanghai)不一致, 两者会一起偏移, 仍能自洽;
-          但若要按固定时区取窗口, 需改为 datetime.now(pytz.timezone(get_settings().TIME_ZONE))。
+    NOTE: 「23:00 / 06:00」是**业务时区**(settings.TIME_ZONE, 默认 Asia/Shanghai)的墙钟时间,
+          不是 UTC —— 场次规则面向的是本地用户"晚上刷到天亮"这个行为。
+          因此窗口按业务时区构造(tz-aware), 再与 UTC 存储的 created_at 比较;
+          两个 aware 时间比较的是同一瞬间, 不需要手动换算。
     """
-    now = now or datetime.now()
+    tz = pytz.timezone(get_settings().TIME_ZONE)
 
-    today_open = datetime.combine(now.date(), time(hour=SNAP_SESSION_OPEN_HOUR))
-    tomorrow_burn = datetime.combine(now.date() + timedelta(days=1), time(hour=SNAP_SESSION_BURN_HOUR))
-    yesterday_open = datetime.combine(now.date() - timedelta(days=1), time(hour=SNAP_SESSION_OPEN_HOUR))
-    today_burn = datetime.combine(now.date(), time(hour=SNAP_SESSION_BURN_HOUR))
+    def at(day: date, hour: int) -> datetime:
+        """把「业务时区的某天某点」变成 aware 时间(用 localize, 避免 DST 边界算错)。"""
+        return tz.localize(datetime.combine(day, time(hour=hour)))
+
+    now = to_business_tz(now) if now is not None else business_now()
+    today = now.date()
+
+    today_open = at(today, SNAP_SESSION_OPEN_HOUR)
+    tomorrow_burn = at(today + timedelta(days=1), SNAP_SESSION_BURN_HOUR)
+    yesterday_open = at(today - timedelta(days=1), SNAP_SESSION_OPEN_HOUR)
+    today_burn = at(today, SNAP_SESSION_BURN_HOUR)
 
     if now >= today_open:
         # 已过今晚开闸时刻, 场次横跨到明天清晨

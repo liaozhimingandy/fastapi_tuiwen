@@ -37,6 +37,26 @@ videos/<YYYYMM>/<video_id>/
   新库由应用启动时的 `init_db()` 自动建表，存量库需要执行迁移（自增 bigint 主键 → uuid7 主键）
 - Redis（验证码/缓存）、SMTP（本地用 MailDev 的 1025 端口）
 
+## 时间与时区约定
+
+服务是给全球用户用的，所以**服务端只产出 UTC，本地化只发生在展示层**：
+
+| 环节 | 规则 |
+| --- | --- |
+| 数据库列 | 一律 `timestamptz`（模型里用 `model.types.UTCDateTime`），存的是 UTC 时刻 |
+| Python 侧 | 一律 tz-aware UTC，默认值用 `datetime_utils.utcnow()`，**不要写 `datetime.now()`** |
+| 接口 JSON | 一律带偏移且以 `Z` 结尾：`2026-10-29T06:32:10.123456Z` |
+| 前端展示 | 按浏览器本地时区渲染（`vue_tuiwen/src/common/datetime.ts`），服务端不做转换 |
+
+`datetime.now()` 拿到的是 naive 值，含义取决于进程的 `TZ`。而 asyncpg 对 `timestamptz` 的
+naive 参数正是按**进程本地时区**解释的 —— 同一份代码在开发机（Asia/Shanghai）和容器
+（`TZ=UTC`）里会写入两个相差 8 小时的时刻，且代码和日志里都看不出来。`UTCDateTime` 在
+类型层把 naive 一律按 UTC 处理，从根上消掉这个歧义。
+
+**`settings.TIME_ZONE`（默认 Asia/Shanghai）只在"按本地日历"判定业务规则时使用**，
+例如快照 `18:00~次日 07:00` 的场次窗口、按年月归档媒体文件 —— 这些规则面向的是本地用户的
+作息，不是 UTC 日历。除此之外不要做时区换算。
+
 ## CI/CD
 
 三个工作流各管一件事，互不耦合：

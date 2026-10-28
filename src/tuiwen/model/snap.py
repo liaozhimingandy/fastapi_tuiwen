@@ -9,13 +9,13 @@ from ipaddress import IPv4Address, IPv6Address
 from typing import Optional
 
 from sqlalchemy import BigInteger, JSON, Identity
-from sqlmodel import SQLModel, Field, Column, DateTime, text
+from sqlmodel import SQLModel, Field, Column, text
 from sqlalchemy.dialects.postgresql import INET
 from pydantic import field_serializer
 
-from src.tuiwen.model.types import IntEnumType
+from src.tuiwen.model.types import IntEnumType, UTCDateTime
 from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import convert_to_timezone
+from src.tuiwen.utils.datetime_utils import to_utc, utcnow
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
 # ------------------------------ 天亮即焚模型 ------------------------------
@@ -67,14 +67,14 @@ class Snap(SQLModel, table=True):
     like_count: int = Field(default=0, description="点赞数量", sa_column_kwargs={'comment': '点赞数量'})
     from_ip: Optional[IPv4Address | IPv6Address] = Field(None, description='来源ip', sa_type=INET(), sa_column_kwargs={'comment': '来源ip'})
     is_top: bool = Field(default=False, description="是否置顶", sa_column_kwargs={'comment': '是否置顶'})
-    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                sa_column=Column(DateTime(timezone=True), default=datetime.now,
+    created_at: datetime = Field(..., default_factory=utcnow, description='创建日期时间',
+                                sa_column=Column(UTCDateTime, default=utcnow,
                                                  comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                 )
 
     @field_serializer('created_at')
     def serialize_datetime(self, value):
-        return convert_to_timezone(value)
+        return to_utc(value)
 
 
 class SnapCreate(SQLModel):

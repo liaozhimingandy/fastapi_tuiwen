@@ -7,9 +7,10 @@ core/storage/__init__.py 的工厂函数, Service 层无需改动。
 当前实现: LocalStorage(core/storage/local.py)。
 """
 import abc
-import datetime
 from pathlib import Path
 from typing import BinaryIO
+
+from src.tuiwen.utils.datetime_utils import to_business_tz, utcnow
 
 
 class Storage(abc.ABC):
@@ -65,8 +66,14 @@ class Storage(abc.ABC):
 
     @staticmethod
     def _get_ym() -> str:
-        """统一年月分区，避免各处重复计算"""
-        return datetime.datetime.now().strftime("%Y%m")
+        """统一年月分区，避免各处重复计算。
+
+        按**业务时区**取年月，而不是 UTC: 分区目录是给人看的归档粒度，
+        用 UTC 会出现"10 月 31 日晚上传的文件落在 202610 还是 202611"的困惑。
+        NOTE: 视频播放地址是用 Video.created_at 反推同一规则(见 VideoService._build_play_url)，
+              两处必须保持同一口径，否则文件存进去找不到。
+        """
+        return to_business_tz(utcnow()).strftime("%Y%m")
 
     @staticmethod
     def get_valid_name(name: str) -> str:

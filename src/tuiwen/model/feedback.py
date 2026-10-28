@@ -6,14 +6,14 @@ from ipaddress import IPv4Address, IPv6Address
 from typing import Optional
 
 from sqlalchemy import BigInteger, JSON, Identity, UUID
-from sqlmodel import SQLModel, Field, Column, DateTime, text
+from sqlmodel import SQLModel, Field, Column, text
 
-from src.tuiwen.model.types import IntEnumType
+from src.tuiwen.model.types import IntEnumType, UTCDateTime
 from sqlalchemy.dialects.postgresql import INET
 from pydantic import field_serializer
 
 from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import convert_to_timezone
+from src.tuiwen.utils.datetime_utils import to_utc, utcnow
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -130,21 +130,21 @@ class Feedback(SQLModel, table=True):
     status: FeedbackStatus = Field(default=FeedbackStatus.PENDING, sa_type=IntEnumType(FeedbackStatus), description="状态:0已关闭 1待处理 2处理中 3已完成", sa_column_kwargs={'comment': '状态:0已关闭 1待处理 2处理中 3已完成'})
     admin_reply: Optional[str] = Field(default=None, max_length=1024, description="管理员回复内容", sa_column_kwargs={'comment': '管理员回复内容'})
     handle_user_id: Optional[uuid.UUID] = Field(default=None, description="处理管理员主键", sa_column_kwargs={'comment': '处理管理员主键'})
-    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
+    created_at: datetime = Field(..., default_factory=utcnow, description='创建日期时间',
+                                  sa_column=Column(UTCDateTime, default=utcnow,
                                                    comment='创建日期时间', nullable=False, server_default=text("NOW()"))
                                   )
     # 与其它表的 updated_at 保持一致: NOT NULL + 由数据库生成/刷新
-    updated_at: datetime = Field(..., default_factory=datetime.now, description='最后修改时间',
-                                 sa_column=Column(DateTime(timezone=True), default=datetime.now,
-                                                  onupdate=datetime.now, nullable=False,
+    updated_at: datetime = Field(..., default_factory=utcnow, description='最后修改时间',
+                                 sa_column=Column(UTCDateTime, default=utcnow,
+                                                  onupdate=utcnow, nullable=False,
                                                   server_default=text("NOW()"),
                                                   comment='最后修改时间')
                                  )
 
     @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value):
-        return convert_to_timezone(value)
+        return to_utc(value)
 
 
 # ------------------------------ 返回前端响应模型 ------------------------------

@@ -13,10 +13,11 @@
 from datetime import datetime
 from typing import TypeVar, Generic, Optional, List
 
-import pytz
 from pydantic import BaseModel
 from sqlmodel import Field
 from starlette import status
+
+from src.tuiwen.utils.datetime_utils import utcnow
 
 T = TypeVar("T")
 
@@ -27,11 +28,12 @@ class ResponsePublic(BaseModel, Generic[T]):
           与业务表的 created_at(记录创建时间)不是一回事。
     NOTE: 必须用 default_factory, 写成 `default=datetime.now()` 会在 import 时
           求值一次, 之后所有响应都返回进程启动时刻的时间。
+    NOTE: 时间是 UTC(序列化为 ...Z), 由前端按浏览器时区渲染 —— 服务端不再把
+          时间预先转成某个固定时区, 否则出国用户看到的永远是北京时间。
     """
     code: int = Field(status.HTTP_200_OK, description="响应错误码")
     message: str = Field("success", description="描述信息")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(tz=pytz.timezone("Asia/Shanghai")),
-                                description="响应生成时间")
+    timestamp: datetime = Field(default_factory=utcnow, description="响应生成时间(UTC)")
     data: Optional[T]  = Field(default=None, description="响应数据")
     details: Optional[T] = Field(default=None, description="错误详情")
 

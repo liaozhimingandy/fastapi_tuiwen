@@ -18,18 +18,17 @@ import string
 import tomllib
 from datetime import datetime
 
-import pytz
-from pytz import timezone
 from PIL import Image
 from fastapi import UploadFile
 from fastapi.routing import APIRoute
 
 from src.tuiwen.core import get_settings
+from src.tuiwen.utils.datetime_utils import to_business_tz, utcnow
 
 def get_datetime_now():
-    """返回 UTC 当前时间(带 tzinfo)。"""
+    """返回 UTC 当前时间(带 tzinfo)。等价于 datetime_utils.utcnow()。"""
     # 返回当前时间
-    return datetime.now(timezone.utc)
+    return utcnow()
 
 
 # 创建一个图片类型检查函数
@@ -104,33 +103,30 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 
 
 def convert_to_timezone(value: datetime | None) -> datetime | None:
-    """把 datetime 统一转换到配置时区(默认 Asia/Shanghai); naive 时间先按该时区补 tzinfo。"""
-    if value is None:
-        return None
+    """【已废弃】把 datetime 转成业务时区; 请改用 datetime_utils.to_business_tz。
 
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=pytz.timezone(get_settings().TIME_ZONE))
+    NOTE: 接口返回值**不再**做时区转换 —— 一律给 UTC, 由前端按本地时区渲染。
+          本函数只为兼容旧调用点保留, 新代码不要用。
+    """
+    return to_business_tz(value)
 
-    return value.astimezone(
-        pytz.timezone(get_settings().TIME_ZONE)
-    )
 
 def convert_to_cst_time(dt: datetime) -> datetime | None:
-    """
-    将指定时间对象转成北京东八时区的时间
+    """【已废弃】把 datetime 转成北京东八时区; 请改用 datetime_utils.to_business_tz。
+
+    NOTE: 同上, 接口返回值不要再用它。
 
     Args:
         dt (datetime): datetime
 
     Returns:
-        北京时区的时间字符串
+        业务时区的 aware 时间
 
     Examples Usage:
         convert_to_cst_time(datetime.now())
 
     """
-    if dt is not None:
-        return dt.astimezone(timezone(get_settings().TIME_ZONE))
+    return to_business_tz(dt)
 
 
 def hash_password(front_md5: str, salt: str) -> str:

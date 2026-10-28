@@ -14,14 +14,14 @@ import uuid
 from enum import IntEnum
 
 from pydantic import field_serializer
-from sqlalchemy import Column, DateTime, text, JSON, BigInteger, Identity, func, UUID
+from sqlalchemy import Column, text, JSON, BigInteger, Identity, func, UUID
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from typing import Optional
 
 from src.tuiwen import get_settings
-from src.tuiwen.model.types import IntEnumType
-from src.tuiwen.utils.utils import convert_to_timezone
+from src.tuiwen.model.types import IntEnumType, UTCDateTime
+from src.tuiwen.utils.datetime_utils import to_utc, utcnow
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -97,8 +97,8 @@ class Notice(SQLModel, table=True):
     # 扩展字段（存头像、昵称、预览文本，避免联表查询）
     extra: Optional[dict] = Field(default=None, sa_type=JSON, nullable=True,
                                   sa_column_kwargs={'comment': '冗余扩展信息：头像、昵称、预览图'})
-    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                 sa_column=Column(DateTime(timezone=True), default=datetime.now,
+    created_at: datetime = Field(..., default_factory=utcnow, description='创建日期时间',
+                                 sa_column=Column(UTCDateTime, default=utcnow,
                                                   comment="创建日期时间", nullable=False,
                                                   server_default=text("NOW()")))
     # 布尔列, 注释不要再写成 0/1
@@ -107,9 +107,9 @@ class Notice(SQLModel, table=True):
         sa_column_kwargs={'comment': '是否已删除: false正常 / true已删除', "server_default": text("false")}
     )
     # 更新时间
-    updated_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
+    updated_at: datetime = Field(..., default_factory=utcnow, description="最后更新时间",
                                 sa_column=Column(
-                                    DateTime(timezone=True),
+                                    UTCDateTime,
                                     server_default=func.now(),
                                     onupdate=func.now(),
                                     nullable=False,
@@ -118,4 +118,4 @@ class Notice(SQLModel, table=True):
 
     @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value):
-        return convert_to_timezone(value)
+        return to_utc(value)

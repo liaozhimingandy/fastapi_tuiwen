@@ -10,13 +10,13 @@ from typing import Optional
 from datetime import datetime
 
 from pydantic import AliasChoices, field_serializer
-from sqlalchemy import DateTime, JSON, Column, BigInteger, SMALLINT, Numeric, Identity, func, UUID
+from sqlalchemy import JSON, Column, BigInteger, SMALLINT, Numeric, Identity, func, UUID
 from sqlalchemy.dialects.postgresql import INET
 from sqlmodel import SQLModel, Field, Index, text
 
-from src.tuiwen.model.types import IntEnumType
+from src.tuiwen.model.types import IntEnumType, UTCDateTime
 from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import convert_to_timezone
+from src.tuiwen.utils.datetime_utils import to_utc, utcnow
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -129,13 +129,13 @@ class Post(SQLModel, table=True):
     status: int | None = Field(default=1, description='帖子状态', ge=0,sa_type=SMALLINT, sa_column_kwargs={'comment': '帖子状态'})
     # NOTE: status 目前无任何 Service/DAL 引用, 若用于软删除需先在查询里加过滤条件,
     #       否则列表接口仍会把"已删除"的帖子查出来
-    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
+    created_at: datetime = Field(..., default_factory=utcnow, description='创建日期时间',
+                                  sa_column=Column(UTCDateTime, default=utcnow,
                                                    comment="创建日期时间", nullable=False,
                                                    server_default=text("NOW()")))
-    updated_at: datetime = Field(..., default_factory=datetime.now, description="最后更新时间",
+    updated_at: datetime = Field(..., default_factory=utcnow, description="最后更新时间",
                                 sa_column=Column(
-                                    DateTime(timezone=True),
+                                    UTCDateTime,
                                     server_default=func.now(),
                                     onupdate=func.now(),
                                     nullable=False,
@@ -144,7 +144,7 @@ class Post(SQLModel, table=True):
 
     @field_serializer('created_at', 'updated_at')
     def serialize_datetime(self, value):
-        return convert_to_timezone(value)
+        return to_utc(value)
 
 
 class PostRightStatusUpdate(SQLModel):

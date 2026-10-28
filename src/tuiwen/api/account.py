@@ -18,7 +18,6 @@
     Service 层抛 BizError(业务异常), API 层统一转换为 HTTPException。
 """
 import uuid
-from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, status, Depends, Request, Query, HTTPException, BackgroundTasks, Security
@@ -34,7 +33,7 @@ from src.tuiwen.model.account import AccountInfo, AccountCreate, Account, Accoun
 from src.tuiwen.core import Tag
 from src.tuiwen.models import PageResponse
 from src.tuiwen.utils.mail_service import send_reset_pwd_mail
-from src.tuiwen.utils.utils import convert_to_cst_time
+from src.tuiwen.utils.datetime_utils import utcnow
 
 router_account = APIRouter(tags=[Tag.oauth])
 # 免登录路由: 各接口自己带了完整路径(如 /accounts/register/), 因此这里不能给 prefix='/'
@@ -110,9 +109,11 @@ async def test_oauth_admin(
 # =========================================================
 @router_public.get("/health-check/", tags=["health"], summary="服务检查检查")
 async def health_check() -> dict[str, Any]:
-    """服务存活探针, 返回固定 ok 与当前北京时间, 供 LB / K8s 探活使用。"""
-    current_time = convert_to_cst_time(datetime.now())
-    return {"message": "ok", "timestamp": current_time}
+    """服务存活探针, 返回固定 ok 与当前 UTC 时间, 供 LB / K8s 探活使用。
+
+    NOTE: 时间一律给 UTC(序列化成 ...Z), 不做本地时区转换 —— 客户端自己按本地时区渲染。
+    """
+    return {"message": "ok", "timestamp": utcnow()}
 
 
 @router_public.get("/", tags=["root"], summary="根路径", include_in_schema=False)

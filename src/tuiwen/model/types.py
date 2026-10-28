@@ -8,11 +8,17 @@
 
 IntEnumType 在「写入」时把枚举转成 int, 「读取」时再转回枚举成员,
 是这一层唯一需要关心的转换点。
+
+UTCDateTime 同理是时间列的**唯一**转换点: 读写两侧都归一成 tz-aware UTC,
+让「naive 时间按谁解释」这个歧义不在业务代码里出现。
 """
+from datetime import datetime
 from enum import IntEnum
 
-from sqlalchemy import SMALLINT
+from sqlalchemy import SMALLINT, DateTime
 from sqlalchemy.types import TypeDecorator
+
+from src.tuiwen.utils.datetime_utils import to_utc
 
 
 class IntEnumType(TypeDecorator):
@@ -49,3 +55,33 @@ class IntEnumType(TypeDecorator):
 
     def copy(self, **kw):
         return IntEnumType(self.enum_cls, **kw)
+
+
+class UTCDateTime(TypeDecorator):
+    """timestamptz 列, 读写两侧都归一成 tz-aware UTC。
+
+    用法::
+
+        created_at: datetime = Field(..., sa_column=Column(UTCDateTime, default=utcnow, ...))
+
+    为什么必须在类型层做, 而不是靠"调用方小心":
+        asyncpg 对 timestamptz 的 naive 参数按**进程本地时区**解释。也就是说同一个
+        ``datetime.now()`` 值, 开发机(TZ=Asia/Shanghai)与容器(TZ=UTC)写进去是两个
+        相差 8 小时的时刻, 而代码和日志里完全看不出来。在类型层把 naive 一律按 UTC
+        处理, 上层就不必再关心这件事。
+
+    NOTE: impl 仍是 DateTime(timezone=True), 建表语句与既有库结构完全一致, 不需要迁移。
+    """
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        """写入: naive 按 UTC 补齐, aware 统一换算成 UTC; None 原样透传。"""
+        return to_utc(value) if isinstance(value, datetime) else value
+
+    def process_result_value(self, value, dialect):
+        """读取: 补回 UTC tzinfo, 保证业务层拿到的一定是 aware 值。"""
+        return to_utc(value) if isinstance(value, datetime) else value
+
+    def copy(self, **kw):
+        return UTCDateTime(**kw)

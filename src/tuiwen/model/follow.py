@@ -6,11 +6,12 @@ import uuid
 from datetime import datetime
 
 from pydantic import field_serializer
-from sqlalchemy import DateTime, Column, BigInteger, Identity, UUID
+from sqlalchemy import Column, BigInteger, Identity, UUID
 from sqlmodel import SQLModel, Field, Index, text
+from src.tuiwen.model.types import UTCDateTime
 
 from src.tuiwen.core import get_settings
-from src.tuiwen.utils.utils import convert_to_timezone
+from src.tuiwen.utils.datetime_utils import to_utc, utcnow
 
 TABLE_PREFIX = get_settings().TABLE_PREFIX
 
@@ -26,8 +27,8 @@ class Follow(SQLModel, table=True):
                                    sa_column_kwargs={'comment': '关注者账户主键'})
     followee_id: uuid.UUID = Field(..., index=True, description='被关注者账户主键',
                                    sa_column_kwargs={'comment': '被关注者账户主键'})
-    created_at: datetime = Field(..., default_factory=datetime.now, description='创建日期时间',
-                                  sa_column=Column(DateTime(timezone=True), default=datetime.now,
+    created_at: datetime = Field(..., default_factory=utcnow, description='创建日期时间',
+                                  sa_column=Column(UTCDateTime, default=utcnow,
                                                    comment="创建日期时间", nullable=False,
                                                    server_default=text("NOW()")))
 
@@ -39,7 +40,7 @@ class Follow(SQLModel, table=True):
 
     @field_serializer('created_at')
     def serialize_datetime(self, value):
-        return convert_to_timezone(value)
+        return to_utc(value)
 
 
 class FollowCreate(SQLModel):
