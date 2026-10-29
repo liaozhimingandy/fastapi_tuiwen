@@ -371,6 +371,26 @@ class VideoFeedResponse(SQLModel):
     has_more: bool = False
 
 
+class MyVideoItem(SQLModel):
+    """「我的视频」页单条(含转码状态, 便于用户知道上传后发生了什么)。
+
+    NOTE: 不能继承 Video 表模型加字段 —— SQLModel 会把子类注册成同一张表。
+    """
+    video_id: uuid.UUID
+    title: str | None = None
+    description: str | None = None
+    poster_url: str | None = None
+    play_url: str | None = None
+    duration: int | None = None
+    orientation: VideoOrientation | None = None
+    transcode_status: VideoTranscodeStatus = VideoTranscodeStatus.PENDING
+    transcode_msg: str | None = None
+    like_count: int = 0
+    comment_count: int = 0
+    favorite_count: int = 0
+    created_at: datetime | None = None
+
+
 class TranscodeVariant(BaseModel):
     """
     单个转码资源

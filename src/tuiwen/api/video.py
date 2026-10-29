@@ -24,7 +24,7 @@ from src.tuiwen.dependencies import get_video_service, get_optional_account_id
 from src.tuiwen.service.video import VideoService
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.model.video import Video, VideoFeedQuery, VideoFeedResponse, TranscodeCompleteRequest, \
-    TranscodeFailedRequest, VideoCategory
+    TranscodeFailedRequest, VideoCategory, MyVideoItem
 from src.tuiwen.core import Settings
 from src.tuiwen.core import Tag
 from src.tuiwen.utils import allowed_file
@@ -114,6 +114,30 @@ async def feed(request: Request,
     """
     return await svc.feed(feed_id=query.feed_id, limit=query.limit, cursor=query.cursor,
                           viewer_id=viewer_id)
+
+
+@router_upload.get('/mine/', summary="返回我的视频列表", response_model=list[MyVideoItem],
+                   status_code=status.HTTP_200_OK)
+async def my_videos(uploader_account_id: Annotated[uuid.UUID | None, "当前用户(可选认证)"] = Depends(get_optional_account_id),
+                    offset: Annotated[int, "偏移量"] = Query(0, ge=0),
+                    limit: Annotated[int, "每页数量"] = Query(12, ge=1, le=50),
+                    svc: VideoService = Depends(get_video_service)):
+    """返回当前登录用户的视频列表(含转码中/失败, 按时间倒序)。
+
+    「我的视频」页数据源; 未登录返回 401。
+
+    Args:
+        uploader_account_id: 当前登录用户; None 表示未登录
+        offset: 偏移量
+        limit: 每页数量, 1~50
+        svc: 视频业务服务
+
+    Returns:
+        list[MyVideoItem]: 视频列表(带转码状态与互动计数)
+    """
+    if uploader_account_id is None:
+        raise HTTPException(status_code=401, detail="请先登录")
+    return await svc.my_videos(uploader_account_id, limit=limit, offset=offset)
 
 
 @router_upload.get('/follow/', summary="返回关注流", response_model=VideoFeedResponse,

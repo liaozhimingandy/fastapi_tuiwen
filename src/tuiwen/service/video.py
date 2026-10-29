@@ -23,7 +23,8 @@ from src.tuiwen.core.storage import Storage
 from src.tuiwen.core.storage import storage
 from src.tuiwen.dal.video_source import VideoSourceDAO
 from src.tuiwen.model.video import Video, VideoOrientation, VideoTranscodeStatus, VideoFeedResponse, VideoInteraction, \
-    VideoAuthor, VideoStats, VideoFeedItem, VideoSource, VideoSourceType, TranscodeCompleteRequest, TranscodeFailedRequest
+    VideoAuthor, VideoStats, VideoFeedItem, VideoSource, VideoSourceType, TranscodeCompleteRequest, \
+    TranscodeFailedRequest, MyVideoItem
 from src.tuiwen.dal.video import VideoDAO
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.utils import logger
@@ -458,6 +459,55 @@ class VideoService:
                 interaction=interaction,
             ))
         return items
+
+    async def my_videos(self, account_id: uuid.UUID, limit: int = 12, offset: int = 0) -> list[MyVideoItem]:
+        """「我的视频」页数据: 自己上传的全部视频(含转码中/失败), 按时间倒序。
+
+        互动计数与 feed 同一套批量聚合口径; 转码状态原样透出,
+        前端据此显示「转码中/失败」角标。
+
+        Args:
+            account_id: 视频归属账户
+            limit: 每页条数
+            offset: 偏移量
+
+        Returns:
+            list[MyVideoItem]: 视频列表
+        """
+        videos = await self.dao.list_by_account(account_id, limit=limit, offset=offset)
+        if not videos:
+            return []
+
+        from src.tuiwen.model.like import Like
+        from src.tuiwen.model.favorite import Favorite
+        from src.tuiwen.model.comment import Comment
+
+        video_ids = [video.id for video in videos]
+        like_counts: dict = {}
+        comment_counts: dict = {}
+        favorite_counts: dict = {}
+        if self.like_dao is not None:
+            like_counts = await self.like_dao.count_by_targets(Like.TargetTypeEnum.VIDEO, video_ids)
+        if self.comment_dao is not None:
+            comment_counts = await self.comment_dao.count_by_targets(Comment.TargetTypeEnum.VIDEO, video_ids)
+        if self.favorite_dao is not None:
+            favorite_counts = await self.favorite_dao.count_by_targets(Favorite.TargetTypeEnum.VIDEO, video_ids)
+
+        return [MyVideoItem(
+            video_id=video.id,
+            title=video.title,
+            description=video.description,
+            poster_url=self._build_poster_url(video) if video.transcode_status == VideoTranscodeStatus.SUCCESS else None,
+            play_url=self._build_play_url(video) if video.transcode_status == VideoTranscodeStatus.SUCCESS else None,
+            duration=video.duration,
+            orientation=video.orientation,
+            transcode_status=video.transcode_status,
+            transcode_msg=video.transcode_msg,
+            like_count=int(like_counts.get(video.id, 0)),
+            comment_count=int(comment_counts.get(video.id, 0)),
+            favorite_count=int(favorite_counts.get(video.id, 0)),
+            created_at=video.created_at,
+        ) for video in videos]
 
     async def follow_feed(self, viewer_id: uuid.UUID, feed_id: Optional[str] = None,
                           limit: int = 10, cursor: Optional[str] = None) -> VideoFeedResponse:

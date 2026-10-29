@@ -84,6 +84,36 @@ class VideoDAO(BaseDAO[Video]):
         self.write_db.add(video)
         await self.write_db.flush()
 
+    async def list_by_account(
+            self,
+            account_id: uuid.UUID,
+            *,
+            limit: int = 12,
+            offset: int = 0,
+    ) -> list[Video]:
+        """某账户的视频列表(「我的视频」页), 全部转码状态都返回。
+
+        与 feed 不同: 这里不过滤转码状态 —— 用户需要看到「转码中/失败」的
+        自己的视频, 才知道上传后发生了什么。按创建时间倒序, offset 翻页。
+
+        Args:
+            account_id: 视频归属账户
+            limit: 每页条数(调用方传 limit+1 判断 has_more)
+            offset: 偏移量
+
+        Returns:
+            list[Video]: 按 created_at desc 排序的视频列表
+        """
+        statement = (
+            select(Video)
+            .where(Video.account_id == account_id, Video.is_deleted == False)
+            .order_by(Video.created_at.desc(), Video.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self.read_db.exec(statement)
+        return result.all()
+
     async def get_follow_feed(
             self,
             follower_id: uuid.UUID,
