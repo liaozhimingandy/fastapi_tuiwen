@@ -13,8 +13,10 @@
 import uuid
 from dataclasses import dataclass
 
+from src.tuiwen.dal.like import LikeDAO
 from src.tuiwen.dal.post import PostDAO
-from src.tuiwen.model.post import Post, RightStatusEnum
+from src.tuiwen.model.like import Like
+from src.tuiwen.model.post import Post, HotPostItem, RightStatusEnum
 
 
 @dataclass
@@ -22,10 +24,11 @@ class PostService:
     """帖子业务服务。
 
     使用 dataclass 便于依赖注入时直接以 dao 关键字构造
-    (get_post_service 里是 PostService(dao=dao))。
+    (get_post_service 里是 PostService(dao=dao, like_dao=like_dao))。
     """
 
     dao: PostDAO
+    like_dao: LikeDAO | None = None
 
     async def create(self, post: Post):
         """
@@ -167,14 +170,24 @@ class PostService:
         """
         热门帖子(最近 N 天公开帖按点赞数倒序)
 
+        排序由 DAO 的聚合查询完成; 这里再批量取一次各帖子的点赞数,
+        装配进 PostHot 返回给前端展示热度(与视频 feed 的 _build_items 同一套聚合口径)。
+
         Args:
             days: 统计窗口天数, 默认 7
             limit: 返回条数, 默认 10
 
         Returns:
-            list[Post]: 帖子列表
+            list[HotPostItem]: 帖子列表(含 like_count)
         """
-        return await self.dao.get_hot_posts(days=days, limit=limit)
+        posts = await self.dao.get_hot_posts(days=days, limit=limit)
+        if not posts:
+            return []
+        # like_dao 未注入时(如旧调用方)退化为不带热度, 接口不报错
+        if self.like_dao is None:
+            return [HotPostItem.from_post(p, 0) for p in posts]
+        counts = await self.like_dao.count_by_targets(Like.TargetTypeEnum.POST, [p.id for p in posts])
+        return [HotPostItem.from_post(p, int(counts.get(p.id, 0))) for p in posts]
 
     async def search_posts(self, keyword: str, offset: int = 0, limit: int = 10):
         """

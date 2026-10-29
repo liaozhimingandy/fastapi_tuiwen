@@ -18,7 +18,7 @@ from fastapi import APIRouter, status, Request, Body, Depends, Path, Query, Resp
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_post_service, get_optional_account_id
 from src.tuiwen.models import PageResponse
-from src.tuiwen.model.post import Post, PostCreate, PostRightStatusUpdate
+from src.tuiwen.model.post import Post, HotPostItem, PostCreate, PostRightStatusUpdate
 from src.tuiwen.service.post import PostService
 
 router_post = APIRouter(prefix="/posts", tags=[Tag.post])
@@ -149,7 +149,7 @@ async def get_posts_latest(account_id: Annotated[uuid.UUID | None, "当前登录
     return PageResponse(items=dataset, total=len(dataset))
 
 
-@router_public.get("/hot/", summary="返回热门帖子", response_model=PageResponse[Post],
+@router_public.get("/hot/", summary="返回热门帖子", response_model=PageResponse[HotPostItem],
                    response_model_include={'items', 'total'})
 async def get_posts_hot(limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=50, description="每页数量(1-50)"),
                         days: Annotated[int, "统计窗口天数"] = Query(7, ge=1, le=90, description="最近N天(1-90)"),

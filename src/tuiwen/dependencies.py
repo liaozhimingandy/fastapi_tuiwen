@@ -365,9 +365,10 @@ def get_like_service(dao = Depends(get_like_dao), post_dao = Depends(get_post_da
     # post_dao: 反查帖子作者; notice_dao: 点赞成功后写 LIKE 通知
     return LikeService(dao=dao, post_dao=post_dao, notice_dao=notice_dao)
 
-def get_post_service(dao = Depends(get_post_dao)):
+def get_post_service(dao = Depends(get_post_dao), like_dao = Depends(get_like_dao)):
     from src.tuiwen.service.post import PostService
-    return PostService(dao=dao)
+    # like_dao: 热门帖子接口批量装配点赞数(热度)
+    return PostService(dao=dao, like_dao=like_dao)
 
 def get_comment_service(dao = Depends(get_comment_dao), post_dao = Depends(get_post_dao),
                         notice_dao = Depends(get_notice_dao)):

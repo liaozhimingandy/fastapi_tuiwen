@@ -155,3 +155,23 @@ class PostRightStatusUpdate(SQLModel):
           post_id / account_id 字段是冗余的(且 post_id 还带了一个不该有的默认值)。
     """
     right_status: RightStatusEnum = Field(default=RightStatusEnum.PUBLIC, description='权限状态')
+
+
+class HotPostItem(SQLModel):
+    """热门帖子响应模型(/posts/hot/ 用)。
+
+    Post 是 table 模型, 不能再派生子类加非表字段(SQLModel 会把子类注册成同一张表);
+    这里用独立的精简模型只承载发现页需要的字段 + 热度。
+    """
+
+    post_id: uuid.UUID = Field(..., description="帖子ID")
+    account_id: uuid.UUID = Field(..., description="作者账户ID")
+    content: dict = Field(default_factory=dict, description="帖子JSON内容")
+    created_at: datetime = Field(..., description="创建时间")
+    like_count: int = Field(default=0, description="点赞数(热度)")
+
+    @classmethod
+    def from_post(cls, post: Post, like_count: int) -> "HotPostItem":
+        """由 Post ORM 对象 + 点赞数构造响应实体"""
+        return cls(post_id=post.id, account_id=post.account_id, content=post.content,
+                   created_at=post.created_at, like_count=like_count)
