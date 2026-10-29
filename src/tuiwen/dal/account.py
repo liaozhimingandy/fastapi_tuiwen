@@ -19,6 +19,24 @@ from src.tuiwen.model.account import Account
 class AccountDAO(BaseDAO[Account]):
     model = Account
 
+    async def get_by_ids(self, account_ids) -> list[Account]:
+        """
+        按 ID 集合批量查账号
+
+        视频 feed 装配作者信息(昵称/头像)用; 一条 IN 查询, 不随条目数增长。
+
+        Args:
+            account_ids: 账号ID列表/集合; 空则直接返回空列表
+
+        Returns:
+            list[Account]: 匹配到的账号(可能少于入参, 已删除/不存在的 ID 不返回)
+
+        """
+        if not account_ids:
+            return []
+        statement = select(Account).where(Account.id.in_(list(account_ids)))
+        return list((await self.exec_read(statement, "get_accounts_by_ids")).all())
+
     async def get_account_by_email_or_username(self, mail: str | None, username: str | None) -> Account | None:
         """
         查询邮箱(忽略大小写) 或者 用户名(忽略大小写)是否已存在

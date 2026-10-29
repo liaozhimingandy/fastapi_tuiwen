@@ -23,7 +23,7 @@ from src.tuiwen.core.storage import Storage
 from src.tuiwen.core.storage import storage
 from src.tuiwen.dal.video_source import VideoSourceDAO
 from src.tuiwen.model.video import Video, VideoOrientation, VideoTranscodeStatus, VideoFeedResponse, VideoInteraction, \
-    VideoStats, VideoFeedItem, VideoSource, VideoSourceType, TranscodeCompleteRequest, TranscodeFailedRequest
+    VideoAuthor, VideoStats, VideoFeedItem, VideoSource, VideoSourceType, TranscodeCompleteRequest, TranscodeFailedRequest
 from src.tuiwen.dal.video import VideoDAO
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.utils import logger
@@ -49,6 +49,7 @@ class VideoService:
     comment_dao: object | None = None
     favorite_dao: object | None = None
     follow_dao: object | None = None
+    account_dao: object | None = None
     chunk_size: int = 1024 * 1024  # 1MB 分片，可调整
     storage: Storage = storage
 
@@ -73,7 +74,7 @@ class VideoService:
         """
         ym = to_business_tz(video.created_at).strftime("%Y%m")
         return (
-            f"{get_settings().VIDEO_STORAGE_URL_PREFIX}"
+            f"{get_settings().VIDEO_STORAGE_URL_PREFIX}/"
             f"{ym}/"
             f"{video.id}/"
             f"play_list.m3u8"
@@ -87,10 +88,10 @@ class VideoService:
         """
         ym = to_business_tz(video.created_at).strftime("%Y%m")
         return (
-            f"{get_settings().VIDEO_STORAGE_URL_PREFIX}"
+            f"{get_settings().VIDEO_STORAGE_URL_PREFIX}/"
             f"{ym}/"
             f"{video.id}/"
-            f"poster.jpg"
+            f"cover.jpg"
         )
 
     async def upload(
@@ -416,6 +417,12 @@ class VideoService:
         if self.follow_dao is not None:
             followed_ids = await self.follow_dao.followed_account_ids(viewer_id, author_ids)
 
+        # --- 作者信息: 一条 IN 查询批量装配(头像/昵称), 前端侧栏与底部文案展示用 ---
+        authors: dict = {}
+        if self.account_dao is not None and author_ids:
+            for account in await self.account_dao.get_by_ids(author_ids):
+                authors[account.id] = account
+
         items = []
         for video in videos:
             stats = VideoStats(
@@ -428,6 +435,14 @@ class VideoService:
                 collected=video.id in collected_ids,
                 followed=bool(video.account_id and video.account_id in followed_ids),
             )
+            acc = authors.get(video.account_id) if video.account_id else None
+            author = None
+            if acc is not None:
+                author = VideoAuthor(
+                    account_id=acc.id,
+                    nickname=acc.nickname or acc.username,
+                    avatar_url=acc.avatar,
+                )
             items.append(VideoFeedItem(
                 video_id=video.id,
                 poster_url=self._build_poster_url(video),
@@ -438,6 +453,7 @@ class VideoService:
                 orientation=video.orientation,
                 title=video.title,
                 description=video.description,
+                author=author,
                 stats=stats,
                 interaction=interaction,
             ))
