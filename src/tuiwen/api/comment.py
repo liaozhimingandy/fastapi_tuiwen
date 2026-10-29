@@ -82,7 +82,7 @@ async def delete_comment(comment_id: Annotated[uuid.UUID, '评论ID'], request: 
                     response_model_include={'items', 'total'})
 async def get_comments(
         target_id: Annotated[uuid.UUID, "评论对象ID"] = Path(...),
-        target_type: Annotated[int, "枚举类型"] = Path(..., description="目标对象类型枚举值", ge=1, le=1),
+        target_type: Annotated[int, "枚举类型"] = Path(..., description="目标对象类型枚举值", ge=1, le=2),
         limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
         cursor: Annotated[uuid.UUID | None, "最早的那个id"] = Query(None),
         svc: CommentService = Depends(get_comment_service)):
@@ -91,7 +91,7 @@ async def get_comments(
 
     Args:
         target_id: 目标对象 ID, 如帖子 post_id
-        target_type: 目标对象类型枚举值, 当前仅允许 1(帖子)
+        target_type: 目标对象类型枚举值, 1=帖子 2=视频
         limit: 每页数量, 取值 1~100
         cursor: 游标(上一页最旧一条的 ID), 用于向前翻页; 为空表示查第一页
         svc: 评论业务服务

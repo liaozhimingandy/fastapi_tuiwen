@@ -31,12 +31,14 @@ class Comment(SQLModel, table=True):
     class TargetTypeEnum(IntEnum):
         """评论对象类别"""
         POST = 1
+        VIDEO = 2
         Other = 9
 
         @property
         def label(self):
             mapping = {
                 1: "POST",
+                2: "VIDEO",
                 9: "其它"
             }
             return mapping[self.value]
