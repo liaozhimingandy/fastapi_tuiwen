@@ -83,3 +83,54 @@ class VideoDAO(BaseDAO[Video]):
         """
         self.write_db.add(video)
         await self.write_db.flush()
+
+    async def get_follow_feed(
+            self,
+            follower_id: uuid.UUID,
+            *,
+            cursor_create_at: datetime | None = None,
+            cursor_id: uuid.UUID | None = None,
+            limit: int = 10,
+    ) -> list[Video]:
+        """关注流: 关注对象的视频 + 自己的视频, 只取转码成功且未删除的。
+
+        游标逻辑与 get_feed 完全一致((created_at, id) 双键倒序)。
+
+        Args:
+            follower_id: 当前登录用户(关注者); 自己的视频也并入流里
+            cursor_create_at: 上一页最后一条的 created_at; None 表示第一页
+            cursor_id: 上一页最后一条的主键 id
+            limit: 返回条数(调用方通常传 limit+1 用于判断 has_more)
+
+        Returns:
+            list[Video]: 按 created_at desc, id desc 排序的视频列表
+        """
+        from src.tuiwen.model.follow import Follow
+
+        # IN 子查询而非 JOIN: JOIN 会把「自己关注自己」之外自己的视频也漏掉
+        followee_ids = select(Follow.followee_id).where(Follow.follower_id == follower_id)
+        statement = select(Video).where(
+            Video.is_deleted == False,
+            Video.transcode_status == VideoTranscodeStatus.SUCCESS,
+            or_(Video.account_id.in_(followee_ids), Video.account_id == follower_id),
+        )
+        if cursor_create_at is not None:
+            statement = statement.where(
+                or_(
+                    Video.created_at < cursor_create_at,
+                    and_(
+                        Video.created_at == cursor_create_at,
+                        Video.id < cursor_id,
+                    ),
+                )
+            )
+        statement = (
+            statement
+            .order_by(
+                Video.created_at.desc(),
+                Video.id.desc(),
+            )
+            .limit(limit)
+        )
+        result = await self.read_db.exec(statement)
+        return result.all()

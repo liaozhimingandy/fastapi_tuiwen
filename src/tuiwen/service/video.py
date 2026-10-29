@@ -37,10 +37,18 @@ class VideoService:
     dao 由依赖注入(get_upload_service)在构造时传入 —— 原实现在类定义处直接
     `dao = UploadDAO()` 实例化, 既没传 write_db / read_db 会话(构造即报错),
     又把 DAO 变成了所有请求共享的类属性, 会造成请求间会话串用。
+
+    like_dao/comment_dao/favorite_dao/follow_dao 用于 feed 装配真实互动计数
+    (点赞数/评论数/已赞/已收藏/已关注); 任一为 None 时对应字段回退默认值,
+    保持单测与既有调用方可不注入。
     """
 
     dao: VideoDAO
     source_dao: VideoSourceDAO
+    like_dao: object | None = None
+    comment_dao: object | None = None
+    favorite_dao: object | None = None
+    follow_dao: object | None = None
     chunk_size: int = 1024 * 1024  # 1MB 分片，可调整
     storage: Storage = storage
 
@@ -309,7 +317,8 @@ class VideoService:
             await upload_file.close()
 
     async def feed(self, feed_id: Optional[str] = None, limit: int = 10,
-                   cursor: Optional[str] = None) -> VideoFeedResponse:
+                   cursor: Optional[str] = None,
+                   viewer_id: Optional[uuid.UUID] = None) -> VideoFeedResponse:
         """
         {
             "feed_id": "0199c8a2-7d35-7abc-8def-123456789abc",
@@ -350,9 +359,76 @@ class VideoService:
         has_more = len(videos) > limit
         if has_more:
             videos = videos[:limit]
+        items = await self._build_items(videos, viewer_id)
+
+        # 生成下一页 Cursor
+        next_cursor = None
+        if has_more and videos:
+            last_video = videos[-1]
+
+            next_cursor = FeedCursor.encode(
+                feed_id=feed_id,
+                created_at=last_video.created_at,
+                id=last_video.id,
+            )
+
+        return VideoFeedResponse(
+            feed_id=feed_id,
+            items=items,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
+
+    async def _build_items(self, videos: list[Video],
+                           viewer_id: Optional[uuid.UUID]) -> list[VideoFeedItem]:
+        """把一页 Video 装配成 feed 条目, 互动计数走批量查询(每类一条 SQL)。
+
+        Args:
+            videos: 本页视频实体
+            viewer_id: 当前登录用户; None(未登录)时互动状态全为 False
+
+        Returns:
+            list[VideoFeedItem]: 携带真实点赞数/评论数与互动状态的条目
+        """
+        from src.tuiwen.model.like import Like
+        from src.tuiwen.model.favorite import Favorite
+        from src.tuiwen.model.comment import Comment
+
+        video_ids = [video.id for video in videos]
+        author_ids = list({video.account_id for video in videos if video.account_id})
+
+        # --- 批量统计: 每类一条聚合 SQL, 避免逐条 N+1 ---
+        like_counts: dict = {}
+        comment_counts: dict = {}
+        favorite_counts: dict = {}
+        liked_ids: set = set()
+        collected_ids: set = set()
+        followed_ids: set = set()
+
+        if self.like_dao is not None:
+            like_counts = await self.like_dao.count_by_targets(Like.TargetTypeEnum.VIDEO, video_ids)
+            liked_ids = await self.like_dao.liked_target_ids(viewer_id, Like.TargetTypeEnum.VIDEO, video_ids)
+        if self.comment_dao is not None:
+            comment_counts = await self.comment_dao.count_by_targets(Comment.TargetTypeEnum.VIDEO, video_ids)
+        if self.favorite_dao is not None:
+            favorite_counts = await self.favorite_dao.count_by_targets(Favorite.TargetTypeEnum.VIDEO, video_ids)
+            collected_ids = await self.favorite_dao.favorited_target_ids(viewer_id, Favorite.TargetTypeEnum.VIDEO, video_ids)
+        if self.follow_dao is not None:
+            followed_ids = await self.follow_dao.followed_account_ids(viewer_id, author_ids)
+
         items = []
         for video in videos:
-            item = VideoFeedItem(
+            stats = VideoStats(
+                like_count=int(like_counts.get(video.id, 0)),
+                comment_count=int(comment_counts.get(video.id, 0)),
+                favorite_count=int(favorite_counts.get(video.id, 0)),
+            )
+            interaction = VideoInteraction(
+                liked=video.id in liked_ids,
+                collected=video.id in collected_ids,
+                followed=bool(video.account_id and video.account_id in followed_ids),
+            )
+            items.append(VideoFeedItem(
                 video_id=video.id,
                 poster_url=self._build_poster_url(video),
                 play_url=self._build_play_url(video),
@@ -362,16 +438,49 @@ class VideoService:
                 orientation=video.orientation,
                 title=video.title,
                 description=video.description,
-                stats=VideoStats(),
-                interaction=VideoInteraction(),
-            )
-            items.append(item)
+                stats=stats,
+                interaction=interaction,
+            ))
+        return items
 
-        # 生成下一页 Cursor
+    async def follow_feed(self, viewer_id: uuid.UUID, feed_id: Optional[str] = None,
+                          limit: int = 10, cursor: Optional[str] = None) -> VideoFeedResponse:
+        """关注流: 关注对象的视频 + 自己的视频(游标分页, 需登录)。
+
+        Args:
+            viewer_id: 当前登录用户
+            feed_id: 本次浏览会话 ID(首页传 None 新建)
+            limit: 每页条数
+            cursor: 上一页返回的续读游标
+
+        Returns:
+            VideoFeedResponse: 与推荐流同构的响应
+        """
+        if cursor:
+            try:
+                decoded = FeedCursor.decode(cursor)
+            except ValueError:
+                raise BizError(code=400, message="无效的分页游标")
+            feed_id = decoded.feed_id
+            videos = await self.dao.get_follow_feed(
+                viewer_id,
+                cursor_create_at=decoded.created_at,
+                cursor_id=decoded.id,
+                limit=limit + 1,
+            )
+        else:
+            feed_id = feed_id or uuid.uuid7()
+            videos = await self.dao.get_follow_feed(viewer_id, limit=limit + 1)
+
+        has_more = len(videos) > limit
+        if has_more:
+            videos = videos[:limit]
+
+        items = await self._build_items(videos, viewer_id)
+
         next_cursor = None
         if has_more and videos:
             last_video = videos[-1]
-
             next_cursor = FeedCursor.encode(
                 feed_id=feed_id,
                 created_at=last_video.created_at,

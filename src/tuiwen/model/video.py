@@ -321,11 +321,12 @@ class VideoAuthor(SQLModel):
 
 
 class VideoStats(SQLModel):
-    """互动统计。当前为占位默认值, 尚未接入真实计数(点赞/播放/评论/分享)。"""
+    """互动统计。view/share 暂无埋点来源仍为占位; like/comment/favorite 已接真实计数。"""
     view_count: int = 0
     like_count: int = 0
     comment_count: int = 0
     share_count: int = 0
+    favorite_count: int = 0
 
 
 class VideoInteraction(SQLModel):

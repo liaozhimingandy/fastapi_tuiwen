@@ -83,18 +83,19 @@ class LikeService:
 
         return instance
 
-    async def like_count(self, target_id: uuid.UUID):
+    async def like_count(self, target_id: uuid.UUID,
+                         target_type: int = Like.TargetTypeEnum.POST):
         """
-        统计某帖子的点赞总数
+        统计某对象的点赞总数
 
         Args:
             target_id: 目标对象ID
+            target_type: 目标对象类型(1帖子/2视频)
 
         Returns:
             int: 点赞总数
         """
-        # 仅统计帖子类型(target_type=POST)的点赞
-        return await self.dao.count(target_type=Like.TargetTypeEnum.POST, target_id=target_id)
+        return await self.dao.count(target_type=target_type, target_id=target_id)
 
     async def delete_like(self, target_id: uuid.UUID, account_id: uuid.UUID,
                           target_type: int = Like.TargetTypeEnum.POST):
@@ -116,18 +117,21 @@ class LikeService:
         await self.dao.write_db.commit()
         return bool(affected)
 
-    async def get_like_count(self, target_id: uuid.UUID, account_id: uuid.UUID):
+    async def get_like_count(self, target_id: uuid.UUID, account_id: uuid.UUID,
+                             target_type: int = Like.TargetTypeEnum.POST):
         """
         查询点赞总数与当前用户是否已点赞
 
         Args:
             target_id: 目标对象ID
             account_id: 当前登录账户ID
+            target_type: 目标对象类型(1帖子/2视频)
 
         Returns:
             dict: {"like_count": int, "is_liked": bool}
         """
-        return await self.dao.get_like_count(target_id=target_id, account_id=account_id)
+        return await self.dao.get_like_count(target_id=target_id, account_id=account_id,
+                                             target_type=target_type)
 
     async def get_liked_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None = None,
                               limit: int = 10, viewer_account_id: uuid.UUID | None = None) -> list[Post]:

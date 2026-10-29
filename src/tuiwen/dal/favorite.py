@@ -11,7 +11,9 @@
 =================================================
 """
 import uuid
+from typing import Sequence
 
+from sqlalchemy import func
 from sqlmodel import delete, select, exists
 
 from src.tuiwen.dal.base import BaseDAO
@@ -100,3 +102,37 @@ class FavoriteDAO(BaseDAO[Favorite]):
             statement = statement.where(Post.id < cursor)
         statement = statement.order_by(Post.id.desc()).limit(limit)
         return list((await self.exec_read(statement, "get_favorited_posts")).all())
+
+    async def count_by_targets(self, target_type: Favorite.TargetTypeEnum,
+                               target_ids: Sequence[uuid.UUID]) -> dict:
+        """批量统计多个目标的收藏数(视频 feed 一次装配一页数据时用)
+
+        Returns:
+            dict: {target_id: favorite_count}, 没有收藏的目标不在返回里
+        """
+        if not target_ids:
+            return {}
+        statement = (
+            select(Favorite.target_id, func.count())
+            .where(Favorite.target_type == target_type, Favorite.target_id.in_(target_ids))
+            .group_by(Favorite.target_id)
+        )
+        result = await self.exec_read(statement, "count_favorites_by_targets")
+        return {row[0]: int(row[1]) for row in result.all()}
+
+    async def favorited_target_ids(self, account_id: uuid.UUID | None, target_type: Favorite.TargetTypeEnum,
+                                   target_ids: Sequence[uuid.UUID]) -> set:
+        """批量查询某用户对哪些目标收藏过(未登录返回空集)
+
+        Returns:
+            set: 已收藏的 target_id 集合
+        """
+        if account_id is None or not target_ids:
+            return set()
+        statement = select(Favorite.target_id).where(
+            Favorite.account_id == account_id,
+            Favorite.target_type == target_type,
+            Favorite.target_id.in_(target_ids),
+        )
+        result = await self.exec_read(statement, "favorited_target_ids")
+        return {row[0] for row in result.all()}

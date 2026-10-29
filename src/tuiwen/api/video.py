@@ -99,18 +99,41 @@ async def upload_video(
                    status_code=status.HTTP_200_OK)
 async def feed(request: Request,
                query: Annotated[VideoFeedQuery, Query()],
+               viewer_id: Annotated[uuid.UUID | None, "浏览者(可选认证)"] = Depends(get_optional_account_id),
                svc: VideoService = Depends(get_video_service)):
     """返回推荐流(游标分页)。
 
     Args:
         request: 请求对象(当前未使用, 预留后续按账号做个性化)
         query: 查询参数, 含 feed_id / cursor / limit(1~20)
+        viewer_id: 浏览者账户ID; 登录时用于装配「已赞/已收藏/已关注」互动态
         svc: 视频业务服务
 
     Returns:
         VideoFeedResponse: 本页视频列表 + 下一页游标 + has_more
     """
-    return await svc.feed(feed_id=query.feed_id, limit=query.limit, cursor=query.cursor)
+    return await svc.feed(feed_id=query.feed_id, limit=query.limit, cursor=query.cursor,
+                          viewer_id=viewer_id)
+
+
+@router_upload.get('/follow/', summary="返回关注流", response_model=VideoFeedResponse,
+                   status_code=status.HTTP_200_OK)
+async def follow_feed(request: Request,
+                      query: Annotated[VideoFeedQuery, Query()],
+                      viewer_id: Annotated[uuid.UUID | None, "浏览者(可选认证)"] = Depends(get_optional_account_id),
+                      svc: VideoService = Depends(get_video_service)):
+    """返回关注流(关注对象的视频 + 自己的视频, 游标分页)。
+
+    注意必须注册在 /{video_id}/ 之前(若有同类路径参数路由), 否则 "follow" 会被
+    当作 uuid 参数解析。当前 videos 前缀下没有 /{video_id}/ 路由, 仍按此顺序放置。
+
+    Raises:
+        HTTPException: 401 —— 未登录(关注流是登录态能力)
+    """
+    if viewer_id is None:
+        raise HTTPException(status_code=401, detail="请先登录")
+    return await svc.follow_feed(viewer_id, feed_id=query.feed_id, limit=query.limit,
+                                 cursor=query.cursor)
 
 
 @router_upload.post("/internal/transcode-complete/", response_model=bool,)

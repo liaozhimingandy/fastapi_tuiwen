@@ -394,6 +394,10 @@ def get_feedback_service(dao = Depends(get_feedback_dao)):
     from src.tuiwen.service.feedback import FeedbackService
     return FeedbackService(dao=dao)
 
-def get_video_service(dao = Depends(get_video_dao), source_dao=Depends(get_video_source_dao)):
+def get_video_service(dao = Depends(get_video_dao), source_dao=Depends(get_video_source_dao),
+                      like_dao=Depends(get_like_dao), comment_dao=Depends(get_comment_dao),
+                      favorite_dao=Depends(get_favorite_dao), follow_dao=Depends(get_follow_dao)):
     from src.tuiwen.service.video import VideoService
-    return VideoService(dao=dao, source_dao=source_dao)
+    # like/comment/favorite/follow 四个 DAO: feed 装配真实互动计数与状态
+    return VideoService(dao=dao, source_dao=source_dao, like_dao=like_dao, comment_dao=comment_dao,
+                        favorite_dao=favorite_dao, follow_dao=follow_dao)

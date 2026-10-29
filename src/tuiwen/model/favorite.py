@@ -27,8 +27,9 @@ class Favorite(SQLModel, table=True):
     __tablename__ = f"{TABLE_PREFIX}favorite"  # 表名
 
     class TargetTypeEnum(IntEnum):
-        """收藏对象类别(当前仅支持帖子)。"""
+        """收藏对象类别(帖子/视频)。"""
         POST = 1
+        VIDEO = 2
 
     id: int = Field(None, primary_key=True, sa_column_kwargs={"comment": "表主键ID", }, sa_type=BigInteger,
                     sa_column_args=[Identity(always=False)])

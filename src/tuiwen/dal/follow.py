@@ -61,3 +61,24 @@ class FollowDAO(BaseDAO[Follow]):
         )
         result = await self._execute(self._get_read_session(), stmt, op="list_followers")
         return list(result.all())
+
+    async def followed_account_ids(self, follower_id, account_ids) -> set:
+        """批量查询某用户关注了哪些账号(视频 feed 装配「已关注」态时用)
+
+        Args:
+            follower_id: 关注者账户ID; None 表示未登录
+            account_ids: 待检查的账号ID集合
+
+        Returns:
+            set: 已关注的 account_id 集合
+        """
+        from sqlalchemy import select as _select
+
+        if follower_id is None or not account_ids:
+            return set()
+        statement = _select(Follow.followee_id).where(
+            Follow.follower_id == follower_id,
+            Follow.followee_id.in_(account_ids),
+        )
+        result = await self.exec_read(statement, "followed_account_ids")
+        return {row[0] for row in result.all()}

@@ -14,6 +14,7 @@ from sqlalchemy import func
 from sqlmodel import delete, select, exists
 
 import uuid
+from typing import Sequence
 
 from src.tuiwen.dal.base import BaseDAO
 from src.tuiwen.model.like import Like
@@ -132,3 +133,46 @@ class LikeDAO(BaseDAO[Like]):
             statement = statement.where(Post.id < cursor)
         statement = statement.order_by(Post.id.desc()).limit(limit)
         return list((await self.exec_read(statement, "get_liked_posts")).all())
+
+    async def count_by_targets(self, target_type: Like.TargetTypeEnum,
+                               target_ids: Sequence[uuid.UUID]) -> dict:
+        """批量统计多个目标的点赞数(视频 feed 一次装配一页数据时用)
+
+        Args:
+            target_type: 目标类型(1帖子/2视频)
+            target_ids: 目标ID集合
+
+        Returns:
+            dict: {target_id: like_count}, 没有点赞的目标不在返回里
+        """
+        if not target_ids:
+            return {}
+        statement = (
+            select(Like.target_id, func.count())
+            .where(Like.target_type == target_type, Like.target_id.in_(target_ids))
+            .group_by(Like.target_id)
+        )
+        result = await self.exec_read(statement, "count_likes_by_targets")
+        return {row[0]: int(row[1]) for row in result.all()}
+
+    async def liked_target_ids(self, account_id: uuid.UUID | None, target_type: Like.TargetTypeEnum,
+                               target_ids: Sequence[uuid.UUID]) -> set:
+        """批量查询某用户对哪些目标点过赞(未登录返回空集)
+
+        Args:
+            account_id: 用户账户ID; None 表示未登录
+            target_type: 目标类型
+            target_ids: 目标ID集合
+
+        Returns:
+            set: 已点赞的 target_id 集合
+        """
+        if account_id is None or not target_ids:
+            return set()
+        statement = select(Like.target_id).where(
+            Like.account_id == account_id,
+            Like.target_type == target_type,
+            Like.target_id.in_(target_ids),
+        )
+        result = await self.exec_read(statement, "liked_target_ids")
+        return {row[0] for row in result.all()}

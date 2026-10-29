@@ -51,6 +51,7 @@ async def create_like(payload: Annotated[LikeCreate, "赞的输入对象"],
 
 @router_like.delete('/{target_id}/', summary='取消赞', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_like(target_id: Annotated[uuid.UUID, "对象ID"], request: Annotated[Request, "请求对象"],
+                      target_type: Annotated[int, Query(ge=1, le=2, description="对象类型 1帖子/2视频")] = 1,
                       svc: LikeService = Depends(get_like_service)):
     """
     取消当前登录用户对某对象的点赞
@@ -58,19 +59,21 @@ async def delete_like(target_id: Annotated[uuid.UUID, "对象ID"], request: Anno
     Args:
         target_id: 目标对象 ID
         request: 请求对象, request.state.account_id 由认证依赖写入
+        target_type: 对象类型(1帖子/2视频), 避免误删同 ID 其它类型的记录
         svc: 点赞业务服务
 
     Returns:
         bool: 是否取消到记录(204 无响应体)
     """
-    affected = await svc.delete_like(target_id, request.state.account_id)
+    affected = await svc.delete_like(target_id, request.state.account_id, target_type=target_type)
     # 事务出口: DELETE 由 DAO 执行但不提交, 这里统一提交
     await svc.dao.commit()
     return affected
 
 
-@router_like.get('/{target_id}/count/', summary="获取指定帖子的点赞数", response_model=LikeCountModel)
+@router_like.get('/{target_id}/count/', summary="获取指定对象的点赞数", response_model=LikeCountModel)
 async def get_like_count(target_id: Annotated[uuid.UUID, "对象id"], request: Annotated[Request, "请求对象"],
+                         target_type: Annotated[int, Query(ge=1, le=2, description="对象类型 1帖子/2视频")] = 1,
                          svc: LikeService = Depends(get_like_service)) -> LikeCountModel:
     """
     查询某对象的点赞总数, 以及当前登录用户是否已点赞
@@ -78,13 +81,14 @@ async def get_like_count(target_id: Annotated[uuid.UUID, "对象id"], request: A
     Args:
         target_id: 目标对象 ID
         request: 请求对象, request.state.account_id 由认证依赖写入
+        target_type: 对象类型(1帖子/2视频)
         svc: 点赞业务服务
 
     Returns:
         LikeCountModel: count=点赞总数, is_liked=当前用户是否已点赞
     """
     # Service/DAO 返回的是 dict, 不是对象, 必须用下标访问
-    result = await svc.get_like_count(target_id, request.state.account_id)
+    result = await svc.get_like_count(target_id, request.state.account_id, target_type=target_type)
     return LikeCountModel(count=result["like_count"], is_liked=result["is_liked"])
 
 

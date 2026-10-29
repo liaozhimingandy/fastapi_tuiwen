@@ -55,3 +55,26 @@ class CommentDAO(BaseDAO[Comment]):
         total = await self.count(target_id=target_id, target_type=target_type)
 
         return PageResult(items=items, total=total)
+
+    async def count_by_targets(self, target_type: Comment.TargetTypeEnum,
+                               target_ids) -> dict:
+        """批量统计多个目标的评论数(视频 feed 一次装配一页数据时用)
+
+        Args:
+            target_type: 目标类型(1帖子/2视频)
+            target_ids: 目标ID集合
+
+        Returns:
+            dict: {target_id: comment_count}, 没有评论的目标不在返回里
+        """
+        from sqlalchemy import func
+
+        if not target_ids:
+            return {}
+        statement = (
+            select(Comment.target_id, func.count())
+            .where(Comment.target_type == target_type, Comment.target_id.in_(target_ids))
+            .group_by(Comment.target_id)
+        )
+        result = await self.exec_read(statement, "count_comments_by_targets")
+        return {row[0]: int(row[1]) for row in result.all()}
