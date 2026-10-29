@@ -135,4 +135,6 @@ class FavoriteDAO(BaseDAO[Favorite]):
             Favorite.target_id.in_(target_ids),
         )
         result = await self.exec_read(statement, "favorited_target_ids")
-        return {row[0] for row in result.all()}
+        # sqlmodel session.exec 对单列 select 直接返回标量(UUID), 不是 Row 元组,
+        # row[0] 会抛 'UUID' object is not subscriptable; 兼容两种返回形态
+        return {row if not isinstance(row, tuple) else row[0] for row in result.all()}

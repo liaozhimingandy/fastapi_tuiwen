@@ -81,7 +81,9 @@ class FollowDAO(BaseDAO[Follow]):
             Follow.followee_id.in_(account_ids),
         )
         result = await self.exec_read(statement, "followed_account_ids")
-        return {row[0] for row in result.all()}
+        # sqlmodel session.exec 对单列 select 直接返回标量(UUID), 不是 Row 元组,
+        # row[0] 会抛 'UUID' object is not subscriptable; 兼容两种返回形态
+        return {row if not isinstance(row, tuple) else row[0] for row in result.all()}
 
     async def counts_by_targets(self, account_ids) -> dict:
         """批量统计多个账号的粉丝数/关注数(搜索结果装配 follow 统计时用)
