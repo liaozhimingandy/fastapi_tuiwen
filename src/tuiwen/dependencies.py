@@ -359,27 +359,32 @@ def get_snap_service(dao = Depends(get_snap_dao)):
     from src.tuiwen.service.snap import SnapService
     return SnapService(dao=dao)
 
-def get_like_service(dao = Depends(get_like_dao)):
+def get_like_service(dao = Depends(get_like_dao), post_dao = Depends(get_post_dao),
+                     notice_dao = Depends(get_notice_dao)):
     from src.tuiwen.service.like import LikeService
-    return LikeService(dao=dao)
+    # post_dao: 反查帖子作者; notice_dao: 点赞成功后写 LIKE 通知
+    return LikeService(dao=dao, post_dao=post_dao, notice_dao=notice_dao)
 
 def get_post_service(dao = Depends(get_post_dao)):
     from src.tuiwen.service.post import PostService
     return PostService(dao=dao)
 
-def get_comment_service(dao = Depends(get_comment_dao)):
+def get_comment_service(dao = Depends(get_comment_dao), post_dao = Depends(get_post_dao),
+                        notice_dao = Depends(get_notice_dao)):
     from src.tuiwen.service.comment import CommentService
-    return CommentService(dao=dao)
+    # post_dao: 反查帖子作者; notice_dao: 评论成功后写 COMMENT 通知
+    return CommentService(dao=dao, post_dao=post_dao, notice_dao=notice_dao)
 
 
 def get_upload_service(dao = Depends(get_upload_dao)):
     from src.tuiwen.service.file import FileService
     return FileService(dao=dao)
 
-def get_follow_service(dao = Depends(get_follow_dao), like_dao = Depends(get_like_dao)):
+def get_follow_service(dao = Depends(get_follow_dao), like_dao = Depends(get_like_dao),
+                       notice_dao = Depends(get_notice_dao)):
     from src.tuiwen.service.follow import FollowService
-    # like_dao 只用于统计「获赞数」, 点赞数据不在关注表里
-    return FollowService(dao=dao, like_dao=like_dao)
+    # like_dao 只用于统计「获赞数」; notice_dao 用于关注成功后写 FOLLOW 通知
+    return FollowService(dao=dao, like_dao=like_dao, notice_dao=notice_dao)
 
 def get_account_service(dao = Depends(get_account_dao)):
     from src.tuiwen.service.account import AccountService

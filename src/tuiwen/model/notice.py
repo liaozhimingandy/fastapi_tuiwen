@@ -46,6 +46,11 @@ class NoticeTargetScope(IntEnum):
     VIP = 3         # 付费VIP用户
 
 
+class NoticeReadPayload(SQLModel):
+    """标记已读入参: ids 为空表示全部标记已读"""
+    ids: Optional[list[int]] = Field(default=None, description='通知ID列表, 为空时标记全部已读')
+
+
 class Notice(SQLModel, table=True):
     """通知数据库表(tw_notice)。
 
@@ -105,6 +110,11 @@ class Notice(SQLModel, table=True):
     is_deleted: bool = Field(
         default=False,
         sa_column_kwargs={'comment': '是否已删除: false正常 / true已删除', "server_default": text("false")}
+    )
+    # 已读标记(通知中心用; 系统公告无个人维度, 该字段对其无意义)
+    is_read: bool = Field(
+        default=False,
+        sa_column_kwargs={'comment': '是否已读: false未读 / true已读', "server_default": text("false")}
     )
     # 更新时间
     updated_at: datetime = Field(..., default_factory=utcnow, description="最后更新时间",

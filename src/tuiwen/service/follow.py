@@ -10,12 +10,15 @@
 """
 
 from dataclasses import dataclass
+import uuid
 
 from sqlalchemy.exc import IntegrityError
 
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dal.follow import FollowDAO
 from src.tuiwen.dal.like import LikeDAO
+from src.tuiwen.dal.notice import NoticeDAO
+from src.tuiwen.model.notice import Notice, NoticeType, NoticeTargetType
 
 
 @dataclass
@@ -27,10 +30,13 @@ class FollowService:
 
     like_dao 用于统计「获赞数」—— 点赞数据在 tw_like 表, 不归 FollowDAO 管;
     为 None 时不查库(仅单测里手动构造服务时会省略)。
+    notice_dao 用于关注成功后给被关注者写一条 FOLLOW 通知;
+    为 None 时跳过(保持向后兼容, 单测可不注入)。
     """
 
     dao: FollowDAO
     like_dao: LikeDAO | None = None
+    notice_dao: NoticeDAO | None = None
 
     async def create(self, obj):
         """
@@ -55,10 +61,60 @@ class FollowService:
             instance = await self.dao.create(obj)
             await self.dao.write_db.commit()
             await self.dao.write_db.refresh(instance)
-            return instance
         except IntegrityError:
             await self.dao.write_db.rollback()
             raise BizError(code=409, message="已经关注过了")
+
+        # 关注成功后给被关注者写一条通知。通知写失败不影响关注本身,
+        # 回滚只针对通知这条 INSERT, 不回滚已提交的关注记录。
+        if self.notice_dao is not None:
+            notice = Notice(
+                account_id=obj.followee_id,
+                trigger_account_id=obj.follower_id,
+                notice_type=NoticeType.FOLLOW,
+                target_type=NoticeTargetType.USER,
+                target_id=obj.follower_id,
+                content={"text": "关注了你"},
+            )
+            try:
+                await self.notice_dao.create(notice)
+                await self.notice_dao.write_db.commit()
+            except Exception:
+                await self.notice_dao.write_db.rollback()
+
+        return instance
+
+    async def list_followees(self, account_id: uuid.UUID, offset: int = 0, limit: int = 10):
+        """
+        「关注列表」: 该账户正在关注的账号(按关注时间倒序)
+
+        Args:
+            account_id: 账户ID
+            offset: 偏移量
+            limit: 每页数量
+
+        Returns:
+            tuple[list[Account], int]: 账号列表与总数
+        """
+        items = await self.dao.list_followees(account_id, offset=offset, limit=limit)
+        total = await self.dao.count(follower_id=account_id)
+        return items, total
+
+    async def list_followers(self, account_id: uuid.UUID, offset: int = 0, limit: int = 10):
+        """
+        「粉丝列表」: 关注该账户的账号(按关注时间倒序)
+
+        Args:
+            account_id: 账户ID
+            offset: 偏移量
+            limit: 每页数量
+
+        Returns:
+            tuple[list[Account], int]: 账号列表与总数
+        """
+        items = await self.dao.list_followers(account_id, offset=offset, limit=limit)
+        total = await self.dao.count(followee_id=account_id)
+        return items, total
 
     async def delete(self, follower_id, followee_id, ):
         """

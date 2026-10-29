@@ -17,15 +17,24 @@ from sqlalchemy.exc import IntegrityError
 
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dal.like import LikeDAO
+from src.tuiwen.dal.notice import NoticeDAO
+from src.tuiwen.dal.post import PostDAO
 from src.tuiwen.model.like import Like
+from src.tuiwen.model.notice import Notice, NoticeType, NoticeTargetType
 from src.tuiwen.model.post import Post
 
 
 @dataclass
 class LikeService:
-    """点赞业务服务。使用 dataclass 便于依赖注入时直接以 dao 关键字构造。"""
+    """点赞业务服务。使用 dataclass 便于依赖注入时直接以 dao 关键字构造。
+
+    post_dao / notice_dao 用于点赞成功后给帖子作者写一条 LIKE 通知;
+    任一为 None 时跳过(向后兼容, 单测可不注入)。
+    """
 
     dao: LikeDAO
+    post_dao: PostDAO | None = None
+    notice_dao: NoticeDAO | None = None
 
     async def create(self, like: Like):
         """
@@ -47,10 +56,32 @@ class LikeService:
             instance = await self.dao.create(like)
             await self.dao.write_db.commit()
             await self.dao.write_db.refresh(instance)
-            return instance
         except IntegrityError:
             await self.dao.write_db.rollback()
             raise BizError(code=409, message="已经点过赞了")
+
+        # 点赞成功后给帖子作者写一条通知(自己赞自己不通知; 通知失败不影响点赞)。
+        # 当前 Like.TargetTypeEnum 只有 POST, 将来扩了视频点赞再在这里补分支。
+        if self.notice_dao is not None and self.post_dao is not None \
+                and like.target_type == Like.TargetTypeEnum.POST \
+                and like.account_id is not None:
+            try:
+                post = await self.post_dao.get_by_id(like.target_id)
+                if post is not None and post.account_id != like.account_id:
+                    notice = Notice(
+                        account_id=post.account_id,
+                        trigger_account_id=like.account_id,
+                        notice_type=NoticeType.LIKE,
+                        target_type=NoticeTargetType.POST,
+                        target_id=post.id,
+                        content={"text": "赞了你的帖子"},
+                    )
+                    await self.notice_dao.create(notice)
+                    await self.notice_dao.write_db.commit()
+            except Exception:
+                await self.notice_dao.write_db.rollback()
+
+        return instance
 
     async def like_count(self, target_id: uuid.UUID):
         """

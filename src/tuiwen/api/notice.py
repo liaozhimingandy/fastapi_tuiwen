@@ -19,7 +19,7 @@ from src.tuiwen.service.notice import NoticeService
 from src.tuiwen.core import Tag
 from src.tuiwen.dependencies import get_notice_service
 from src.tuiwen.models import PageResponse
-from src.tuiwen.model.notice import Notice
+from src.tuiwen.model.notice import Notice, NoticeReadPayload
 
 
 router_notice = APIRouter(prefix="/notices", tags=[Tag.more])
@@ -76,7 +76,9 @@ async def get_system_notices(svc: NoticeService = Depends(get_notice_service),
 async def get_account_notices(account_id: Annotated[uuid.UUID, "用户id"],
                               request: Annotated[Request, "请求对象"],
                               svc: NoticeService = Depends(get_notice_service),
-                              page: int = Query(default=1, ge=1), size: int = Query(default=20, ge=1, le=100), ):
+                              page: int = Query(default=1, ge=1),
+                              size: int = Query(default=20, ge=1, le=100),
+                              notice_type: Annotated[int | None, Query(ge=0, le=4)] = None):
     """
     分页获取某个用户收到的通知(按创建时间倒序)
 
@@ -86,6 +88,7 @@ async def get_account_notices(account_id: Annotated[uuid.UUID, "用户id"],
         svc: 通知业务服务
         page: 页码, 从 1 开始
         size: 每页数量, 1~100
+        notice_type: 通知类型过滤(0系统/1点赞/2评论/3关注/4提及), 不传返回全部
 
     Returns:
         PageResponse[Notice]: 通知列表与总数
@@ -99,8 +102,42 @@ async def get_account_notices(account_id: Annotated[uuid.UUID, "用户id"],
     if request.state.account_id != account_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只能查看自己的通知")
 
-    result = await svc.get_user_notices(account_id, limit=size, offset=(page - 1) * size)
+    result = await svc.get_user_notices(account_id, limit=size, offset=(page - 1) * size,
+                                        notice_type=notice_type)
     return PageResponse(items=result.items, total=result.total)
+
+
+@router_notice.get("/accounts/{account_id}/unread-count/", summary="返回指定用户的未读通知数",
+                   tags=[Tag.more])
+async def get_unread_count(account_id: Annotated[uuid.UUID, "用户id"],
+                           request: Annotated[Request, "请求对象"],
+                           svc: NoticeService = Depends(get_notice_service)):
+    """
+    统计某个用户收到的未读通知数
+
+    Raises:
+        HTTPException: 403 —— 试图查看别人的通知
+    """
+    if request.state.account_id != account_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只能查看自己的通知")
+    return {"count": await svc.unread_count(account_id)}
+
+
+@router_notice.put("/read/", summary="批量标记通知为已读", tags=[Tag.more])
+async def mark_notices_read(payload: Annotated[NoticeReadPayload, "已读入参"],
+                            request: Annotated[Request, "请求对象"],
+                            svc: NoticeService = Depends(get_notice_service)):
+    """
+    把当前登录用户的通知批量标记为已读
+
+    Args:
+        payload: ids 为空/缺省时表示全部标记已读
+
+    Returns:
+        dict: {"marked": 实际标记的行数}
+    """
+    marked = await svc.mark_read(request.state.account_id, ids=payload.ids)
+    return {"marked": marked}
 
 
 if __name__ == "__main__":

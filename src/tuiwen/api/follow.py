@@ -2,13 +2,15 @@
 关注 API 路由层
 
 职责:
-    1. 提供关注/取关/查询关注统计三类接口
+    1. 提供关注/取关/查询关注统计/关注列表/粉丝列表五类接口
     2. 参数校验与响应模型组装, 业务逻辑下沉到 FollowService
 
 接口清单:
     POST   /api/v2/follows/                              关注
     DELETE /api/v2/follows/{followee_id}/                取消关注(关注者取自令牌)
     GET    /api/v2/follows/{account_id}/count/           关注数/粉丝数/获赞数统计
+    GET    /api/v2/follows/{account_id}/followees/       关注列表(正在关注谁)
+    GET    /api/v2/follows/{account_id}/followers/       粉丝列表(谁关注了他)
 
 分层位置:
     API → FollowService → FollowDAO → PostgreSQL
@@ -16,11 +18,13 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Body, status, Depends, Request, HTTPException
+from fastapi import APIRouter, Body, status, Depends, Request, HTTPException, Query
 
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dependencies import get_follow_service
+from src.tuiwen.models import PageResponse
 from src.tuiwen.service.follow import FollowService
+from src.tuiwen.model.account import AccountInfo
 from src.tuiwen.model.follow import Follow, FollowCreate, FollowCountModel
 
 router_follow = APIRouter(prefix="/follows", tags=["follow"])
@@ -90,3 +94,33 @@ async def get_follow_info_by_id(account_id: Annotated[uuid.UUID, "账户ID"], re
 
     # 展开为强类型响应模型, 避免直接暴露内部字典结构
     return FollowCountModel(**result)
+
+
+@router_follow.get('/{account_id}/followees/', summary="获取指定账户的关注列表",
+                   response_model=PageResponse[AccountInfo])
+async def list_followees(account_id: Annotated[uuid.UUID, "账户ID"],
+                         svc: FollowService = Depends(get_follow_service),
+                         page: Annotated[int, Query(ge=1)] = 1,
+                         size: Annotated[int, Query(ge=1, le=50)] = 20) -> PageResponse[AccountInfo]:
+    """
+    获取指定账户正在关注的账号列表(按关注时间倒序)
+
+    - **account_id**: 平台账号唯一标识
+    """
+    items, total = await svc.list_followees(account_id, offset=(page - 1) * size, limit=size)
+    return PageResponse(items=items, total=total, page_size=size)
+
+
+@router_follow.get('/{account_id}/followers/', summary="获取指定账户的粉丝列表",
+                   response_model=PageResponse[AccountInfo])
+async def list_followers(account_id: Annotated[uuid.UUID, "账户ID"],
+                         svc: FollowService = Depends(get_follow_service),
+                         page: Annotated[int, Query(ge=1)] = 1,
+                         size: Annotated[int, Query(ge=1, le=50)] = 20) -> PageResponse[AccountInfo]:
+    """
+    获取关注指定账户的粉丝列表(按关注时间倒序)
+
+    - **account_id**: 平台账号唯一标识
+    """
+    items, total = await svc.list_followers(account_id, offset=(page - 1) * size, limit=size)
+    return PageResponse(items=items, total=total, page_size=size)

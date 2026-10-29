@@ -15,7 +15,10 @@ from dataclasses import dataclass
 
 from src.tuiwen.dal.base import PageResult
 from src.tuiwen.dal.comment import CommentDAO
+from src.tuiwen.dal.notice import NoticeDAO
+from src.tuiwen.dal.post import PostDAO
 from src.tuiwen.model.comment import Comment
+from src.tuiwen.model.notice import Notice, NoticeType, NoticeTargetType
 
 
 @dataclass
@@ -24,9 +27,15 @@ class CommentService:
 
     使用 dataclass 便于依赖注入时直接以 dao 关键字构造
     (get_comment_service 里是 CommentService(dao=dao))。
+
+    post_dao / notice_dao 用于评论成功后给帖子作者写一条 COMMENT 通知;
+    任一为 None 时跳过(向后兼容, 单测可不注入)。
+    TODO: 楼中楼回复父评论作者的回复通知, 后续再补。
     """
 
     dao: CommentDAO
+    post_dao: PostDAO | None = None
+    notice_dao: NoticeDAO | None = None
 
     async def create(self, comment: Comment):
         """
@@ -41,6 +50,27 @@ class CommentService:
         instance = await self.dao.create(comment)
         await self.dao.write_db.commit()
         await self.dao.write_db.refresh(instance)
+
+        # 评论成功后给帖子作者写一条通知(自己评论自己不通知; 通知失败不影响评论)。
+        # 当前只覆盖 target_type=POST; 视频评论的作者反查走 VideoDAO, 后续再补。
+        if self.notice_dao is not None and self.post_dao is not None \
+                and comment.target_type == Comment.TargetTypeEnum.POST:
+            try:
+                post = await self.post_dao.get_by_id(comment.target_id)
+                if post is not None and post.account_id != comment.account_id:
+                    notice = Notice(
+                        account_id=post.account_id,
+                        trigger_account_id=comment.account_id,
+                        notice_type=NoticeType.COMMENT,
+                        target_type=NoticeTargetType.POST,
+                        target_id=post.id,
+                        content={"text": (comment.content or "")[:50]},
+                    )
+                    await self.notice_dao.create(notice)
+                    await self.notice_dao.write_db.commit()
+            except Exception:
+                await self.notice_dao.write_db.rollback()
+
         return instance
 
     async def delete(self, comment_id, account_id):
