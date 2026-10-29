@@ -16,7 +16,7 @@ from typing import Annotated
 from fastapi import APIRouter, status, Request, Body, Depends, Path, Query, Response, HTTPException
 
 from src.tuiwen.core import Tag
-from src.tuiwen.dependencies import get_post_service
+from src.tuiwen.dependencies import get_post_service, get_optional_account_id
 from src.tuiwen.models import PageResponse
 from src.tuiwen.model.post import Post, PostCreate, PostRightStatusUpdate
 from src.tuiwen.service.post import PostService
@@ -101,23 +101,25 @@ async def get_s_post(post_id: Annotated[uuid.UUID, "帖子唯一标识"],
     return instance
 
 
-@router_post.get("/latest/", summary="返回最近十条帖子", response_model=PageResponse[Post],
-                 response_model_include={'items', 'total'})
-async def get_posts_latest(request: Annotated[Request, "请求对象"],
+@router_public.get("/latest/", summary="返回最近十条帖子", response_model=PageResponse[Post],
+                   response_model_include={'items', 'total'})
+async def get_posts_latest(account_id: Annotated[uuid.UUID | None, "当前登录账户(可选)",
+                                                  Depends(get_optional_account_id)],
                            svc: PostService = Depends(get_post_service)):
     """
-    获取最近 10 条帖子
+    获取最近 10 条帖子(可匿名)
 
-    可见范围: 公开帖子 + 自己发布的全部帖子
+    可见范围: 公开帖子 + 自己发布的全部帖子。
+    匿名(未带令牌)时 account_id 为 None, 只会返回公开帖子 —— 这是「首页免登录浏览」的依据。
 
     Args:
-        request: 请求对象, request.state.account_id 由认证依赖写入
+        account_id: 当前登录账户ID; 由可选认证依赖注入, 匿名时 None
         svc: 帖子业务服务
 
     Returns:
         PageResponse[Post]: 帖子列表与总数
     """
-    dataset = await svc.get_posts_latest(request.state.account_id)
+    dataset = await svc.get_posts_latest(account_id)
     return PageResponse(items=dataset, total=len(dataset))
 
 
@@ -151,18 +153,22 @@ async def get_account_posts(account_id: Annotated[uuid.UUID, Path(..., descripti
     return PageResponse(items=dataset, total=len(dataset))
 
 
-@router_post.get("/", summary="返回帖子", response_model=PageResponse[Post],
-                 response_model_include={'items', 'total'})
-async def get_posts(request: Annotated[Request, "请求对象"],
+@router_public.get("/", summary="返回帖子", response_model=PageResponse[Post],
+                   response_model_include={'items', 'total'})
+async def get_posts(account_id: Annotated[uuid.UUID | None, "当前登录账户(可选)",
+                                          Depends(get_optional_account_id)],
                     limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100, description="每页数量(1-100)"),
                     cursor: Annotated[uuid.UUID | None, "数据最旧的那个post_id"] = Query(None),
                     svc: PostService = Depends(get_post_service)
                     ):
     """
-    分页获取帖子流(公开帖子 + 自己的帖子)
+    分页获取帖子流(可匿名)
+
+    可见范围: 公开帖子 + 自己的帖子。匿名时 account_id 为 None,
+    DAO 的 `account_id == None` 在 SQL 里恒不成立, 因此只会命中公开帖子。
 
     Args:
-        request: 请求对象, request.state.account_id 由认证依赖写入
+        account_id: 当前登录账户ID; 由可选认证依赖注入, 匿名时为 None
         limit: 每页数量, 1~100
         cursor: 游标, 上一页最旧一条的 post_id
         svc: 帖子业务服务
@@ -171,7 +177,7 @@ async def get_posts(request: Annotated[Request, "请求对象"],
         PageResponse[Post]: 帖子列表与总数
     """
 
-    dataset = await svc.get_posts(request.state.account_id, cursor, limit)
+    dataset = await svc.get_posts(account_id, cursor, limit)
 
     return PageResponse(items=dataset, total=len(dataset))
 

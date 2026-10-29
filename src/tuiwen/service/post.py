@@ -74,24 +74,24 @@ class PostService:
         await self.dao.write_db.commit()
         return affected
 
-    async def get_posts_latest(self, account_id: uuid.UUID):
+    async def get_posts_latest(self, account_id: uuid.UUID | None):
         """
         获取最近 10 条帖子(公开帖子 + 自己的帖子)
 
         Args:
-            account_id: 当前登录账户ID
+            account_id: 当前登录账户ID; 匿名浏览时为 None(只返回公开帖)
 
         Returns:
             list[Post]: 帖子列表
         """
         return await self.dao.get_posts_latest(account_id)
 
-    async def get_posts(self, account_id: uuid.UUID, cursor: uuid.UUID, limit: int):
+    async def get_posts(self, account_id: uuid.UUID | None, cursor: uuid.UUID | None, limit: int):
         """
         游标分页获取帖子流
 
         Args:
-            account_id: 当前登录账户ID
+            account_id: 当前登录账户ID; 匿名浏览时为 None(只返回公开帖)
             cursor: 游标(上一页最旧一条的 post_id)
             limit: 每页数量
 
