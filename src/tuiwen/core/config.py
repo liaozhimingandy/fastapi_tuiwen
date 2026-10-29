@@ -187,6 +187,7 @@ class Tag(Enum):
     account = 'account'
     post = 'post'
     like = 'like'
+    favorite = 'favorite'
     comment = 'comment'
     log = 'log'
     oauth = 'oauth'

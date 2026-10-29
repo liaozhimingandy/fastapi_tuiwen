@@ -57,6 +57,32 @@ async def create_post(post: Annotated[PostCreate, Body(..., description="帖子�
     return result
 
 
+@router_post.get("/follow/", summary="返回关注流(关注对象的帖子)", response_model=PageResponse[Post],
+                 response_model_include={'items', 'total'})
+async def get_follow_posts(request: Annotated[Request, "请求对象"],
+                           limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=100,
+                                                                        description="每页数量(1-100)"),
+                           cursor: Annotated[uuid.UUID | None, "数据最旧的那个post_id"] = Query(None),
+                           svc: PostService = Depends(get_post_service)):
+    """
+    分页获取关注流: 当前用户关注的人的公开帖子 + 自己的全部帖子(需登录)
+
+    NOTE: 本路由必须注册在 GET /{post_id}/ 之前 —— FastAPI 按注册顺序匹配,
+          否则 "follow" 会被 /{post_id}/ 当成 uuid 参数解析失败返回 422。
+
+    Args:
+        request: 请求对象, request.state.account_id 由认证依赖写入
+        limit: 每页数量, 1~100
+        cursor: 游标, 上一页最旧一条的 post_id
+        svc: 帖子业务服务
+
+    Returns:
+        PageResponse[Post]: 帖子列表与总数
+    """
+    dataset = await svc.get_follow_posts(request.state.account_id, cursor, limit)
+    return PageResponse(items=dataset, total=len(dataset))
+
+
 @router_post.get("/{post_id}/", summary="返回指定的帖子", response_model=Post)
 async def get_post(post_id: Annotated[uuid.UUID, "帖子唯一标识"],
                    request: Annotated[Request, "请求对象"],

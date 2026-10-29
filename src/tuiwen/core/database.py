@@ -61,7 +61,7 @@ def _import_all_models() -> None:
           create_all 只创建「不存在的表」, 不会给已有表加列 —— 给旧表加字段仍需手动 ALTER。
     """
     from src.tuiwen.model import (  # noqa: F401 显式导入以触发模型注册
-        account, comment, feedback, file, follow, like, notice, oauth, post, snap, video,
+        account, comment, favorite, feedback, file, follow, like, notice, oauth, post, snap, video,
     )
     from src.tuiwen.log import models as log_models  # noqa: F401
 

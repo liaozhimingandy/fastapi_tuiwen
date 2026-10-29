@@ -100,6 +100,20 @@ class PostService:
         """
         return await self.dao.get_posts(account_id, cursor, limit)
 
+    async def get_follow_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None = None, limit: int = 10):
+        """
+        游标分页获取关注流(关注对象的公开帖 + 自己的帖子)
+
+        Args:
+            account_id: 当前登录账户ID
+            cursor: 游标(上一页最旧一条的 post_id)
+            limit: 每页数量
+
+        Returns:
+            list[Post]: 帖子列表
+        """
+        return await self.dao.get_follow_posts(account_id=account_id, cursor=cursor, limit=limit)
+
     async def get_account_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None = None, limit: int = 10,
                                 viewer_account_id: uuid.UUID | None = None):
         """

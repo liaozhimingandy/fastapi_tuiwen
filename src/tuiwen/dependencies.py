@@ -266,6 +266,20 @@ async def get_like_dao(
         read_db=read_db,
     )
 
+async def get_favorite_dao(
+    write_db: AsyncSession = Depends(get_write_session),
+    read_db: AsyncSession = Depends(get_read_session),
+):
+    from src.tuiwen.dal.favorite import FavoriteDAO
+    return FavoriteDAO(
+        write_db=write_db,
+        read_db=read_db,
+    )
+
+def get_favorite_service(dao = Depends(get_favorite_dao)):
+    from src.tuiwen.service.favorite import FavoriteService
+    return FavoriteService(dao=dao)
+
 async def get_post_dao(
     write_db: AsyncSession = Depends(get_write_session),
     read_db: AsyncSession = Depends(get_read_session),

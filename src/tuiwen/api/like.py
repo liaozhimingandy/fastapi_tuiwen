@@ -13,7 +13,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, status, Request, Depends, HTTPException
+from fastapi import APIRouter, status, Request, Depends, HTTPException, Path, Query
 
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.core import Tag
@@ -88,7 +88,7 @@ async def get_like_count(target_id: Annotated[uuid.UUID, "对象id"], request: A
     return LikeCountModel(count=result["like_count"], is_liked=result["is_liked"])
 
 
-@router_post.get("/account/{account_id}/", summary="返回指定用户点赞过的帖子",
+@router_like.get("/account/{account_id}/", summary="返回指定用户点赞过的帖子",
                  response_model=PageResponse[Post], response_model_include={'items', 'total'})
 async def get_liked_posts(account_id: Annotated[uuid.UUID, Path(..., description="用户ID")],
                           request: Annotated[Request, "请求对象"],

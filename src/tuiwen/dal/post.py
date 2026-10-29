@@ -15,6 +15,7 @@ import uuid
 from sqlmodel import delete, update, select, or_
 
 from src.tuiwen.dal.base import BaseDAO
+from src.tuiwen.model.follow import Follow
 from src.tuiwen.model.post import Post, RightStatusEnum
 
 
@@ -114,6 +115,45 @@ class PostDAO(BaseDAO[Post]):
         # 按创建时间倒序 + 限制数量
         statement = statement.order_by(Post.id.desc()).limit(limit)
         return list((await self.exec_read(statement, "get_posts")).all())
+
+    async def get_follow_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None = None,
+                               limit: int = 10) -> list[Post]:
+        """
+        关注流: 当前用户关注的人的帖子(uuid7 游标分页)
+
+        可见范围: 关注对象的公开帖子 + 自己发布的全部帖子;
+        翻页方式: post_id < cursor(uuid7 时间有序, 因此可直接比较大小)
+
+        Args:
+            account_id: 当前登录账户ID
+            cursor: 游标, 上一页最旧一条的 post_id; 为空表示第一页
+            limit: 每页数量, 默认 10
+
+        Returns:
+            list[Post]: 帖子列表
+
+        NOTE: 用 IN 子查询而不是 JOIN —— 自己的帖子(不在关注表里)也要进入关注流,
+              JOIN 会把它们全部漏掉。子查询先取关注集合再按 author 过滤, 语义清晰。
+        """
+        limit, _ = self._safe_page(limit, 0)
+        # 关注对象ID集合(只取 followee_id, 不取实体)
+        followee_ids = select(Follow.followee_id).where(Follow.follower_id == account_id)
+        statement = select(Post).where(
+            or_(
+                # 关注对象的公开帖子(私密帖只对作者本人可见)
+                Post.account_id.in_(followee_ids) & (Post.right_status == RightStatusEnum.PUBLIC),
+                # 自己的帖子(含私密, 与首页推荐流口径一致)
+                Post.account_id == account_id,
+            )
+        )
+
+        # 仅当有游标时追加翻页条件
+        if cursor:
+            statement = statement.where(Post.id < cursor)
+
+        # 按创建时间倒序 + 限制数量
+        statement = statement.order_by(Post.id.desc()).limit(limit)
+        return list((await self.exec_read(statement, "get_follow_posts")).all())
 
     async def get_account_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None = None, limit: int = 10,
                                 viewer_account_id: uuid.UUID | None = None) -> list[Post]:

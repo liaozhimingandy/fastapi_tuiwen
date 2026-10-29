@@ -20,6 +20,7 @@ from src.tuiwen.api.feedback import router_public as feedback_router_public
 from src.tuiwen.api.follow import router_follow
 from src.tuiwen.api.notice import router_notice
 from src.tuiwen.api.like import router_like
+from src.tuiwen.api.favorite import router_favorite
 from src.tuiwen.api.post import router_post, router_public as post_router_public
 from src.tuiwen.api.snap import router_public as snap_router_public
 from src.tuiwen.api.file import router_upload
@@ -39,6 +40,7 @@ router_auth.include_router(router_post)     # 帖子
 router_auth.include_router(router_follow)   # 关注
 router_auth.include_router(router_notice)   # 通知
 router_auth.include_router(router_like)     # 点赞
+router_auth.include_router(router_favorite) # 收藏
 router_auth.include_router(router_upload)   # 文件上传
 
 # -------------------- 免登录(公开)的模块 --------------------
