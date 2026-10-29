@@ -215,7 +215,8 @@ async def update_account(account_id: Annotated[uuid.UUID, "账户ID"],
 async def search(keyword: Annotated[str, "关键词"], *, svc: AccountService = Depends(get_account_service),
                  request: Annotated[Request, "请求对象"],
                  offset: Annotated[int, "偏移量"] = 0,
-                 limit: Annotated[int, Query(le=10)] = 10, ) -> PageResponse[AccountInfo]:
+                 limit: Annotated[int, "返回多少条记录"] = Query(20, ge=1, le=100,
+                                                              description="每页数量(1-100)"), ) -> PageResponse[AccountInfo]:
     """
     按关键词模糊搜索账户(昵称或账号ID包含关键词)
 
@@ -227,7 +228,7 @@ async def search(keyword: Annotated[str, "关键词"], *, svc: AccountService = 
         svc: 账号业务服务
         request: 请求对象, 用于取当前登录用户(匿名时无)
         offset: 偏移量
-        limit: 每页数量, 最大 10
+        limit: 每页数量(1-100), 与其他分页端点保持一致
 
     Returns:
         PageResponse[AccountInfo]: 匹配到的账户列表与总数
