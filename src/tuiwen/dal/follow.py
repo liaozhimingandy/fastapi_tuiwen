@@ -102,7 +102,7 @@ class FollowDAO(BaseDAO[Follow]):
 
         # 粉丝数: 按被关注者分组
         follower_stat = (
-            _select(Follow.followee_id, _func.count())
+            select(Follow.followee_id, _func.count())
             .where(Follow.followee_id.in_(account_ids))
             .group_by(Follow.followee_id)
         )
@@ -112,7 +112,7 @@ class FollowDAO(BaseDAO[Follow]):
 
         # 关注数: 按关注者分组
         followee_stat = (
-            _select(Follow.follower_id, _func.count())
+            select(Follow.follower_id, _func.count())
             .where(Follow.follower_id.in_(account_ids))
             .group_by(Follow.follower_id)
         )
