@@ -149,6 +149,50 @@ async def get_posts_latest(account_id: Annotated[uuid.UUID | None, "当前登录
     return PageResponse(items=dataset, total=len(dataset))
 
 
+@router_public.get("/hot/", summary="返回热门帖子", response_model=PageResponse[Post],
+                   response_model_include={'items', 'total'})
+async def get_posts_hot(limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=50, description="每页数量(1-50)"),
+                        days: Annotated[int, "统计窗口天数"] = Query(7, ge=1, le=90, description="最近N天(1-90)"),
+                        svc: PostService = Depends(get_post_service)):
+    """
+    获取热门帖子(可匿名): 最近 days 天的公开帖按点赞数倒序
+
+    NOTE: 发现页/搜索页的「热门内容」数据源; 只返回有过点赞的帖子。
+
+    Args:
+        limit: 返回条数, 1~50
+        days: 统计窗口天数, 1~90
+        svc: 帖子业务服务
+
+    Returns:
+        PageResponse[Post]: 帖子列表与总数
+    """
+    dataset = await svc.get_hot_posts(days=days, limit=limit)
+    return PageResponse(items=dataset, total=len(dataset))
+
+
+@router_public.get("/search/{keyword}/", summary="通过关键词搜索公开帖子", response_model=PageResponse[Post],
+                   response_model_include={'items', 'total'})
+async def search_posts(keyword: Annotated[str, "关键词"],
+                       limit: Annotated[int, "返回多少条记录"] = Query(20, ge=1, le=100, description="每页数量(1-100)"),
+                       offset: Annotated[int, "偏移量"] = Query(0, ge=0, description="分页偏移量"),
+                       svc: PostService = Depends(get_post_service)):
+    """
+    按关键词搜索公开帖子(可匿名), content 文本模糊匹配, 按时间倒序
+
+    Args:
+        keyword: 搜索关键词(路径参数)
+        limit: 每页数量, 1~100
+        offset: 分页偏移量
+        svc: 帖子业务服务
+
+    Returns:
+        PageResponse[Post]: 命中的帖子列表与总数
+    """
+    dataset = await svc.search_posts(keyword=keyword, offset=offset, limit=limit)
+    return PageResponse(items=dataset, total=len(dataset))
+
+
 @router_post.get("/accounts/{account_id}/", summary="返回指定用户的所有帖子", response_model=PageResponse[Post],
                  response_model_include={'items', 'total'})
 async def get_account_posts(account_id: Annotated[uuid.UUID, Path(..., description="用户ID")],

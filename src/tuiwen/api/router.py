@@ -44,10 +44,15 @@ router_auth.include_router(router_favorite) # 收藏
 router_auth.include_router(router_upload)   # 文件上传
 
 # -------------------- 免登录(公开)的模块 --------------------
+# NOTE: 帖子的公开路由(latest/hot/search/s)必须注册在 router_auth 之前！
+#       FastAPI 按注册顺序匹配, auth 组的 GET /posts/{post_id}/ 会把 "latest"/"hot"
+#       等字面量当作 uuid 解析, 路径参数校验失败返回 422 且不会 fallthrough 到后续路由,
+#       导致这些公开接口匿名 401 / 带令牌 422, 永远不可达。
+api_router_v2.include_router(post_router_public)      # 公开帖子(必须最先注册, 见上方 NOTE)
+
 router_public.include_router(account_router_public)   # 注册/登录/找回密码/公开账户信息
 router_public.include_router(feedback_router_public)  # 用户反馈
 router_public.include_router(snap_router_public)      # 天亮即焚
-router_public.include_router(post_router_public)      # 公开帖子
 router_public.include_router(video_router_public)   # 视频上传
 
 # 两个分组统一挂到 /api/v2 之下

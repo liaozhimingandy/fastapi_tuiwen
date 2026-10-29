@@ -162,3 +162,30 @@ class PostService:
 
         """
         return await self.dao.get_s_post(post_id)
+
+    async def get_hot_posts(self, days: int = 7, limit: int = 10):
+        """
+        热门帖子(最近 N 天公开帖按点赞数倒序)
+
+        Args:
+            days: 统计窗口天数, 默认 7
+            limit: 返回条数, 默认 10
+
+        Returns:
+            list[Post]: 帖子列表
+        """
+        return await self.dao.get_hot_posts(days=days, limit=limit)
+
+    async def search_posts(self, keyword: str, offset: int = 0, limit: int = 10):
+        """
+        按关键词搜索公开帖子
+
+        Args:
+            keyword: 搜索关键词
+            offset: 偏移量
+            limit: 每页数量
+
+        Returns:
+            list[Post]: 命中的公开帖子
+        """
+        return await self.dao.search_posts(keyword=keyword, offset=offset, limit=limit)

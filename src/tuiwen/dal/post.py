@@ -11,12 +11,16 @@
 =================================================
 """
 import uuid
+from datetime import timedelta
 
-from sqlmodel import delete, update, select, or_
+from sqlalchemy import String, func
+from sqlmodel import delete, select, or_
 
 from src.tuiwen.dal.base import BaseDAO
 from src.tuiwen.model.follow import Follow
+from src.tuiwen.model.like import Like
 from src.tuiwen.model.post import Post, RightStatusEnum
+from src.tuiwen.utils.datetime_utils import utcnow
 
 
 class PostDAO(BaseDAO[Post]):
@@ -200,6 +204,69 @@ class PostDAO(BaseDAO[Post]):
         """
         statement = select(Post).where(Post.id == post_id, Post.right_status == RightStatusEnum.PUBLIC)
         return (await self.exec_read(statement, "get_s_post")).first()
+
+    async def get_hot_posts(self, days: int = 7, limit: int = 10) -> list[Post]:
+        """
+        热门帖子: 最近 days 天的公开帖按点赞数倒序
+
+        用子查询按帖子聚合点赞数, 再 JOIN 回帖子表排序;
+        没有任何点赞的帖子不参与排序(不返回) —— 发现页只展示「有人觉得好」的内容。
+
+        Args:
+            days: 统计窗口(帖子创建时间在最近 N 天内), 默认 7
+            limit: 返回条数, 默认 10
+
+        Returns:
+            list[Post]: 帖子列表(点赞多在前, 同票按时间新在前)
+        """
+        limit, _ = self._safe_page(limit, 0)
+        # 每条帖子的点赞总数(只统计 target_type=POST 的赞)
+        like_stat = (
+            select(Like.target_id, func.count().label("like_total"))
+            .where(Like.target_type == Like.TargetTypeEnum.POST)
+            .group_by(Like.target_id)
+            .subquery()
+        )
+        since = utcnow() - timedelta(days=days)
+        statement = (
+            select(Post)
+            .join(like_stat, like_stat.c.target_id == Post.id)
+            .where(Post.right_status == RightStatusEnum.PUBLIC, Post.created_at >= since)
+            .order_by(like_stat.c.like_total.desc(), Post.id.desc())
+            .limit(limit)
+        )
+        return list((await self.exec_read(statement, "get_hot_posts")).all())
+
+    async def search_posts(self, keyword: str, offset: int = 0, limit: int = 10) -> list[Post]:
+        """
+        按关键词搜索公开帖子(content JSON 文本模糊匹配)
+
+        content 是 JSON 列, 直接 CAST 成文本后 ILIKE 全文匹配 —— MVP 够用,
+        等内容量上来再考虑 pg_trgm / 全文索引, 接口形态不变。
+
+        Args:
+            keyword: 搜索关键词(前后空白会被去掉)
+            offset: 偏移量, 默认 0
+            limit: 每页数量, 默认 10
+
+        Returns:
+            list[Post]: 命中的公开帖子(按时间倒序)
+        """
+        limit, offset = self._safe_page(limit, offset)
+        # 用户输入里的 % 和 _ 是 LIKE 通配符, 先转义掉避免 "%%" 之类的意外全匹配
+        escaped = keyword.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        statement = (
+            select(Post)
+            .where(
+                Post.right_status == RightStatusEnum.PUBLIC,
+                func.cast(Post.content, String).ilike(pattern, escape="\\"),
+            )
+            .order_by(Post.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list((await self.exec_read(statement, "search_posts")).all())
 
     async def get_visible_post(self, post_id: uuid.UUID, viewer_account_id: uuid.UUID | None = None) -> Post | None:
         """
