@@ -205,7 +205,7 @@ class PostDAO(BaseDAO[Post]):
         statement = select(Post).where(Post.id == post_id, Post.right_status == RightStatusEnum.PUBLIC)
         return (await self.exec_read(statement, "get_s_post")).first()
 
-    async def get_hot_posts(self, days: int = 7, limit: int = 10) -> list[Post]:
+    async def get_hot_posts(self, days: int = 7, limit: int = 10, offset: int = 0) -> list[Post]:
         """
         热门帖子: 最近 days 天的公开帖按点赞数倒序
 
@@ -215,11 +215,12 @@ class PostDAO(BaseDAO[Post]):
         Args:
             days: 统计窗口(帖子创建时间在最近 N 天内), 默认 7
             limit: 返回条数, 默认 10
+            offset: 偏移量(发现页「换一批」翻页用), 默认 0
 
         Returns:
             list[Post]: 帖子列表(点赞多在前, 同票按时间新在前)
         """
-        limit, _ = self._safe_page(limit, 0)
+        limit, offset = self._safe_page(limit, offset)
         # 每条帖子的点赞总数(只统计 target_type=POST 的赞)
         like_stat = (
             select(Like.target_id, func.count().label("like_total"))
@@ -233,6 +234,7 @@ class PostDAO(BaseDAO[Post]):
             .join(like_stat, like_stat.c.target_id == Post.id)
             .where(Post.right_status == RightStatusEnum.PUBLIC, Post.created_at >= since)
             .order_by(like_stat.c.like_total.desc(), Post.id.desc())
+            .offset(offset)
             .limit(limit)
         )
         return list((await self.exec_read(statement, "get_hot_posts")).all())

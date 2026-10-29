@@ -153,21 +153,24 @@ async def get_posts_latest(account_id: Annotated[uuid.UUID | None, "当前登录
                    response_model_include={'items', 'total'})
 async def get_posts_hot(limit: Annotated[int, "返回多少条记录"] = Query(10, ge=1, le=50, description="每页数量(1-50)"),
                         days: Annotated[int, "统计窗口天数"] = Query(7, ge=1, le=90, description="最近N天(1-90)"),
+                        offset: Annotated[int, "偏移量"] = Query(0, ge=0, description="分页偏移量(换一批用)"),
                         svc: PostService = Depends(get_post_service)):
     """
     获取热门帖子(可匿名): 最近 days 天的公开帖按点赞数倒序
 
     NOTE: 发现页/搜索页的「热门内容」数据源; 只返回有过点赞的帖子。
+          offset 供前端「换一批」翻页。
 
     Args:
         limit: 返回条数, 1~50
         days: 统计窗口天数, 1~90
+        offset: 分页偏移量
         svc: 帖子业务服务
 
     Returns:
-        PageResponse[Post]: 帖子列表与总数
+        PageResponse[HotPostItem]: 帖子列表(含 like_count)与总数
     """
-    dataset = await svc.get_hot_posts(days=days, limit=limit)
+    dataset = await svc.get_hot_posts(days=days, limit=limit, offset=offset)
     return PageResponse(items=dataset, total=len(dataset))
 
 

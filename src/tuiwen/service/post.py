@@ -166,7 +166,7 @@ class PostService:
         """
         return await self.dao.get_s_post(post_id)
 
-    async def get_hot_posts(self, days: int = 7, limit: int = 10):
+    async def get_hot_posts(self, days: int = 7, limit: int = 10, offset: int = 0):
         """
         热门帖子(最近 N 天公开帖按点赞数倒序)
 
@@ -176,11 +176,12 @@ class PostService:
         Args:
             days: 统计窗口天数, 默认 7
             limit: 返回条数, 默认 10
+            offset: 偏移量(发现页「换一批」翻页用), 默认 0
 
         Returns:
             list[HotPostItem]: 帖子列表(含 like_count)
         """
-        posts = await self.dao.get_hot_posts(days=days, limit=limit)
+        posts = await self.dao.get_hot_posts(days=days, limit=limit, offset=offset)
         if not posts:
             return []
         # like_dao 未注入时(如旧调用方)退化为不带热度, 接口不报错

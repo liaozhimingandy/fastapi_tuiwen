@@ -35,13 +35,16 @@ from src.tuiwen.common.exceptions import EmailAlreadyRegisteredError, UsernameAl
 # 模型统一从 model 包绝对导入(原 "from model.account" 是裸导入, 只在把 src/tuiwen 也加入
 # sys.path 时才成立, 与项目「唯一源根=项目根」的约定冲突);
 # 重构后账户字段与令牌/验证码模型分别位于 account / oauth 两个模块
-from src.tuiwen.model.account import (AccountCreate, Account, AccountPublicCommon,
+from src.tuiwen.model.account import (AccountCreate, Account, AccountInfo, AccountPublicCommon,
                                       AccountPasswordChange, AccountPasswordReset)
+from src.tuiwen.model.follow import FollowCountModel
 from src.tuiwen.model.oauth import (AccessToken, CodeVerify, RefreshToken,
                                     TurnstileVerifyToken, UpdateCredential)
 # SCOPES_BASIC 已下沉到 core(原定义在 account/router.py, 属反向依赖)
 from src.tuiwen.core import get_settings, SCOPES_BASIC
 from src.tuiwen.dal.account import AccountDAO
+from src.tuiwen.dal.follow import FollowDAO
+from src.tuiwen.dal.like import LikeDAO
 from src.tuiwen.utils.jwt_token import generate_jwt_token, verify_jwt_token
 from src.tuiwen.utils.redis_util import RedisKey, redis_get, redis_set, redis_delete
 from src.tuiwen.utils.utils import validate_username, get_random_salt, hash_password
@@ -55,10 +58,14 @@ class AccountService:
     """账号业务服务。
 
     使用 dataclass 便于依赖注入时直接以 dao 关键字构造
-    (get_account_service 里是 AccountService(dao=dao))。
+    (get_account_service 里是 AccountService(dao=dao, follow_dao=follow_dao, like_dao=like_dao))。
+
+    follow_dao/like_dao 用于搜索结果批量装配关注统计; 为 None 时不装配(旧调用方兼容)。
     """
 
     dao: AccountDAO
+    follow_dao: FollowDAO | None = None
+    like_dao: LikeDAO | None = None
 
     # ---------------------------------------------------------
     # 注册
@@ -161,19 +168,58 @@ class AccountService:
         await self.dao.write_db.commit()
         return instance
 
-    async def search(self, keyword: str, offset: int, limit: int):
+    async def search(self, keyword: str, offset: int, limit: int,
+                     viewer_id: uuid.UUID | None = None):
         """
         按关键词模糊搜索账号(昵称或账号ID包含关键词, 不区分大小写)
+
+        viewer_id 传入时批量装配关注统计(follow 字段: 粉丝数/关注数/是否已关注/获赞数),
+        供搜索结果列表直接渲染「关注」按钮, 省去前端逐个调 /follows/{id}/count/。
 
         Args:
             keyword: 搜索关键词
             offset: 偏移量
             limit: 每页数量
+            viewer_id: 当前登录账户ID; None 时不装配关注统计(匿名)
 
         Returns:
-            list[Account]: 匹配到的账号列表
+            list[Account]: 匹配到的账号列表(follow 字段视 viewer 而定)
         """
-        return await self.dao.search(keyword=keyword, offset=offset, limit=limit)
+        dataset = await self.dao.search(keyword=keyword, offset=offset, limit=limit)
+        if not dataset:
+            return []
+        # follow_dao 未注入或匿名时不装配 —— 统一转成 AccountInfo(follow=None),
+        # 不直接返回 Account ORM 实例(它没有 follow 属性, 访问会 AttributeError)
+        if self.follow_dao is None or viewer_id is None:
+            return [AccountInfo.model_validate(a.model_dump()) for a in dataset]
+        return await self._attach_follow_info(dataset, viewer_id)
+
+    async def _attach_follow_info(self, accounts, viewer_id: uuid.UUID):
+        """批量装配关注统计(3 条聚合查询, 不随结果条数增长)
+
+        口径与 FollowService.get_follow_info_by_id 一致:
+        follower_count/followee_count/is_following/like_count(该作者帖子的获赞数)。
+        """
+        ids = [a.id for a in accounts]
+        counts = await self.follow_dao.counts_by_targets(ids)
+        liked = await self.like_dao.count_likes_by_authors(ids) if self.like_dao else {}
+        followed = await self.follow_dao.followed_account_ids(viewer_id, ids)
+
+        result = []
+        for a in accounts:
+            # NOTE: 不能用 model_validate(a)(from_attributes 直读 ORM)——
+            #       Account 表模型没有 follow 属性, 校验时 getattr 失败且不会回退到默认值;
+            #       先 dump 成 dict 再验证, follow 字段才能落到默认 None
+            info = AccountInfo.model_validate(a.model_dump())
+            stat = counts.get(a.id, {"follower_count": 0, "followee_count": 0})
+            info.follow = FollowCountModel(
+                follower_count=int(stat["follower_count"]),
+                followee_count=int(stat["followee_count"]),
+                is_following=a.id in followed,
+                like_count=int(liked.get(a.id, 0)),
+            )
+            result.append(info)
+        return result
 
     # ---------------------------------------------------------
     # 验证码 / 密码

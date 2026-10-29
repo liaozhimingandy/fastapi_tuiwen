@@ -102,6 +102,29 @@ class LikeDAO(BaseDAO[Like]):
         total = await self._execute_scalar(self._get_read_session(), statement, "count_likes_received")
         return int(total or 0)
 
+    async def count_likes_by_authors(self, account_ids: Sequence[uuid.UUID]) -> dict:
+        """批量统计多个作者「收到的赞」总数(搜索结果装配 follow 获赞数时用)
+
+        帖子表 JOIN 点赞表按作者分组, 一条查询替代逐个 count_likes_received 的 N 条。
+
+        Args:
+            account_ids: 作者账户ID集合
+
+        Returns:
+            dict: {account_id: 获赞数}, 没有获赞的作者不在返回里
+        """
+        if not account_ids:
+            return {}
+        statement = (
+            select(Post.account_id, func.count())
+            .select_from(Like)
+            .join(Post, Post.id == Like.target_id)
+            .where(Like.target_type == Like.TargetTypeEnum.POST, Post.account_id.in_(account_ids))
+            .group_by(Post.account_id)
+        )
+        result = await self.exec_read(statement, "count_likes_by_authors")
+        return {row[0]: int(row[1]) for row in result.all()}
+
     async def get_liked_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None = None,
                               limit: int = 10, viewer_account_id: uuid.UUID | None = None) -> list[Post]:
         """

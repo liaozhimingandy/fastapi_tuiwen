@@ -387,9 +387,11 @@ def get_follow_service(dao = Depends(get_follow_dao), like_dao = Depends(get_lik
     # like_dao 只用于统计「获赞数」; notice_dao 用于关注成功后写 FOLLOW 通知
     return FollowService(dao=dao, like_dao=like_dao, notice_dao=notice_dao)
 
-def get_account_service(dao = Depends(get_account_dao)):
+def get_account_service(dao = Depends(get_account_dao), follow_dao = Depends(get_follow_dao),
+                        like_dao = Depends(get_like_dao)):
     from src.tuiwen.service.account import AccountService
-    return AccountService(dao=dao)
+    # follow_dao/like_dao: 搜索结果批量装配关注统计(粉丝数/关注数/是否已关注/获赞数)
+    return AccountService(dao=dao, follow_dao=follow_dao, like_dao=like_dao)
 
 def get_feedback_service(dao = Depends(get_feedback_dao)):
     from src.tuiwen.service.feedback import FeedbackService

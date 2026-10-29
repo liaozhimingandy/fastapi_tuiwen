@@ -20,6 +20,7 @@ from sqlalchemy import SMALLINT, Column, JSON, BigInteger, Identity, func, UUID
 from sqlmodel import SQLModel, Field, text
 
 from src.tuiwen.model.types import IntEnumType, UTCDateTime
+from src.tuiwen.model.follow import FollowCountModel
 
 from src.tuiwen.core import get_settings
 from src.tuiwen.utils.datetime_utils import to_utc, utcnow
@@ -98,6 +99,9 @@ class AccountInfo(AccountPublicCommon):
     is_active: bool = Field(default=True, description="账户状态")
     allow_beep: bool = Field(default=True, description="是否允许提示音")
     allow_vibration: bool = Field(default=True, description="是否允许震动提示")
+    # 关注统计(粉丝数/关注数/是否已关注/获赞数), 由列表/搜索接口批量装配;
+    # 单查接口不装则为 None, 前端自行调 /follows/{id}/count/ 补齐
+    follow: Optional["FollowCountModel"] = Field(None, description="关注统计(批量装配时返回)")
 
 
 class Account(SQLModel, table=True):

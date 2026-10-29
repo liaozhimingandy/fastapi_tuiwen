@@ -213,21 +213,28 @@ async def update_account(account_id: Annotated[uuid.UUID, "账户ID"],
 @router_account.get("/accounts/search/{keyword}/", summary="通过关键词搜索账户", response_model=PageResponse[AccountInfo],
                     tags=[Tag.account])
 async def search(keyword: Annotated[str, "关键词"], *, svc: AccountService = Depends(get_account_service),
+                 request: Annotated[Request, "请求对象"],
                  offset: Annotated[int, "偏移量"] = 0,
                  limit: Annotated[int, Query(le=10)] = 10, ) -> PageResponse[AccountInfo]:
     """
     按关键词模糊搜索账户(昵称或账号ID包含关键词)
 
+    登录态下批量装配关注统计(follow 字段), 前端搜索结果可直接渲染「关注」按钮;
+    匿名请求 follow 为 None。
+
     Args:
         keyword: 搜索关键词, 内部会去空格并转小写
         svc: 账号业务服务
+        request: 请求对象, 用于取当前登录用户(匿名时无)
         offset: 偏移量
         limit: 每页数量, 最大 10
 
     Returns:
         PageResponse[AccountInfo]: 匹配到的账户列表与总数
     """
-    dataset = await svc.search(keyword, offset, limit)
+    # 本路由在 router_account(auth 组), request.state.account_id 由认证依赖写入
+    viewer_id = getattr(request.state, "account_id", None)
+    dataset = await svc.search(keyword, offset, limit, viewer_id=viewer_id)
     return PageResponse(items=dataset, total=len(dataset), page_size=limit)
 
 
