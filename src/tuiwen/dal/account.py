@@ -13,7 +13,7 @@
 from sqlmodel import select, or_, func
 
 from src.tuiwen.dal.base import BaseDAO
-from src.tuiwen.model.account import Account
+from src.tuiwen.model.account import Account, AccountTypeEnum
 
 
 class AccountDAO(BaseDAO[Account]):
@@ -62,9 +62,25 @@ class AccountDAO(BaseDAO[Account]):
 
 
     async def search(self, keyword: str, offset: int = 0, limit: int = 10) -> list[Account]:
+        """按关键词模糊搜索账号(用户名/昵称包含关键词, 大小写不敏感)。
+
+        内置/系统账号(user_type=SYSTEM)被排除, 不可被用户搜索到 ——
+        官方号、机器人、运营占位账号不应出现在搜索结果里。
+
+        Args:
+            keyword: 搜索关键词, 内部去空格转小写
+            offset: 分页偏移量
+            limit: 每页数量
+
+        Returns:
+            list[Account]: 匹配到的普通账号列表
+        """
         cleaned = keyword.strip().lower()
         stmt = select(Account).where(
-            or_(Account.username.contains(cleaned), Account.nickname.contains(cleaned))).offset(offset).limit(limit)
+            or_(Account.username.contains(cleaned), Account.nickname.contains(cleaned)),
+            # 内置账号不可被搜索: 排除 user_type=SYSTEM(值为 2), NULL 与历史脏数据不误伤
+            or_(Account.user_type != AccountTypeEnum.SYSTEM.value, Account.user_type.is_(None)),
+        ).offset(offset).limit(limit)
 
         # 使用读库会话
         result = await self._execute(self._get_read_session(), stmt, op="search")

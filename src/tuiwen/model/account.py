@@ -62,6 +62,19 @@ class SexEnum(IntEnum):
         return mapping[self.value]
 
 
+class AccountTypeEnum(IntEnum):
+    """账户类型(tw_account.user_type)。
+
+    - NORMAL: 普通注册用户(默认)
+    - SYSTEM: 内置/系统账号(官方号、机器人、运营占位等), 不可被搜索到,
+      也不应出现在面向用户的公开账号列表中; 后续其他曝光入口按需复用此标记。
+
+    历史数据缺省值为 1(NORMAL), 标记内置账号直接 UPDATE user_type=2 即可, 无需 DDL。
+    """
+    NORMAL = 1
+    SYSTEM = 2
+
+
 class AccountPublicCommon(SQLModel):
     """账户公共字段DTO：用户名/昵称/性别/头像/简介，供注册入参和公开信息模型继承"""
     username: Optional[str] = Field(None, max_length=32, description="用户名")
