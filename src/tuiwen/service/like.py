@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from src.tuiwen.common.exceptions import BizError
 from src.tuiwen.dal.like import LikeDAO
 from src.tuiwen.model.like import Like
+from src.tuiwen.model.post import Post
 
 
 @dataclass
@@ -96,3 +97,20 @@ class LikeService:
             dict: {"like_count": int, "is_liked": bool}
         """
         return await self.dao.get_like_count(target_id=target_id, account_id=account_id)
+
+    async def get_liked_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None = None,
+                              limit: int = 10, viewer_account_id: uuid.UUID | None = None) -> list[Post]:
+        """
+        查询某用户点赞过的帖子(游标分页)
+
+        Args:
+            account_id: 目标账户ID
+            cursor: 游标(上一页最旧一条的 post_id)
+            limit: 每页数量
+            viewer_account_id: 当前登录账户ID; 与 account_id 相同才返回私密帖
+
+        Returns:
+            list[Post]: 帖子列表
+        """
+        return await self.dao.get_liked_posts(account_id=account_id, cursor=cursor, limit=limit,
+                                              viewer_account_id=viewer_account_id)

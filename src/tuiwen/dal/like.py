@@ -17,7 +17,7 @@ import uuid
 
 from src.tuiwen.dal.base import BaseDAO
 from src.tuiwen.model.like import Like
-from src.tuiwen.model.post import Post
+from src.tuiwen.model.post import Post, RightStatusEnum
 
 
 class LikeDAO(BaseDAO[Like]):
@@ -100,3 +100,35 @@ class LikeDAO(BaseDAO[Like]):
         )
         total = await self._execute_scalar(self._get_read_session(), statement, "count_likes_received")
         return int(total or 0)
+
+    async def get_liked_posts(self, account_id: uuid.UUID, cursor: uuid.UUID | None = None,
+                              limit: int = 10, viewer_account_id: uuid.UUID | None = None) -> list[Post]:
+        """
+        查询某账号「点赞过」的帖子(uuid7 游标分页)
+
+        通过 tw_like 反查 target_id 再 JOIN 帖子表得到帖子列表。
+        可见范围与「我的帖子」一致: 号主本人 → 全部(含私密); 其他查看者 → 仅公开帖。
+
+        Args:
+            account_id: 目标账户ID(要看谁点赞过的内容)
+            cursor: 游标, 上一页最旧一条的 post_id; 为空表示第一页
+            limit: 每页数量, 默认 10
+            viewer_account_id: 当前登录账户ID; 与 account_id 相同才返回私密帖
+
+        Returns:
+            list[Post]: 帖子列表(按帖子主键倒序)
+        """
+        limit, _ = self._safe_page(limit, 0)
+        statement = (
+            select(Post)
+            .join(Like, Like.target_id == Post.id)
+            .where(Like.account_id == account_id, Like.target_type == Like.TargetTypeEnum.POST)
+        )
+        # 非本人查看时只返回公开帖(私密点赞过的内容不对外暴露)
+        if viewer_account_id != account_id:
+            statement = statement.where(Post.right_status == RightStatusEnum.PUBLIC)
+        # 仅当有游标时追加时间条件(uuid7 主键时间有序, 直接比较大小即可翻页)
+        if cursor:
+            statement = statement.where(Post.id < cursor)
+        statement = statement.order_by(Post.id.desc()).limit(limit)
+        return list((await self.exec_read(statement, "get_liked_posts")).all())
